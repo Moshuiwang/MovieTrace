@@ -1,0 +1,418 @@
+# MovieTrace 可行性评估
+
+状态：初版评估  
+日期：2026-05-07  
+评估依据：[docs/requirements.md](requirements.md)
+
+## 1. 总体结论
+
+MovieTrace 在工程上可行，适合作为一个“高价值影视更新候选发现系统”推进 MVP。
+
+但该项目的主要风险不是写代码，而是：
+
+1. 数据源授权和商业使用边界。
+2. 流媒体平台上线信息的数据完整性。
+3. 电视剧 episode 级更新的准确识别。
+4. 飞书多维表格作为轻量业务后台的容量边界。
+
+推荐结论：
+
+| 事项 | 结论 |
+| --- | --- |
+| 内部原型验证 | 可以做 |
+| 每日高价值候选推荐 | 可以做 |
+| 基于飞书多维表格做人工审核和状态流转 | 可以做 |
+| 冷启动追赶最近 180 天 | 可以做，但必须限量分批 |
+| 直接抓取 IMDb 或各流媒体平台官网 | 不建议 |
+| 商业生产环境长期依赖 TMDb/IMDb 免费数据 | 不建议，需确认授权 |
+| 精确判断所有平台 episode 级上线 | 风险较高，可能需要 Watchmode/JustWatch 等商业数据源 |
+
+## 2. 数据源可行性
+
+### 2.1 TMDb
+
+可用能力：
+
+- 影视元数据、ID 映射、搜索、discover、trending/popular。
+- movie、TV series、TV season 的 watch providers。
+- TV season 和 episode 详情，可用于补充季集信息。
+- 支持通过已有 IMDb ID 查找 TMDb 数据，适合处理现有线上内容基线。
+
+限制和风险：
+
+1. TMDb 开发者 API 免费用途主要面向非商业使用。TMDb 官方 FAQ 明确区分 developer API 和 commercial API，收入导向项目属于商业项目，商业使用需要联系销售取得授权。
+2. TMDb 没有 SLA。
+3. 速率限制不是固定配额，官方说明旧的 40 requests / 10 seconds 已停用，但仍有大约 40 requests / second 的上限，并要求尊重 `429`。
+4. Watch provider 数据适合判断某内容在哪些服务可看，但不应假设它能精确表达“某一集刚刚在某平台上线”。
+5. 平台来源数据可能存在延迟或不完整，必须保留 `source_records` 和 `baseline_match_status`，不能盲目自动提交供应商。
+
+可行性判断：
+
+| 用途 | 结论 |
+| --- | --- |
+| 标准化影视实体 | 可行 |
+| 外部 ID 映射 | 可行 |
+| 热度评分 | 可行 |
+| 平台来源证据 | 基本可行 |
+| episode 级平台上线精确判断 | 不应单独依赖 TMDb |
+| 商业生产使用 | 需授权确认 |
+
+MVP 建议：
+
+- TMDb 作为元数据和 ID 映射主数据源。
+- 不做大规模全库拉取。
+- bootstrap 只处理最近 180 天高信号候选。
+- 缓存 TMDb 响应，避免重复请求。
+- 生产使用前联系 TMDb 确认商业授权。
+
+参考：
+
+- [TMDb FAQ](https://developer.themoviedb.org/docs/faq)
+- [TMDb Rate Limiting](https://developer.themoviedb.org/docs/rate-limiting)
+- [TMDb Finding Data](https://developer.themoviedb.org/docs/finding-data)
+- [TMDb Movie Watch Providers](https://developer.themoviedb.org/reference/movie-watch-providers)
+- [TMDb TV Watch Providers](https://developer.themoviedb.org/reference/tv-series-watch-providers)
+- [TMDb TV Season Watch Providers](https://developer.themoviedb.org/reference/tv-season-watch-providers)
+
+### 2.2 Trakt
+
+可用能力：
+
+- trending、popular、watched 等热度信号。
+- TV calendars 和 episode 相关信息，适合辅助发现新剧、新季、新集。
+- 可通过 Trakt ID、IMDb ID、TMDb ID 做跨源映射。
+
+限制和风险：
+
+1. Trakt API 有明确限流。公开资料显示 GET 请求限制为 1000 calls / 5 minutes，POST/PUT/DELETE 为 1 call / second。
+2. Trakt 在 2025 年出现过因 API 滥用而加严限流的讨论，说明限流策略可能动态调整。
+3. Trakt 更适合判断“影视热度和播出日历”，不提供 Netflix、Prime Video 等平台的完整可用性数据。
+4. 商业使用口径在官方论坛中有 Trakt 团队成员说明 public API 无额外商业授权费用，但生产环境仍建议保留书面确认或至少保存官方答复链接。
+
+可行性判断：
+
+| 用途 | 结论 |
+| --- | --- |
+| 电视剧更新发现 | 可行 |
+| 热度补充 | 可行 |
+| 平台可用性判断 | 不适合单独承担 |
+| API 调用量 | 对本项目足够 |
+
+MVP 建议：
+
+- Trakt 作为 TV episode/new season 的重要发现源。
+- 实现统一限流队列，默认不超过 3 requests / second。
+- 必须处理 `429` 和 `Retry-After`。
+- 对 calendar、trending、popular 结果做本地缓存。
+
+参考：
+
+- [Trakt API rate limit announcement](https://github.com/trakt/trakt-api/issues/220)
+- [Trakt API rate-limit discussion](https://forums.trakt.tv/t/is-my-account-api-limited/100717)
+- [Trakt API commercial-use discussion](https://forums.trakt.tv/t/asking-about-api-commercial-uses-on-free-plan/99367)
+
+### 2.3 IMDb
+
+可用能力：
+
+- IMDb ID 适合作为跨平台稳定标识。
+- 非商业数据集包含 title、episode、ratings 等 TSV 文件，并且每日刷新。
+- IMDb 商业元数据通过 IMDb Developer / AWS Data Exchange 提供。
+
+限制和风险：
+
+1. IMDb 官方明确禁止对网站做 data mining、robots、screen scraping 等自动化采集。
+2. 非商业数据集仅限个人和非商业用途，不能直接用于商业视频网站运营决策的生产系统。
+3. 商业使用需要走 IMDb Developer 授权。
+
+可行性判断：
+
+| 用途 | 结论 |
+| --- | --- |
+| 使用 IMDb ID 做主键/辅助映射 | 可行 |
+| 使用非商业 IMDb 数据集做商业生产 | 不建议 |
+| 抓取 IMDb 页面 | 不可取 |
+| 购买 IMDb 商业数据 | 可行但需成本评估 |
+
+MVP 建议：
+
+- 不抓 IMDb 页面。
+- MVP 中只把 IMDb ID 当成外部标识。
+- 若需要 IMDb rating、votes、meters 作为生产热度依据，需要走 IMDb 商业授权。
+
+参考：
+
+- [IMDb data usage policy](https://help.imdb.com/article/imdb/general-information/can-i-use-imdb-data-in-my-software/G5JTRESSHJBBHTGX)
+- [IMDb Non-Commercial Datasets](https://developer.imdb.com/non-commercial-datasets/)
+- [IMDb Developer](https://developer.imdb.com/)
+
+### 2.4 Netflix Top 10
+
+可用能力：
+
+- Netflix 官方 Top 10 页面公开全球和国家榜单。
+- 榜单按周更新，可作为 Netflix 热度强信号。
+- 页面提供 Global、US 等榜单和 views/hours viewed 等指标。
+
+限制和风险：
+
+1. 它是榜单页面，不是稳定 API。
+2. 只覆盖 Netflix，不覆盖 Prime Video、Disney+、Hulu、HBO/Max、Apple TV+。
+3. 适合做热度证据，不适合做完整上线发现。
+4. 自动化读取需要非常克制，避免高频抓取。
+
+可行性判断：
+
+| 用途 | 结论 |
+| --- | --- |
+| Netflix 热度信号 | 可行 |
+| Netflix 新内容完整发现 | 不完整 |
+| 多平台统一数据源 | 不适合 |
+
+MVP 建议：
+
+- 每周低频读取 Global 和 US 榜单。
+- 只用于 `heat_signals` 和 `ai_reason`。
+- 不把 Netflix Top 10 当成唯一采集入口。
+
+参考：
+
+- [Netflix Top 10](https://www.netflix.com/tudum/top10)
+- [Netflix Top 10 methodology](https://about.netflix.com/en/news/new-top-10-on-netflix)
+
+### 2.5 Watchmode / JustWatch 等商业流媒体可用性数据源
+
+如果项目后续需要高准确度判断“某一季、某一集在哪个流媒体平台可看”，TMDb/Trakt 可能不够。
+
+Watchmode 的官方 API 明确提供：
+
+- 200+ 服务。
+- 50+ 国家。
+- episode-level streaming availability。
+- 免费开发者额度，但非商业；商业套餐从 Startup 级别开始。
+
+JustWatch 有 Partner API，文档描述支持按 TMDb ID 查询 movie/show offers，也支持 show season 和 episode 级别 offers。但这是 partner API，不应当使用非官方 npm 包或私有接口做商业生产。
+
+可行性判断：
+
+| 用途 | 结论 |
+| --- | --- |
+| 精确平台可用性 | 商业数据源更合适 |
+| episode 级平台可用性 | Watchmode/JustWatch 更匹配 |
+| MVP 必需 | 暂时不是 |
+| 后续商业稳定性 | 建议纳入备选 |
+
+参考：
+
+- [Watchmode API](https://api.watchmode.com/)
+- [Watchmode Terms](https://api.watchmode.com/tc)
+- [JustWatch Partner API](https://apis.justwatch.com/docs/api/)
+
+## 3. 飞书多维表格与文档可行性
+
+### 3.1 多维表格能力
+
+需求中的飞书多维表格用法是可行的：
+
+- 读取现有线上内容基线表。
+- 写入推荐更新表。
+- 写入批次表。
+- 写入供应商流转表。
+- 人工审核、筛选、状态流转。
+- 通过字段保存 `content_update_id`、`baseline_match_status`、`fulfillment_status`。
+
+关键限制：
+
+1. Lark 多维表格基础版每数据表 2,000 行，专业版 20,000 行，企业版 50,000 行。
+2. 批量创建、批量更新记录接口适合分批写入。公开接口资料显示单次批量操作最多 500 条，常见调用频率为 10 QPS。
+3. 列出记录接口一般需要分页，单页上限常见为 500 条。
+4. 飞书应用需要正确配置权限并发布版本，且需要把应用添加到目标多维表格。
+5. 日期字段需要毫秒时间戳，单选、多选、人员、关联记录等字段都有特定写入格式。
+6. 飞书适合做人机协作后台，不适合作为原始采集日志和全量数据仓库。
+
+可行性判断：
+
+| 用途 | 结论 |
+| --- | --- |
+| 每日候选写入 | 可行 |
+| bootstrap 写入 200 条 P0/P1 | 可行 |
+| 读取线上内容基线 | 可行 |
+| 人工审核和批次管理 | 可行 |
+| 保存全部原始采集记录 | 不建议 |
+| 作为长期唯一数据库 | 不建议 |
+
+容量判断：
+
+- 如果线上内容基线表少于 20,000 行，专业版足够。
+- 如果已有内容或后续候选超过 20,000 行，应拆表，或者把 SQLite/PostgreSQL 作为系统数据库，飞书只保留待处理业务视图。
+- 如果免费版只有 2,000 行/表，冷启动和长期运营很快会碰到上限，不建议用免费版作为生产后台。
+
+参考：
+
+- [Lark Base plans](https://www.larksuite.com/lp/cn/base-plans)
+- [飞书多维表格权限配置说明](https://www.feishu.cn/content/137710114294)
+- [飞书批量新增记录接口镜像](https://s.apifox.cn/apidoc/docs-site/532425/api-9020913)
+- [飞书批量更新记录接口镜像](https://s.apifox.cn/apidoc/docs-site/532425/api-9020915)
+- [飞书列出记录接口镜像](https://apifox.com/apidoc/docs-site/532425/api-9020910)
+
+### 3.2 飞书文档能力
+
+日报和多日汇总可行。
+
+限制：
+
+1. 新版文档创建和块写入有频率限制，常见为单应用 3 QPS。
+2. 文档块数量、层级、单次插入内容大小都有约束。
+3. 报告不应写入太长的全量列表。建议报告只放摘要、P0/P1、关键 P2 和链接到多维表格视图。
+
+参考：
+
+- [飞书创建文档接口镜像](https://s.apifox.cn/apidoc/docs-site/532425/api-58540235)
+- [飞书创建块接口镜像](https://s.apifox.cn/apidoc/docs-site/532425/api-58543084)
+- [飞书云文档连接器说明](https://www.feishu.cn/content/383321056779)
+
+## 4. 调用量和成本粗估
+
+### 4.1 daily 模式
+
+目标：每天输出 P0/P1 不超过 50 条。
+
+推荐调用策略：
+
+1. Trakt calendar/trending/popular 拉候选。
+2. TMDb 批量补充元数据、外部 ID、watch provider。
+3. Netflix Top 10 每周低频补充热度。
+4. 本地缓存命中后不重复请求。
+5. 飞书只写候选和状态，不写所有原始记录。
+
+粗估：
+
+| 项 | 估计 |
+| --- | --- |
+| 外部 API 请求 | 100-500 / day |
+| 飞书写入 | 1-3 次 batch_create 或 batch_update |
+| 飞书文档写入 | 1 篇日报，少量 block |
+| 是否触及限流 | 正常不会 |
+
+### 4.2 bootstrap 模式
+
+目标：追赶最近 180 天，但 P0/P1 初始候选最多 200 条。
+
+推荐策略：
+
+1. 先读取飞书线上内容基线。
+2. 只从高信号入口拿候选，不全量扫描 TMDb/Trakt。
+3. 电视剧优先，新剧、新季、新集优先。
+4. 对候选做本地去重、评分、状态过滤。
+5. 分批写入飞书，每批 50-200 条。
+
+粗估：
+
+| 项 | 估计 |
+| --- | --- |
+| 读取线上基线 | 按 500 条/页分页 |
+| 外部 API 请求 | 1,000-5,000 次，取决于候选池大小 |
+| 飞书写入 | 1 次或少量 batch_create |
+| 是否触及限流 | 可控，但需要队列、缓存、重试 |
+
+### 4.3 生产成本判断
+
+| 项 | 成本判断 |
+| --- | --- |
+| TMDb | 非商业免费；商业生产需联系授权 |
+| Trakt | Public API 免费，但需遵守限流；商业口径建议确认 |
+| IMDb | 非商业数据不能直接用于商业生产；商业数据需授权 |
+| Netflix Top 10 | 免费公开页面，但不是 API |
+| Watchmode | 免费开发者额度非商业；商业套餐公开价格从 $349/month 起 |
+| Lark/飞书多维表格 | 免费版行数不够稳；专业版或企业版更适合 |
+
+## 5. 主要风险
+
+| 风险 | 等级 | 说明 | 缓解方案 |
+| --- | --- | --- | --- |
+| TMDb 商业授权 | 高 | 项目服务于商业视频网站运营，可能属于商业使用 | 生产前联系 TMDb；原型阶段限制为验证 |
+| IMDb 数据使用 | 高 | 不可抓网页，非商业数据不能用于商业生产 | 仅用 IMDb ID；需要评分/热度时购买授权 |
+| 平台上线准确性 | 高 | TMDb/Trakt 不保证 episode 级平台可用性完整 | MVP 只做推荐候选；需要精确可用性时接 Watchmode/JustWatch |
+| 冷启动数据量 | 中 | 半年追赶可能产生过多候选 | P0/P1 上限 200，分批写入 |
+| 飞书表容量 | 中 | 免费版 2,000 行/表，专业版 20,000 行/表 | 生产使用专业版以上；长期原始数据放本地 DB |
+| API 限流 | 中 | Trakt/TMDb/飞书都有限流 | 统一限流队列、缓存、重试、断点续跑 |
+| 实体映射误判 | 中 | 同名电影/剧集、季集缺失容易误合并 | `mapping_confidence` 和人工确认机制 |
+| 飞书权限配置 | 中 | 应用权限、表格添加应用、版本发布缺一不可 | 初始化检查脚本和权限诊断 |
+
+## 6. 推荐架构
+
+```text
+Scheduler / CLI
+-> Source collectors
+   -> Trakt collector
+   -> TMDb collector
+   -> Netflix Top 10 collector
+   -> Optional Watchmode / JustWatch collector
+-> Local cache and raw store
+-> Normalizer
+-> Baseline matcher
+-> Scorer
+-> Business deduper
+-> Feishu sync
+-> Feishu report generator
+```
+
+关键设计建议：
+
+1. 必须有本地数据库，例如 SQLite 或 PostgreSQL。
+2. 飞书只保存业务结果和人工状态，不保存所有原始采集。
+3. 所有外部 API 响应都要缓存，至少缓存 7-30 天。
+4. 所有外部调用统一走限流队列。
+5. bootstrap、daily、backfill 共用同一套去重和评分逻辑。
+6. 先实现 dry run，再写飞书。
+
+## 7. MVP 可行落地顺序
+
+### Phase 1：飞书基线和手动 dry run
+
+- 读取现有线上内容基线表。
+- 做字段映射和 `baseline_match_status`。
+- 先不写外部推荐，只验证飞书权限、分页、字段格式、状态读取。
+
+### Phase 2：Trakt + TMDb 候选发现
+
+- 接 Trakt trending/calendar。
+- 接 TMDb search/find/details/watch providers。
+- 生成 `content_update_id`。
+- 输出本地 dry run 报告。
+
+### Phase 3：bootstrap 追赶
+
+- 最近 180 天追赶。
+- P0/P1 上限 200。
+- 写入推荐更新表。
+- 生成 bootstrap 飞书报告。
+
+### Phase 4：daily 自动化
+
+- 每日运行。
+- P0/P1 上限 50。
+- 读取飞书业务状态做去重。
+- 生成日报。
+
+### Phase 5：数据源增强
+
+- 加 Netflix Top 10。
+- 评估 Watchmode/JustWatch 商业数据源。
+- 若需要 IMDb 热度，评估 IMDb 商业授权。
+
+## 8. 结论
+
+MVP 可以做，但要把目标收窄为“候选发现和运营决策辅助”，不要承诺“完整、精确、全平台、episode 级上线数据库”。
+
+当前最稳的路线：
+
+1. 先用飞书线上内容表建立基线。
+2. 用 Trakt 发现 TV 更新。
+3. 用 TMDb 做元数据、ID 映射和基础平台来源。
+4. 用 Netflix Top 10 做热度增强。
+5. 用飞书做审核、批次和履约状态。
+6. 原始数据和日志放本地数据库。
+7. 生产商业使用前，优先确认 TMDb 授权；IMDb 只在授权后使用评分和热度数据。
+
+如果后续业务要求“精确知道某一集在哪个平台上线”，应把 Watchmode 或 JustWatch Partner API 纳入商业数据源评估。
