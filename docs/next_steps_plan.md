@@ -36,6 +36,7 @@ Phase 0 需要回答以下问题：
 | 问题 | 为什么重要 | 通过标准 |
 | --- | --- | --- |
 | 飞书线上内容表能否通过 API 稳定读取 | 它是冷启动和业务去重的基础 | 能分页读取，字段类型能解析 |
+| 本地数据库能否作为事实源 | 飞书读写效率不适合作为核心数据库 | SQLite schema 可初始化，能承载基线、实体、外部 ID、候选和缓存 |
 | 线上内容表字段质量如何 | 字段不完整会导致误过滤或重复推荐 | 抽样 100-300 条，至少 70% 可形成可用基线 |
 | 线上内容能否匹配 TMDb/Trakt/IMDb ID | 没有外部 ID 会影响去重准确性 | 高置信度匹配准确率 >= 95% |
 | 最近 30 天 TV 更新能否发现 | 这是核心业务价值 | 热门英文剧集、新季、新集能进入候选 |
@@ -69,9 +70,9 @@ Phase 0 默认不向正式推荐表写入业务数据。即使需要测试写入
 
 ## 4. Phase 0 详细任务拆分
 
-### 4.1 任务 A：建立项目骨架
+### 4.1 任务 A：建立项目骨架和本地数据库
 
-目标：让后续验证脚本有稳定结构。
+目标：让后续验证脚本有稳定结构，并建立 SQLite 事实源的初始 schema。
 
 建议技术栈：
 
@@ -120,6 +121,7 @@ tests/
 3. `.env` 不提交 GitHub。
 4. `config.example.yaml` 只包含示例配置。
 5. SQLite 数据库路径可配置。
+6. 能初始化本地数据库，创建基线、实体、外部 ID、候选、缓存和运行记录相关表。
 
 ### 4.2 任务 B：飞书权限和基线读取验证
 
@@ -449,3 +451,42 @@ Phase 0 完成后，应基于报告做一次明确决策：
 6. 再决定是否进入完整 MVP 开发。
 
 这条路线能最大限度避免“代码做完了，但数据源或飞书流程不可用”的风险。
+
+## 14. Phase 0 当前进展记录
+
+更新日期：2026-05-09
+
+已完成：
+
+1. 飞书 App 权限、表读取、测试表写入和更新验证。
+2. 飞书 `节目` 表全量基线质量报告。
+3. 节目库导出 Schema v0.1，并同步到飞书 schema 子表。
+4. TMDb / Trakt API 连通性验证。
+5. 前 100 条节目名实体匹配样本报告。
+6. 架构调整为 SQLite 本地数据库作为事实源，飞书作为输入来源和可选协作视图。
+7. SQLite 初始 schema、测试和本地数据库初始化。
+8. 飞书 `节目` 表导入本地 `baseline_items`。
+
+已产出：
+
+- `docs/feishu_api_validation_notes.md`
+- `docs/baseline_export_schema.md`
+- `docs/local_database_architecture.md`
+- `reports/baseline_quality_report.md`
+- `reports/entity_matching_report.md`
+- `reports/baseline_import_report.md`
+- `reports/phase0_day1_summary.md`
+
+当前本地数据库状态：
+
+- 数据库路径：`data/movietrace.db`
+- `baseline_items`：855 条
+- 最近一次飞书导入状态：success
+
+下一步建议：
+
+1. 对 855 条 `baseline_items` 执行全量 TMDb / Trakt 实体匹配 dry run。
+2. 将匹配候选写入 `match_candidates`。
+3. 生成 `reports/full_entity_matching_report.md`。
+4. 人工复核 high 匹配准确率。
+5. 准确率达标后，再写入 `canonical_items` 和 `external_ids`。

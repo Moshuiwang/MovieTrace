@@ -1,0 +1,13 @@
+database:
+  path: data/movietrace.db
+
+feishu:
+  baseline_table_name: 节目
+  schema_table_name: MovieTrace节目库导出Schema
+  test_table_name: MovieTrace写入测试
+
+tmdb:
+  enabled: true
+
+trakt:
+  enabled: true
