@@ -12,13 +12,13 @@
 | 项目项 | 当前约定 |
 | --- | --- |
 | 项目名称 | MovieTrace |
-| 当前阶段 | 项目引导 / 项目定义到方案设计之间 |
+| 当前阶段 | Phase 1：V1 MVP 开发（Phase 0 + Phase 0+ 均已完成，GO 决策） |
 | 项目类型 | 生产商业型倾向，涉及外部 API、飞书、多数据源和运营决策；按较高严谨度推进 |
-| 技术栈 | 尚未落地代码；当前仅有文档。未来优先 Python 3.12，虚拟环境 `.venv/`，配置使用 `.env` 与 `config.yaml` |
-| 框架 | 暂无；引入框架前必须有任务包授权 |
-| 数据库 | 暂无；如需持久化，先完成设计说明、表结构和迁移策略 |
-| 目录结构 | `docs/` 存放需求、可行性、成本和计划文档；未来建议 `src/` 放源码，`tests/` 放测试，`assets/` 或 `resources/` 放静态资源 |
-| 已有文档 | `docs/requirements.md`、`docs/feasibility.md`、`docs/operating_cost_estimate.md`、`docs/next_steps_plan.md` |
+| 技术栈 | Python 3.12，虚拟环境 `.venv/`，配置使用 `.env` 与 `config.yaml`；依赖见 `requirements.txt` |
+| 框架 | 无框架；引入任何新依赖前必须有任务包授权 |
+| 数据库 | SQLite（`data/movietrace.db`）；schema 见 `src/movietrace/db/schema.py`；变更须提 migration plan |
+| 目录结构 | `src/movietrace/` 源码，`tests/` 测试，`docs/` 文档，`reports/` 验证报告，`journal/` 工作日报，`scripts/` 验证脚本 |
+| 已有文档 | `STATE.md`（当前状态）、`SCOPE.md`（V1 边界）、`docs/decisions/`（ADR）、`docs/tasks/`（任务包）、`journal/`（日报） |
 
 ## 12 条通用操作规则
 

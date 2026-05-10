@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **MovieTrace** is a production-oriented system that automatically discovers English-language film and TV content updates across streaming platforms (Netflix, Prime Video, Disney+, Apple TV+, HBO/Max, Hulu), deduplicates them against a local content baseline, and generates audit-ready update recommendations for video platform operations teams.
 
-The project is currently in **Phase 0 validation** — focus is proving data source availability, Feishu integration stability, entity matching accuracy, and recommendation quality before proceeding to Phase 1 (MVP prototype).
+The project is currently in **Phase 1 V1 MVP development** — Phase 0 and Phase 0+ (FlixPatrol validation) are both complete with GO decisions. Focus now is implementing the V1 pipeline: FlixPatrol HTTP client, multi-source scoring, Feishu write, and CLI.
 
 **Key Reference:** Read `AGENTS.md` for comprehensive project rules, workflow stages, and decision gates. AGENTS.md is the authoritative source for project constraints, phase definitions, and execution discipline.
 
@@ -35,6 +35,7 @@ Feishu (recommendation table write, manual review, batch tracking)
 | `src/movietrace/pipeline/entity_matching.py` | Match baseline + candidate items to TMDb/Trakt/IMDb IDs | Core Phase 0 validation module |
 | `src/movietrace/pipeline/canonical_promotion.py` | Deduplicate matched items into canonical records | Phase 0 validated |
 | `src/movietrace/sources/` | HTTP clients for TMDb, Trakt, OMDb APIs | Core data sources; do not remove without re-evaluation |
+| `src/movietrace/sources/flixpatrol.py` | FlixPatrol HTML parser (`parse_top10_page`) | Phase 0+ validated; 48 tests passing; ready for P1-B |
 
 **Database Schema (SQLite):**
 - `feishu_import_runs` — tracks Feishu baseline import operations
@@ -62,21 +63,28 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Note:** Currently no `requirements.txt`, `pyproject.toml`, `setup.py`, or `Makefile`. When adding dependencies, create `requirements.txt` and update this section.
+**Install dependencies:**
+```bash
+pip install -r requirements.txt
+```
+
+Current dependencies: `beautifulsoup4` (FlixPatrol parser), `pytest` (tests). See `requirements.txt`.
 
 ## Commands
 
 ### Tests
 ```bash
-# Run all tests
-python -m pytest tests/
+# Run all tests (src layout requires PYTHONPATH)
+PYTHONPATH=src python -m pytest tests/ -v
 
 # Run specific test file
-python -m pytest tests/test_entity_matching.py -v
+PYTHONPATH=src python -m pytest tests/test_flixpatrol_parsing.py -v
 
 # Run single test
-python -m pytest tests/test_entity_matching.py::test_exact_title_match -v
+PYTHONPATH=src python -m pytest tests/test_entity_matching.py::test_exact_title_match -v
 ```
+
+**Important:** Always prefix with `PYTHONPATH=src` — the project uses src layout and pytest will fail without it.
 
 ### Database
 ```bash
@@ -266,17 +274,24 @@ Before accepting and starting a task, verify the task package contains all requi
 
 ## Phase Guidance
 
-**Phase 0 (Current):** Validation
-- ✅ Feishu baseline read stability
-- ✅ Entity matching accuracy (>95% high-confidence)
-- ✅ Candidate quality (>60% human approval rate)
-- 🔄 Bootstrap 6-month backfill sizing (<200 P0/P1 items)
+**Phase 0:** ✅ Complete — 96.6% entity matching rate, GO decision
 
-**Phase 1 (Next):** MVP Prototype
-- CLI entry point with dry-run and commit modes
-- SQLite as persistent baseline, cache, and staging
-- Local candidate report generation
-- Feishu recommendation table write (minimal schema)
+**Phase 0+:** ✅ Complete — FlixPatrol validation (SUP-A~F all passed)
+- SUP-B parser: `src/movietrace/sources/flixpatrol.py` (48 tests, 100% extraction)
+- SUP-C matching: 118/118 = 100% TMDb match rate
+- SUP-D compliance: Conditional GO (≤1 req/URL/24h, ≥2s interval, `MovieTraceBot/0.1` UA)
+
+**Phase 1 (Current):** V1 MVP Development
+- P1-A: Entity matching regression fix
+- P1-B: FlixPatrol HTTP client + DB (reuse existing parser)
+- P1-C: Multi-source merge + hot_score
+- P1-D: Feishu baseline match tagging
+- P1-E: Daily Markdown report
+- P1-F: Feishu recommendation table write
+- P1-G: CLI command
+- P1-H: Integration test + first run
+
+P1-A and P1-B can start in parallel. Task packages not yet written — write task package before coding.
 
 **Phase 2+:** See `docs/next_steps_plan.md`
 
@@ -295,7 +310,7 @@ Before accepting and starting a task, verify the task package contains all requi
 A: No. AGENTS.md rule: "不主动引入新依赖" (don't introduce dependencies proactively). Propose in task with explicit business justification first.
 
 **Q: How do I add a new data source (e.g., Netflix Top 10)?**
-A: Phase 5 (data source enhancement). Currently only TMDb, Trakt, OMDb in scope. Propose in new task with cost/quality analysis.
+A: FlixPatrol is now the platform heat signal source (ADR-0003 Accepted). Additional sources are V2 scope. Propose with cost/quality analysis.
 
 **Q: What if the Feishu API call fails?**
 A: Log with timestamp and source ID. Check `AGENTS.md` rule 9: "不隐藏失败或不确定点" (don't hide failures). Report in task output.
