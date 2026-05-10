@@ -6,8 +6,8 @@
 ---
 
 **最后更新：** 2026-05-10  
-**更新人：** Claude Code (Opus 4.7)  
-**Git Commit：** `8ada68e`  
+**更新人：** Claude Code (Sonnet 4.6)  
+**Git Commit：** `dd60885`  
 **所在分支：** `main`
 
 ---
@@ -17,8 +17,8 @@
 | 阶段 | 状态 |
 |------|------|
 | Phase 0：开发前验证 | ✅ 已完成（Go 决策） |
-| Phase 0+：FlixPatrol 接入验证 | 🔄 准备中（任务包就绪，待启动） |
-| Phase 1：V1 MVP 开发 | ⏳ 待 Phase 0+ 通过 |
+| Phase 0+：FlixPatrol 接入验证 | ✅ 已完成（SUP-A~F 全部通过，综合结论 GO） |
+| Phase 1：V1 MVP 开发 | 🔄 进行中（任务包待拆分，可启动 P1-A / P1-B） |
 
 ---
 
@@ -35,11 +35,46 @@ data/movietrace.db
 
 ---
 
+## Phase 0+ 验证结果（已完成）
+
+| 任务 | 结论 | 报告 |
+|------|------|------|
+| SUP-A 可访问性 | ✅ 6/7 URL HTTP 200 | `reports/flixpatrol_accessibility_report.md` |
+| SUP-B HTML 解析稳定性 | ✅ 390/390 字段提取率 100% | `reports/flixpatrol_parsing_report.md` |
+| SUP-C TMDb 匹配率 | ✅ 118/118 = 100% | `reports/flixpatrol_matching_report.md` |
+| SUP-D 合规评估 | ⚠️ 条件接入（robots 允许，条款为空） | `reports/flixpatrol_compliance_report.md` |
+| SUP-F 综合结论 | ✅ GO，进入 Phase 1 | `reports/flixpatrol_validation_report.md` |
+
+FlixPatrol 合规访问约束：每 URL 每 24h 最多 1 次 · 间隔 ≥ 2 秒 · `MovieTraceBot/0.1` UA · 仅内部使用。
+
+---
+
+## Phase 1 待办（按依赖顺序）
+
+```
+P1-A（实体匹配回归修复）         ← 可立即启动
+P1-B（FlixPatrol HTTP 客户端 + DB）← 可立即启动（与 P1-A 并行）
+    ↓
+P1-C（多源合并 + hot_score 评分）
+    ↓
+P1-D（飞书基线匹配标记）
+    ↓
+P1-E（每日 Markdown 日报）
+    ↓
+P1-F（飞书推荐表写入）
+    ↓
+P1-G（CLI 命令）
+    ↓
+P1-H（集成测试 + 首次运行）
+```
+
+**当前状态：** 任务包尚未拆分，需先写 P1-A / P1-B 任务包再启动编码。
+
+---
+
 ## 进行中任务
 
-| 任务 | 状态 | 任务包 |
-|------|------|-------|
-| SUP-A FlixPatrol 可访问性测试 | Ready（待启动） | [docs/tasks/sup_a_flixpatrol_accessibility.md](docs/tasks/sup_a_flixpatrol_accessibility.md) |
+无（Phase 1 任务包待创建）。
 
 ---
 
@@ -51,9 +86,8 @@ data/movietrace.db
 
 ## 待用户决策
 
-1. **SUP-A 启动时间** — 任务包就绪，等用户决定何时启动
-2. **多 Agent 协作框架的最终形态** — 已采纳精简版，今日实施中
-3. **Phase 1 任务包详细拆分** — Phase 0+ 通过后再写
+1. **Phase 1 任务包拆分** — 是否现在开始写 P1-A / P1-B 任务包？
+2. **SUP-E 长期稳定性观察** — 已延迟到 P1-B 上线后被动观察，无需主动决策
 
 ---
 
@@ -61,7 +95,7 @@ data/movietrace.db
 
 1. **ADR-0001** 飞书基线从过滤逻辑改为标记参考（2026-05-10）
 2. **ADR-0002** V1/V2 严格划分原则（2026-05-10）
-3. **ADR-0003** V1 引入 FlixPatrol 作为真实平台热度源（2026-05-10）
+3. **ADR-0003** V1 引入 FlixPatrol 作为真实平台热度源（✅ 已 Accepted，Phase 0+ 验证通过）
 4. **ADR-0004** Phase 0 不自动升级 26 条电影误标记录（2026-05-10）
 5. **ADR-0005** SUP-A 任务包仅使用 stdlib，不引入新依赖（2026-05-10）
 
