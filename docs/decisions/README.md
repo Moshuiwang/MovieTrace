@@ -14,7 +14,7 @@
 |------|------|------|------|
 | [0001](0001-feishu-baseline-as-marker-not-filter.md) | 飞书基线从过滤逻辑改为标记参考 | ✅ Accepted | 2026-05-10 |
 | [0002](0002-v1-v2-strict-separation.md) | V1/V2 严格划分原则 | ✅ Accepted | 2026-05-10 |
-| [0003](0003-flixpatrol-as-v1-data-source.md) | V1 引入 FlixPatrol 作为真实平台热度源 | 🔄 Proposed（待 Phase 0+ 验证） | 2026-05-10 |
+| [0003](0003-flixpatrol-as-v1-data-source.md) | V1 引入 FlixPatrol 作为真实平台热度源 | ✅ Accepted | 2026-05-10 |
 | [0004](0004-phase0-medium-no-auto-promotion.md) | Phase 0 不自动升级 26 条电影误标记录 | ✅ Accepted | 2026-05-10 |
 | [0005](0005-sup-a-stdlib-only.md) | SUP-A 任务包仅使用 stdlib，不引入新依赖 | ✅ Accepted | 2026-05-10 |
 

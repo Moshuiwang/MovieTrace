@@ -1,9 +1,9 @@
 # ADR-0003: V1 引入 FlixPatrol 作为真实平台热度源
 
-**状态：** 🔄 Proposed（待 Phase 0+ 验证通过后转为 Accepted）  
+**状态：** ✅ Accepted（Phase 0+ 验证通过，2026-05-10）  
 **日期：** 2026-05-10  
-**决策者：** 用户 + Claude Code (Haiku 4.5)  
-**相关 Commit：** `b584e94`
+**决策者：** 用户 + Claude Code (Haiku 4.5 / Sonnet 4.6)  
+**相关 Commit：** `b584e94`（提出）/ `7e492e8`（验证通过，状态更新）
 
 ---
 
