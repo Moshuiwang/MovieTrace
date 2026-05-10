@@ -170,6 +170,9 @@ def _load_bearer_token() -> str:
 
 
 def run_matching(bearer_token: str) -> list[MatchResult]:
+    if not PARSED_ITEMS_FILE.exists():
+        logger.error("找不到输入文件: %s", PARSED_ITEMS_FILE)
+        return []
     raw = json.loads(PARSED_ITEMS_FILE.read_text(encoding="utf-8"))
     deduped = _deduplicate_flixpatrol_items(raw)
     logger.info("去重后 %d 个唯一标题", len(deduped))
@@ -212,10 +215,11 @@ def main() -> None:
     by_conf = {c: sum(1 for r in results if r.confidence == c)
                for c in ("high", "medium", "low", "no_match")}
     matched = by_conf["high"] + by_conf["medium"]
+    rate_str = f"{matched/total*100:.1f}%" if total > 0 else "N/A"
     print(f"\n=== SUP-C 匹配摘要 ===", file=sys.stderr)
     print(f"总计: {total}", file=sys.stderr)
     print(f"high: {by_conf['high']}  medium: {by_conf['medium']}  low: {by_conf['low']}  no_match: {by_conf['no_match']}", file=sys.stderr)
-    print(f"高/中置信度匹配率: {matched}/{total} = {matched/total*100:.1f}%", file=sys.stderr)
+    print(f"高/中置信度匹配率: {matched}/{total} = {rate_str}", file=sys.stderr)
 
 
 if __name__ == "__main__":
