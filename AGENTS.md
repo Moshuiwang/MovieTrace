@@ -153,8 +153,8 @@
 | 主题 | 约定 |
 | --- | --- |
 | 项目结构 | 当前仓库以文档为主，项目材料放在 `docs/` |
-| 现有文档 | `docs/requirements.md`、`docs/feasibility.md`、`docs/operating_cost_estimate.md`、`docs/next_steps_plan.md` |
-| 未来源码 | 新增实现代码时优先使用 `src/`；自动化测试放 `tests/`；静态资源放 `assets/` 或 `resources/` |
+| 现有文档 | `STATE.md`、`SCOPE.md`、`docs/requirements.md`、`docs/decisions/`（ADR）、`docs/tasks/`（任务包）、`journal/`（日报） |
+| 源码 | `src/movietrace/`；自动化测试放 `tests/`；验证脚本放 `scripts/` |
 | Markdown 风格 | 标题清晰、段落短、列表直接；文件名使用小写和下划线，如 `operating_cost_estimate.md` |
 | Python 风格 | 4 空格缩进；公共函数优先类型标注；模块、函数和变量使用 snake_case |
 | 测试命名 | 测试文件按行为命名，如 `test_scoring.py`、`test_deduplication.py` |
@@ -162,13 +162,55 @@
 | PR 要求 | 说明摘要、关键改动、验证结果、配置或密钥处理说明；相关时链接 issue 或需求章节 |
 | 安全配置 | 不提交 API Key、Token、飞书密钥、`.env`；只提交脱敏示例 |
 
+## 工作日报规范
+
+**位置：** `journal/`  
+**文件命名：** `YYYY-MM-DD_<tool>_<model>.md`
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `YYYY-MM-DD` | 会话日期 | `2026-05-10` |
+| `<tool>` | 使用的 AI 工具名（小写，连字符分隔） | `claude-code`、`codex`、`cursor` |
+| `<model>` | 实际使用的模型（小写，连字符分隔） | `sonnet-4.6`、`o3`、`gpt-4o` |
+
+**示例：**
+- `2026-05-10_claude-code_sonnet-4.6.md`
+- `2026-05-10_codex_o3.md`
+- `2026-05-11_claude-code_opus-4.7.md`
+
+**日报必填内容：**
+1. Agent 身份卡（工具名、模型、模型 ID、运行环境、起止 commit）
+2. 今日工作主线（每条主线：触发、结论、完成内容、关键发现）
+3. 关键决策记录（每个决策：背景、判断、取舍）
+4. 当前项目状态快照
+5. 给下一个 AI Agent 的交接（可接任务、不要重做的事、容易被忽略的知识）
+6. 数字总结（commit 数、文件数、测试数）
+
+参考已有日报格式：`journal/2026-05-10_claude-code_sonnet-4.6.md`
+
+---
+
+## 会话结束检查清单
+
+每次会话结束前（用户说"收尾"，或 Agent 认为主线工作完成时），**必须依次执行**：
+
+- [ ] **STATE.md** — 更新当前阶段、进行中任务、阻塞项、待用户决策
+- [ ] **日报** — 写 `journal/YYYY-MM-DD_<tool>_<model>.md`（见上方规范）
+- [ ] **ADR** — 如有新决策或状态变更（如 Proposed→Accepted），更新对应 ADR 文件和 `docs/decisions/README.md`
+- [ ] **CLAUDE.md / AGENTS.md** — 如有阶段变化、新模块、新约定，同步更新
+- [ ] **git commit** — 上述文档变更统一提交，message 以 `docs(meta):`、`docs(state):`、`docs(journal):` 开头
+
+**不能跳过的条件：** 即使用户没有明确说"收尾"，只要会话中有阶段推进、重大决策或产出物，也必须执行上述清单。
+
+---
+
 ## 当前可用命令
 
 - `rg --files`：快速列出项目文件。
 - `git status --short --branch`：检查当前分支和本地改动。
 - `python3 -m venv .venv`：创建 Python 虚拟环境。
-
-当前没有 `requirements.txt`、`pyproject.toml`、`package.json` 或 `Makefile`，因此没有正式安装、构建、运行、测试命令。新增依赖清单后，必须同步更新本节。
+- `PYTHONPATH=src python -m pytest tests/ -v`：运行全部测试。
+- `pip install -r requirements.txt`：安装依赖。
 
 ## 完成汇报格式
 
