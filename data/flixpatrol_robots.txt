@@ -1,0 +1,26 @@
+
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: Claude-Web
+User-agent: meta-externalagent
+User-agent: SEOkicks
+User-agent: SEOkicks-Robot
+User-agent: YandexMobileBot
+User-agent: YandexBot
+User-agent: Amazonbot
+User-agent: PerplexityBot
+Disallow: /
+
+User-agent: AhrefsBot
+User-agent: PetalBot
+User-agent: SemrushBot
+User-agent: SeekportBot
+User-agent: MJ12bot
+Crawl-delay: 10
+
+User-agent: Bingbot
+Crawl-delay: 5
+
+User-agent: *
+Allow: /
+
