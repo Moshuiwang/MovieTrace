@@ -6,8 +6,8 @@
 
 ---
 
-**当前阶段：** Phase 0+（FlixPatrol 验证）→ Phase 1（V1 MVP）  
-**最后更新：** 2026-05-10 by Claude Code (Opus 4.7)
+**当前阶段：** Phase 1（V1 MVP 开发）  
+**最后更新：** 2026-05-10 by Claude Code (Sonnet 4.6)
 
 ---
 
