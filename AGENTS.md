@@ -204,13 +204,54 @@
 
 ---
 
-## 当前可用命令
+## 开发环境与常用命令
 
-- `rg --files`：快速列出项目文件。
-- `git status --short --branch`：检查当前分支和本地改动。
-- `python3 -m venv .venv`：创建 Python 虚拟环境。
-- `PYTHONPATH=src python -m pytest tests/ -v`：运行全部测试。
-- `pip install -r requirements.txt`：安装依赖。
+```bash
+# 创建并激活虚拟环境
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 运行全部测试（项目使用 src layout，必须加 PYTHONPATH）
+PYTHONPATH=src python -m pytest tests/ -v
+
+# 初始化 / 重置数据库
+PYTHONPATH=src python -c "from movietrace.db.schema import init_database; init_database()"
+
+# 查看数据库 schema
+sqlite3 data/movietrace.db ".schema"
+
+# 检查 git 状态
+git status --short --branch
+```
+
+当前依赖：`beautifulsoup4`（FlixPatrol 解析器）、`pytest`（测试）。
+
+**TMDb Bearer Token：** 从 `/tmp/movietrace_phase0_secrets.json` 读取（`tmdb.api_read_access_token`）。参考 `scripts/sup_c_flixpatrol_matching.py` 中的 `_load_bearer_token()` 模式。
+
+---
+
+## 故障排查
+
+**测试失败：**
+1. 确认 `.venv` 已激活，依赖已安装
+2. 命令必须加 `PYTHONPATH=src`（src layout，缺少会报 ModuleNotFoundError）
+3. 加 `-v` 查看完整错误
+4. 测试失败时禁止继续开发新功能
+
+**实体匹配率低：**
+1. 检查基线数据质量（100-300 样本，>70% 有效建议）
+2. 查看 TMDb/Trakt/IMDb ID 覆盖率
+3. 在 `tests/test_entity_matching.py` 补充测试用例
+4. 调整置信度阈值前，需在任务中说明原因
+
+**飞书连接超时：**
+1. 检查 `.env` 中 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET`
+2. 检查 `api.feishu.cn` 网络可达性
+3. 检查飞书应用权限配置
+4. 不静默重试，记录每次失败
 
 ## 完成汇报格式
 
