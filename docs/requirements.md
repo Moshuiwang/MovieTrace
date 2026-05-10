@@ -1,25 +1,60 @@
 # MovieTrace 项目需求文档
 
-状态：需求确认版  
-日期：2026-05-07  
+状态：需求确认版 V2（产品方向重新对齐）  
+日期：2026-05-10（产品方向重新对齐）  
+原始日期：2026-05-07  
 仓库：https://github.com/Moshuiwang/MovieTrace
 
 ## 1. 项目背景
 
-MovieTrace 面向视频网站运营场景，用于自动发现英文影视内容的上线、开播、剧集更新和新季发布信息，并结合外部热度、平台权重、内容类型和业务处理状态，生成可审核、可分批、可追踪的更新建议。
+MovieTrace 面向视频网站运营场景，**每日产出"值得更新"的英文影视内容列表**，给运营做人工审核和提交供应商的决策。
 
-项目目标不是直接完成视频资源获取，而是为“应该更新哪些影视内容”提供信息源、排序依据和后续提交供应商的流程记录。
+"值得更新"= 同时满足：
+- **热度高** — 当前正在流行（基于真实平台热度 + 社区热度）
+- **评分好** — 内容质量经过多源验证
+- **平台相关** — Netflix、Prime Video、Disney+、Apple TV+、HBO/Max、Hulu
+- **目标用户契合** — 非洲英文用户口味（V2 阶段引入 LLM 契合度判断）
+
+项目核心定位：
+1. **不是**视频资源获取系统（不下载、不入库）
+2. **不是**纯粹的"新内容更新追踪系统"（不只是发现上线消息）
+3. **是**"全网值得更新内容的发现 + 排序 + 推荐"系统
+
+### 1.1 关键产品决策（2026-05-10）
+
+**核心逻辑调整：** 从"基线对比"改为"独立发现 + 基线标记"。
+
+- **旧逻辑：** TMDb/Trakt → 与飞书基线去重 → 推荐"基线没有"的
+- **问题：** 陷入"先有鸡还是先有蛋"。基线本身不完整 → 永远打不破基线天花板。
+- **新逻辑：** 独立发现"全网热门好评" → 与基线匹配（仅标记，不过滤）→ 输出"新增 + 已有可补充"
+
+**详细路线图见 [product_roadmap.md](product_roadmap.md)**。
 
 ## 2. 业务目标
 
-1. 每日从合规数据源获取影视更新信息。
-2. 重点追踪电视剧，其次追踪电影。
-3. 重点关注英文内容，允许非英文但在英语用户或目标市场中热度高的内容进入候选。
-4. 重点关注 Netflix、Prime Video、Disney+、Apple TV+、HBO/Max、Hulu 的全球或美国上线信息。
-5. 为面向英文用户、尤其是非洲用户的视频网站运营提供更新建议。
-6. 将推荐结果固化到飞书多维表格，并生成飞书文档日报或多日汇总报告。
-7. 支持人工审核、手动分批、提交供应商和上架状态追踪。
-8. 读取现有线上内容飞书表，作为冷启动和业务去重的基线。
+### 2.1 主要业务目标
+
+1. **每日产出"值得更新"内容列表** — 包括两类：
+   - 🆕 新增推荐：飞书基线未有的高热度好评内容
+   - ♻️ 已有可补充：飞书基线已有但热度数据可更新的内容
+2. **多维度信号融合** — 真实平台热度 + 社区热度 + 内容质量评分 + 平台权重
+3. **重点追踪电视剧，其次追踪电影**
+4. **重点关注英文内容**，允许非英文但在英语用户或目标市场中热度高的内容进入候选
+5. **重点关注六大平台**：Netflix、Prime Video、Disney+、Apple TV+、HBO/Max、Hulu，覆盖 Global 和 US
+6. **服务于非洲英文用户运营** — 推荐结果围绕该群体口味做排序（V2 引入 LLM 判断）
+7. **结果沉淀到飞书多维表格** + 生成日报和多日汇总
+8. **支持人工审核、手动分批、提交供应商、上架状态追踪**
+
+### 2.2 飞书基线的角色变更
+
+**从"主过滤逻辑"变为"标记参考"：**
+- ✅ 飞书基线用于：标记候选内容是否已上架（is_in_baseline = true/false）
+- ❌ 飞书基线**不用于**：过滤掉已有内容（已有内容也可能需要补充评分/热度数据）
+
+**业务价值：**
+- 不依赖基线完整性也能发现新内容
+- 已有内容的元数据（评分、热度变化）可持续更新
+- 运营可以决定"已有内容是否值得二次推广"
 
 ## 3. MVP 范围
 
@@ -64,19 +99,46 @@ MovieTrace 面向视频网站运营场景，用于自动发现英文影视内容
 
 ## 5. 数据源
 
-### 5.1 MVP 数据源
+### 5.1 V1 数据源（当前阶段）
 
-| 数据源 | 用途 | 说明 |
-| --- | --- | --- |
-| TMDb API | 影视元数据、外部 ID、趋势、流媒体 provider 信息 | 优先作为标准化和外部 ID 映射数据源之一 |
-| Trakt API | 热门、趋势、剧集日历、观看热度 | 用于补充电视剧更新和热度信号 |
-| OMDb API | IMDb ID、IMDb 评分、投票数、英文标题和季数辅助校验 | 用于内部验证和交叉验证；不替代 TMDb/Trakt 主流程 |
-| Netflix Top 10 | Netflix 官方热榜 | 用于 Netflix 内容热度判断 |
-| IMDb 数据 | 外部 ID、评分、投票数或授权数据 | 不默认抓取 IMDb 页面 |
+V1 只使用免费/低成本数据源，且优先使用官方 API 或合规公开页面。
 
-### 5.2 平台范围
+| 数据源 | 用途 | 类型 | 状态 |
+| --- | --- | --- | --- |
+| **TMDb API** | 元数据、社区热度、评分、流媒体 provider | 官方API（免费） | ✅ 已接入 |
+| **Trakt API** | 用户观看热度、趋势、剧集日历 | 官方API（免费） | ✅ 已接入 |
+| **OMDb API** | IMDb 评分、投票数、英文标题 | 官方API（免费 1000/日） | ✅ 已接入 |
+| **FlixPatrol** | **真实平台热度（Netflix Top 10、Prime Charts、Disney+ Top、Apple TV+ Top、HBO Max Top、Hulu Top）** | 合规公开页面 | 🆕 V1 待接入 |
 
-MVP 覆盖以下流媒体平台：
+**FlixPatrol 的关键价值：**
+
+FlixPatrol（https://flixpatrol.com/）是行业内事实上的"流媒体平台 TOP 10 聚合源"，已经聚合了 Netflix、Prime Video、Disney+、Apple TV+、HBO Max、Hulu 等所有主流平台的官方排行榜。
+
+- ✅ 弥补"TMDb/Trakt 是社区热度，缺真实平台热度"的核心短板
+- ✅ 公开页面，合规可访问
+- ✅ 按地区（Global/US/各国）和按平台细分
+- ⚠️ 需以礼貌频率访问，加入缓存避免高频抓取
+- ⚠️ 商业生产前需审视服务条款
+
+### 5.2 V2 候选数据源（下一阶段，详见 product_roadmap.md）
+
+V2 在 V1 上线运营一段时间后启动，根据实际运营反馈再决定具体引入哪些。
+
+| 数据源 | 用途 | 类型 | 优先级 |
+| --- | --- | --- | --- |
+| **LLM API（Claude/GPT）** | 用户契合度判断、推荐文案、多维评估 | 付费按token | ⭐⭐⭐ |
+| Rotten Tomatoes | 专业评分（Tomatometer + Audience Score） | 爬虫/付费API | ⭐⭐ |
+| Metacritic | 严格的专业评分 | 爬虫/付费API | ⭐⭐ |
+| Watchmode API | episode级流媒体追踪 | $99-499/月 | ⭐ |
+| IMDb Pro Datasets | 商业级 popularity meter | $50+/月 | ⭐ |
+| JustWatch Partner API | 跨平台可用性 | 需企业合作 | ⭐ |
+| Reddit / Twitter | 社交讨论热度 | 爬虫/付费API | ⭐ |
+| YouTube API | 预告片观看数据（预热信号） | 免费配额 | ⭐ |
+| Letterboxd | 影迷深度评价 | 爬虫 | ⭐ |
+
+### 5.3 平台范围
+
+V1 覆盖以下流媒体平台：
 
 - Netflix
 - Prime Video
@@ -85,36 +147,77 @@ MVP 覆盖以下流媒体平台：
 - HBO/Max
 - Hulu
 
-### 5.3 地区范围
+### 5.4 地区范围
 
-MVP 只关注：
+V1 只关注：
 
 - Global
 - US
 
-不做非洲各国家/地区的逐区上线追踪。非洲用户相关性仅作为推荐排序因素，主要基于语言、全球热度、美国/国际传播热度和内容类型判断。
+不做非洲各国家/地区的逐区上线追踪。非洲用户相关性在 V2 引入 LLM 判断后实现。
 
 ## 6. 核心业务流程
 
+V2 的产品方向调整后，业务流程分为两条独立路径，最终汇合到推荐表。
+
+### 6.1 流程图
+
 ```text
-读取现有线上内容飞书表或完整节目库导出
--> 写入本地数据库，建立已上架内容基线
--> 冷启动追赶或每日增量采集
--> 获取候选内容更新记录
--> 保留原始记录
--> 标准化影视实体
--> 生成内容主键和内容更新主键
--> 内容更新去重
--> 计算 hot_score 和 priority
--> 结合业务状态做推荐过滤
--> 写入本地数据库内容更新表
--> 可选同步到飞书多维表格推荐更新表
--> 生成飞书文档日报或多日汇总
--> 人工审核
--> 已采纳内容加入手动批次
--> 提交供应商
--> 更新履约状态
+                    ┌─────────────────────────────────┐
+                    │    路径A: 全网热门好评发现         │
+                    │  (V1 核心，独立于飞书基线运行)     │
+                    └─────────────────────────────────┘
+                                 ↓
+            FlixPatrol(平台热度) + TMDb/Trakt(社区热度) + OMDb(IMDb评分)
+                                 ↓
+                    多源合并去重(by external_id)
+                                 ↓
+                    过滤(rating>=7.0, vote_count>=100)
+                                 ↓
+                    综合评分 hot_score(融合多源信号)
+                                 ↓
+                    priority 映射(P0/P1/P2/P3)
+
+
+                    ┌─────────────────────────────────┐
+                    │    路径B: 飞书基线匹配标记         │
+                    │  (仅用于标记 is_in_baseline)       │
+                    └─────────────────────────────────┘
+                                 ↓
+                    读取飞书线上内容基线表(855条)
+                                 ↓
+                    本地 SQLite 维护 baseline_items
+                                 ↓
+                    实体匹配 → external_ids 映射
+
+
+                    ┌─────────────────────────────────┐
+                    │       路径汇合: 候选合并标记       │
+                    └─────────────────────────────────┘
+                                 ↓
+            候选 + 基线匹配 → 标记 is_in_baseline = true / false
+                                 ↓
+                    输出分类:
+                    🆕 新增推荐 (is_in_baseline=false)
+                    ♻️ 已有可补充 (is_in_baseline=true)
+                    ⚠️ 待人工确认 (低置信度匹配)
+                                 ↓
+                    每日 Markdown 日报
+                                 ↓
+                    写入飞书多维表格推荐更新表
+                                 ↓
+                    人工审核 → 批次 → 供应商 → 上架追踪
 ```
+
+### 6.2 关键变化（与原版对比）
+
+| 项目 | 旧版 | 新版（V1） |
+|------|------|-----------|
+| 主发现路径 | 基线对比新更新 | 独立全网热门好评发现 |
+| 飞书基线作用 | 主过滤逻辑 | 仅标记 is_in_baseline |
+| 数据源主力 | TMDb/Trakt 候选 | FlixPatrol + TMDb + Trakt + OMDb |
+| 推荐输出 | 单一"新内容"列表 | 三类（新增/已有可补充/待确认） |
+| 解决的核心问题 | 发现新上线 | 突破基线天花板，全网值得更新 |
 
 ## 7. 运行模式
 
@@ -257,43 +360,59 @@ content_update_id = canonical_item_id + update_type
 
 ## 10. 热度与优先级
 
-### 10.1 热度来源
+### 10.1 V1 热度来源
 
-MVP 使用以下热度信号：
+| 来源 | 信号 | 维度 |
+| --- | --- | --- |
+| **FlixPatrol** | Netflix Top 10、Prime Charts、Disney+ Top、Apple TV+ Top、HBO Max Top、Hulu Top | **真实平台热度** |
+| TMDb | trending(day/week)、popular、vote_average、vote_count、watch provider | 社区热度+评分 |
+| Trakt | trending、popular、watched、collected、calendar/new episode | 影迷社区热度 |
+| OMDb / IMDb | imdb_rating、imdb_votes | 内容质量 |
 
-| 来源 | 信号 |
-| --- | --- |
-| TMDb | trending、popular、vote_average、vote_count、watch provider |
-| Trakt | trending、popular、watched、collected、calendar/new episode |
-| Netflix Top 10 | 全球榜、国家榜，优先使用 Global 和 US |
-| IMDb | 评分、投票数或授权可用热度数据 |
+**信号维度对比（重要洞察）：**
+- TMDb / Trakt = 社区热度（影视迷为主）— 经常背离大众
+- **FlixPatrol = 真实平台热度（大众用户）— V1 关键补充**
+- IMDb 评分 = 长期质量信号（不是热度）
+- 多维度交叉验证 > 单一来源排序
 
-### 10.2 hot_score 初版规则
+### 10.2 V1 hot_score 计算规则
 
-`hot_score` 使用 0-100 分，初版采用透明、可配置的规则，不使用不可解释的黑盒 AI 分数。
+`hot_score` 使用 0-100 分，采用透明可配置的规则，不使用黑盒 AI 分数。
 
 | 因素 | 分值 | 说明 |
 | --- | ---: | --- |
-| 外部热度 | 40 | 榜单、趋势、评分、投票数、观看热度 |
-| 更新类型 | 20 | 新季、新剧开播、新增单集优先 |
-| 内容类型 | 10 | 电视剧高于电影 |
-| 平台来源权重 | 10 | Netflix、Prime Video 等重点平台作为来源或热度证据时更高 |
-| 语言和目标用户相关性 | 10 | 英文内容优先，非英文热门内容可进入候选 |
-| 新鲜度 | 10 | 最近上线或即将上线内容优先 |
+| **平台真实热度（FlixPatrol）** | **30** | **V1 核心信号，进入平台 Top 10 大幅加权** |
+| TMDb 社区热度 | 15 | trending/popularity 排名 |
+| Trakt 社区热度 | 10 | trending/popular 信号 |
+| TMDb 评分 | 10 | vote_average × log(vote_count) |
+| IMDb 评分 | 10 | imdb_rating × log(imdb_votes) |
+| 平台来源权重 | 10 | Netflix、Prime Video 等重点平台加权 |
+| 内容类型 | 5 | 电视剧高于电影 |
+| 新鲜度 | 5 | 最近 90 天内上线加分 |
+| 语言相关性 | 5 | 英文优先，非英文高热度也可进入 |
 
 计算公式：
 
 ```text
-hot_score =
-  external_heat_score
-+ update_type_score
-+ content_type_score
-+ platform_source_score
-+ audience_relevance_score
-+ freshness_score
+hot_score = 
+    flixpatrol_score * 0.30
+  + tmdb_popularity_score * 0.15  
+  + trakt_signal_score * 0.10
+  + tmdb_rating_score * 0.10
+  + imdb_rating_score * 0.10
+  + platform_weight_score * 0.10
+  + content_type_score * 0.05
+  + freshness_score * 0.05
+  + language_relevance_score * 0.05
 ```
 
 所有权重必须可在配置文件中调整。
+
+**V2 新增因素（产品迭代时启用，详见 product_roadmap.md）：**
+- LLM 用户契合度评分（替代 language_relevance）
+- Rotten Tomatoes 评分聚合
+- Metacritic 评分聚合
+- 时序预测信号（即将爆款）
 
 ### 10.3 priority 映射
 
@@ -304,13 +423,13 @@ hot_score =
 | P2 | 50-69 | 可选提交 |
 | P3 | < 50 | 低优先级或仅记录 |
 
-AI 推荐理由必须引用可解释依据，例如：
+推荐理由必须引用可解释依据，例如：
 
-- 进入 Netflix Global Top 10。
-- TMDb trending 排名靠前。
-- Trakt 观看热度上升。
-- 新季发布且为英文剧集。
-- 电视剧优先级高于普通电影上线。
+- 进入 FlixPatrol Netflix Global Top 10（排名 #3）。
+- TMDb trending 排名靠前（popularity 95.6）。
+- Trakt 观看热度本周上升 30%。
+- IMDb 评分 8.2 / 投票数 1.2万。
+- 多源交叉验证一致（FlixPatrol + TMDb + IMDb 都 high）。
 
 ## 11. 去重规则
 
@@ -753,6 +872,65 @@ AI 推荐理由必须引用可解释依据，例如：
 5. 暂无资源内容默认不再重复推荐，除非人工改回待处理。
 6. 状态变更必须记录最后更新时间。
 
+### R11. 全网热门好评内容发现（V1 核心新增需求）
+
+输入：
+
+- 当前日期。
+- 平台范围（Netflix、Prime Video、Disney+、Apple TV+、HBO Max、Hulu）。
+- 地区范围（Global、US）。
+- 评分阈值（默认 imdb_rating >= 7.0 或 tmdb_rating >= 7.0）。
+- 投票数阈值（默认 vote_count >= 100）。
+- TopN 配置（默认 50）。
+- 数据源：FlixPatrol、TMDb、Trakt、OMDb。
+
+输出：
+
+- 全网热门好评候选列表（已排序）。
+- 每条候选的多源热度依据。
+- 每条候选与飞书基线的匹配状态（is_in_baseline）。
+- 综合评分 hot_score 和 priority。
+- discovery_source 标记（new_release、global_hot、both）。
+
+验收标准：
+
+1. 每日运行一次能输出"全网值得更新"内容列表。
+2. 至少使用 4 个数据源（FlixPatrol + TMDb + Trakt + OMDb）。
+3. FlixPatrol 数据来自合规公开页面，加缓存避免高频访问。
+4. 候选合并按 external_id 去重（tmdb_id 优先，imdb_id 次之）。
+5. 每条候选必须能追溯到至少一个数据源的具体证据。
+6. 输出分为三类：新增推荐、已有可补充、待人工确认。
+7. 不依赖飞书基线完整性也能产出推荐。
+8. 飞书基线仅用于标记（is_in_baseline），不参与过滤。
+9. hot_score 综合评分必须包含 FlixPatrol 平台热度因素（权重 30%）。
+10. 重复运行同一日不重复写入相同 content_update_id。
+11. 单一数据源失败不影响其他数据源继续运行。
+
+### R12. FlixPatrol 数据接入（V1 关键依赖）
+
+输入：
+
+- FlixPatrol 公开页面 URL（按平台和地区）。
+- 礼貌访问频率配置（默认每页 >= 2 秒间隔）。
+- 缓存有效期（默认 24 小时）。
+
+输出：
+
+- 各平台 Top 10 内容榜单（按地区）。
+- 每条记录的标题、外部 ID（如有）、上榜日期、排名。
+- 缓存到本地 SQLite 的 `flixpatrol_charts` 表。
+
+验收标准：
+
+1. 能稳定获取 Netflix Global Top 10、US Top 10。
+2. 能稳定获取 Prime Video、Disney+、Apple TV+、HBO Max、Hulu 的 Top 列表（如可用）。
+3. 数据缓存避免高频抓取（默认 24 小时缓存）。
+4. 单次失败有重试机制（默认 3 次重试，指数退避）。
+5. 失败时记录详细日志，不影响其他数据源。
+6. 能与 TMDb/Trakt 候选通过标题+年份做匹配。
+7. 不存储 FlixPatrol 原始 HTML，只存解析后的结构化数据。
+8. 接入前完成可访问性、解析稳定性、合规性的验证（详见 phase0_supplement.md）。
+
 ## 15. 非功能需求
 
 ### 15.1 可验证性
@@ -791,17 +969,42 @@ AI 推荐理由必须引用可解释依据，例如：
 2. 配置文件应区分示例配置和本地私密配置。
 3. 日志不得输出完整密钥。
 
-## 16. 后续可扩展方向
+## 16. V2 扩展方向（产品迭代时启动）
 
-- 增加 Google Trends 或社交媒体趋势。
-- 增加非洲重点国家/地区可看性追踪。
-- 增加供应商接口自动提交。
-- 增加后台页面。
-- 增加 AI 对历史上架效果的反馈学习。
-- 增加多供应商管理。
+详细的 V2 路线图见 [product_roadmap.md](product_roadmap.md)，以下为概要：
+
+### 16.1 高优先级 V2 方向
+
+| 方向 | 价值 | 备注 |
+|------|------|------|
+| **LLM 用户契合度判断** | ⭐⭐⭐ | 解决"非洲英文用户喜欢什么"的判断 |
+| **多 Agent 推理框架** | ⭐⭐ | 把推荐变成"评审委员会"决策 |
+| **Rotten Tomatoes + Metacritic** | ⭐⭐ | 多源评分交叉验证 |
+
+### 16.2 中等优先级 V2 方向
+
+- Watchmode API（episode级流媒体追踪）
+- IMDb Pro Datasets（商业级popularity meter）
+- 时序预测（即将爆款内容发现）
+- Reddit / Twitter 社交信号
+- YouTube 预告片数据（预热信号）
+
+### 16.3 长期方向
+
+- 增加非洲重点国家/地区可看性追踪
+- 增加供应商接口自动提交
+- 增加后台页面
+- 增加 AI 对历史上架效果的反馈学习
+- 增加多供应商管理
+
+**V2 启动条件：**
+- V1 已稳定运行至少 1-2 个月
+- 运营反馈了明确的需求短板
+- 有具体业务证据支撑 V2 投入
 
 ## 17. 参考资料
 
+- **FlixPatrol（V1 关键数据源）**：https://flixpatrol.com/
 - IMDb 数据使用说明：https://help.imdb.com/article/imdb/general-information/can-i-use-imdb-data-in-my-software/G5JTRESSHJBBHTGX
 - IMDb 非商业数据集：https://developer.imdb.com/non-commercial-datasets/
 - TMDb API 文档：https://developer.themoviedb.org/docs
