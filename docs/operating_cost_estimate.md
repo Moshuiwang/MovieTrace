@@ -169,7 +169,35 @@ Lark Base 公开价格：
 | IMDb ID 辅助字段 | ¥0 |
 | IMDb rating/votes/meters 商业生产 | 未公开，需授权 |
 
-### 3.4 Netflix Top 10
+### 3.4 OMDb
+
+成本：
+
+- 免费 key：官方页面标注 1,000 daily limit。
+- Patreon / 捐赠支持：可选，Poster API 仅 patron 可用。
+
+对本项目：
+
+- 适合 Phase 0 / MVP 内部验证，补 IMDb ID、英文标题、IMDb rating、votes 和 totalSeasons。
+- 不适合作为 TMDb / Trakt 的替代主数据源。
+- 官方页面标注内容许可为 CC BY-NC 4.0，商业生产使用前需要确认授权边界。
+
+成本估算：
+
+| 用途 | 成本 |
+| --- | ---: |
+| 内部验证和低频交叉验证 | ¥0 |
+| 更高额度或海报能力 | Patreon / 捐赠，按实际选择 |
+| 商业生产长期依赖 rating/votes | 需确认授权 |
+
+建议：
+
+- Phase 0 纳入 API 连通性和字段可用性验证。
+- 免费额度下必须缓存响应，避免重复查询。
+- 不把 OMDb API key 写入 GitHub。
+- 若后续生产依赖 OMDb rating/votes，应把授权确认加入 Go/No-Go。
+
+### 3.5 Netflix Top 10
 
 成本：¥0。
 
@@ -179,7 +207,7 @@ Lark Base 公开价格：
 - 适合做热度信号，不适合做完整更新源。
 - 应低频读取，例如每周一次。
 
-### 3.5 Watchmode / JustWatch
+### 3.6 Watchmode / JustWatch
 
 这类是精确流媒体 availability 的商业数据源。如果你需要知道某个 movie/season/episode 在 Netflix、Prime Video、Disney+ 等平台是否可看，它们比 TMDb/Trakt 更合适。
 

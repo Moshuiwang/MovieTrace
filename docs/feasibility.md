@@ -154,7 +154,50 @@ MVP 建议：
 - [IMDb Non-Commercial Datasets](https://developer.imdb.com/non-commercial-datasets/)
 - [IMDb Developer](https://developer.imdb.com/)
 
-### 2.4 Netflix Top 10
+### 2.4 OMDb
+
+可用能力：
+
+- 通过 IMDb ID 查询标题、年份、类型、IMDb rating、IMDb votes、runtime、genre、country、language 等字段。
+- 通过标题搜索返回 IMDb ID 和基础元数据。
+- 支持 series 的 `totalSeasons` 字段，可作为 TV 实体辅助校验。
+- 对英文 IMDb 标题检索效果较好，适合作为 TMDb / Trakt 匹配后的交叉验证来源。
+
+限制和风险：
+
+1. 官方免费 key 标注为每日 1,000 次请求限制。
+2. OMDb 页面说明内容采用 CC BY-NC 4.0 许可；商业生产使用需要单独确认授权边界。
+3. Poster API 仅 patron 可用，MVP 不应依赖海报能力。
+4. 对原始外语标题覆盖不稳定。例如 `La casa de papel`、`O Rio do Desejo` 这类原始标题不一定能直接命中主实体。
+5. OMDb 不是 IMDb 官方 API，不能等同于 IMDb 商业授权。
+
+可行性判断：
+
+| 用途 | 结论 |
+| --- | --- |
+| IMDb ID 补充 | 可行 |
+| 英文标题交叉验证 | 可行 |
+| IMDb rating / votes 内部验证 | 可行 |
+| 原始外语标题匹配 | 不稳定 |
+| 替代 TMDb / Trakt | 不建议 |
+| 商业生产长期依赖 | 需授权确认 |
+
+MVP 建议：
+
+- Phase 0 先做 OMDb API 连通性和字段可用性验证。
+- 只作为 TMDb / Trakt 实体匹配的补充验证源，不作为主实体源。
+- 优先通过已有 IMDb ID 查询详情；标题搜索仅作为辅助。
+- 所有 OMDb 响应进入本地缓存，避免重复请求。
+- 不提交 OMDb API key；通过 `.env` 或本地 secrets 配置。
+- 生产使用前确认 OMDb 授权边界，尤其是 rating / votes 是否可用于商业运营决策。
+
+参考：
+
+- [OMDb API](https://www.omdbapi.com/)
+- [OMDb API Key](https://www.omdbapi.com/apikey.aspx)
+- [Creative Commons BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)
+
+### 2.5 Netflix Top 10
 
 可用能力：
 
@@ -188,7 +231,7 @@ MVP 建议：
 - [Netflix Top 10](https://www.netflix.com/tudum/top10)
 - [Netflix Top 10 methodology](https://about.netflix.com/en/news/new-top-10-on-netflix)
 
-### 2.5 Watchmode / JustWatch 等商业流媒体可用性数据源
+### 2.6 Watchmode / JustWatch 等商业流媒体可用性数据源
 
 如果项目后续需要高准确度判断“某一季、某一集在哪个流媒体平台可看”，TMDb/Trakt 可能不够。
 

@@ -70,6 +70,7 @@ MovieTrace 面向视频网站运营场景，用于自动发现英文影视内容
 | --- | --- | --- |
 | TMDb API | 影视元数据、外部 ID、趋势、流媒体 provider 信息 | 优先作为标准化和外部 ID 映射数据源之一 |
 | Trakt API | 热门、趋势、剧集日历、观看热度 | 用于补充电视剧更新和热度信号 |
+| OMDb API | IMDb ID、IMDb 评分、投票数、英文标题和季数辅助校验 | 用于内部验证和交叉验证；不替代 TMDb/Trakt 主流程 |
 | Netflix Top 10 | Netflix 官方热榜 | 用于 Netflix 内容热度判断 |
 | IMDb 数据 | 外部 ID、评分、投票数或授权数据 | 不默认抓取 IMDb 页面 |
 

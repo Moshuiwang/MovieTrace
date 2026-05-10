@@ -381,6 +381,7 @@ Phase 4 不增加太多新功能，重点是稳定和可恢复。
 | 数据源 | 解决问题 | 触发条件 |
 | --- | --- | --- |
 | Netflix Top 10 | Netflix 热度增强 | 需要更强 Netflix 热度证据 |
+| OMDb | IMDb ID、英文标题、IMDb rating/votes 交叉验证 | Phase 0 证明对匹配和热度判断有增益，且授权边界可接受 |
 | Watchmode | episode 级 streaming availability | TMDb/Trakt 平台可用性漏报明显 |
 | JustWatch Partner API | 平台 offers 和 availability | 能取得商务合作 |
 | IMDb 商业数据 | IMDb rating、votes、meters | 业务确认 IMDb 热度不可替代 |
@@ -391,8 +392,9 @@ Phase 4 不增加太多新功能，重点是稳定和可恢复。
 1. 不抓 IMDb 页面。
 2. 不抓需要登录或绕过反爬的流媒体页面。
 3. 不把免费 IMDb 非商业数据集用于商业生产。
-4. 不一开始购买 Watchmode，除非验证证明必要。
-5. 不做非洲各国家逐区 availability，除非后续业务明确需要。
+4. 不把 OMDb 当成 IMDb 官方商业授权替代品。
+5. 不一开始购买 Watchmode，除非验证证明必要。
+6. 不做非洲各国家逐区 availability，除非后续业务明确需要。
 
 ## 10. 需要用户准备的信息
 
@@ -406,6 +408,7 @@ Phase 4 不增加太多新功能，重点是稳定和可恢复。
 | 测试推荐表 app token / table ID | 验证写入，不污染正式表 |
 | TMDb API Key | 元数据和 ID 映射 |
 | Trakt Client ID / Client Secret | TV 更新和热度 |
+| OMDb API Key | IMDb ID、评分、票数和英文标题交叉验证 |
 | 目标平台开关 | Netflix、Prime Video、Disney+ 等 |
 | 审核人数和飞书版本 | 判断飞书容量和席位成本 |
 | 供应商导出格式样例 | 判断批次表和流转表字段是否够用 |
@@ -422,9 +425,10 @@ Phase 4 不增加太多新功能，重点是稳定和可恢复。
 2. 支持 .env 和 config.example.yaml。
 3. 实现飞书多维表格读取验证。
 4. 实现 TMDb/Trakt API 连通性验证。
-5. 实现线上内容基线抽样和字段质量报告。
-6. 实现最近 30 天 TV dry run 的本地候选报告。
-7. 所有密钥不提交 GitHub。
+5. 实现 OMDb API 连通性和字段可用性验证。
+6. 实现线上内容基线抽样和字段质量报告。
+7. 实现最近 30 天 TV dry run 的本地候选报告。
+8. 所有密钥不提交 GitHub。
 ```
 
 第一版代码不追求完整推荐系统，只追求能跑出验证报告。
@@ -490,3 +494,180 @@ Phase 0 完成后，应基于报告做一次明确决策：
 3. 生成 `reports/full_entity_matching_report.md`。
 4. 人工复核 high 匹配准确率。
 5. 准确率达标后，再写入 `canonical_items` 和 `external_ids`。
+
+## 15. Phase 0 实体匹配人工复核发现
+
+更新日期：2026-05-10
+
+来源报告：
+
+- `reports/full_entity_matching_report.md`
+- `reports/manual_entity_matching_review.md`
+
+已确认问题：
+
+1. `Jack Ryan S01-S04` 被标为 low，但人工确认应匹配 TMDB `Tom Clancy's Jack Ryan`。根因是当前标题相似度对品牌/作者前缀过于敏感。
+2. `La casa de papel S01-S05` 错选 TMDB `Berlin and the Lady with an Ermine`。人工确认正确实体是 TMDB `71446 / Money Heist`，其 `original_name` 为 `La casa de papel`。根因是当前评分忽略 `original_name/original_title`。
+3. `O Rio do DESEJO` 已选中正确 TMDB `764541 / River of Desire`，但被标为 low。人工确认其 `original_title` 为 `O Rio do Desejo`。根因同样是当前评分忽略 `original_title`，导致置信度被低估。
+4. `Wedding Plan S01 interview` 未匹配，但人工确认应为 TMDB `229242 / Wedding Plan`。根因是原始标题含疑似人工录入或文件名残留词 `interview`，属于基线数据质量问题。
+
+OMDb 临时验证发现：
+
+1. OMDb API key 可用，示例 IMDb ID 查询和标题搜索均成功。
+2. `Wedding Plan` 可返回 IMDb `tt28426949`，可辅助确认 TMDB `229242`。
+3. `Jack Ryan` 可返回 `Tom Clancy's Jack Ryan / tt5057054`，可辅助标题别名判断。
+4. `Money Heist` 可返回 IMDb `tt6468322`、`totalSeasons=5`、IMDb rating/votes。
+5. `La casa de papel`、`O Rio do Desejo` 这类原始外语标题不一定能直接命中主实体，因此 OMDb 不能替代 TMDB 的 `original_name/original_title` 匹配。
+6. OMDb 官方页面标注免费 key 为每日 1,000 次限制，内容许可为 CC BY-NC 4.0；商业生产使用前需要确认授权边界。
+
+结论：
+
+- 当前问题不是单纯 API 搜索失败，而是候选评分和标题字段使用不足。
+- 正式编码阶段应把人工复核案例先转成自动化回归测试，再改匹配算法。
+- 在修复前，不应把 low 匹配自动写入 `canonical_items` 或飞书正式表。
+- 对 `interview`、`無英文字幕`、`百度网盘` 这类疑似标题污染，应输出人类预警和修正建议；程序只做低风险、可解释、集中维护的轻量清洗。
+
+### 15.1 后续任务包：改进实体匹配标题别名与原始标题评分
+
+```text
+任务名称：改进实体匹配标题别名与原始标题评分
+任务类型：算法修正 + 回归测试
+当前阶段：任务拆解
+来源任务：Phase 0 全量实体匹配人工复核 CASE-001 / CASE-002 / CASE-003 / CASE-004
+目标：让 Jack Ryan、La casa de papel、O Rio do DESEJO 这类标题别名、品牌前缀、原始标题命中进入正确候选；对 Wedding Plan interview 这类标题污染输出可解释清洗建议和人工预警；评估 OMDb 作为 IMDb 补充与交叉验证源的增益。
+非目标：不写入 canonical_items；不写入 external_ids；不写飞书正式表；不做全量人工修正；不引入新第三方依赖。
+允许修改范围：
+- src/movietrace/pipeline/entity_matching.py
+- src/movietrace/sources/tmdb.py
+- src/movietrace/sources/omdb.py
+- tests/test_entity_matching.py
+- tests/test_source_clients.py
+- reports/manual_entity_matching_review.md
+禁止修改范围：
+- docs/local_database_architecture.md 中已确认的数据表边界
+- 飞书正式表数据
+- API 密钥、.env、secrets 文件
+相关上下文：
+- reports/full_entity_matching_report.md
+- reports/manual_entity_matching_review.md
+输入：
+- baseline_items 中的标题、季数线索和年份线索
+- TMDB / Trakt 搜索候选
+- TMDB 候选中的 name/title、original_name/original_title、media_type、first_air_date/release_date
+- OMDb 候选中的 imdbID、Title、Year、Type、totalSeasons、imdbRating、imdbVotes
+输出：
+- 更准确的 match_candidates 候选选择
+- 更可解释的 confidence 和 reason
+- 针对 CASE-001、CASE-002、CASE-003 和 CASE-004 的自动化回归测试
+- 标题污染类记录的人工预警和清洗建议
+- OMDb 连通性和字段可用性验证记录
+具体要求：
+- TMDB 解析保留 original_name/original_title。
+- 标题相似度同时比较主标题和原始标题，并记录 matched_field。
+- 支持品牌/作者前缀导致的核心标题匹配，例如 Tom Clancy's Jack Ryan -> Jack Ryan。
+- TV 季度条目应结合 media_type、season hint 和年份合理性评分。
+- 对衍生剧、纪录片、翻拍版和地区改编版保持保守，不能仅因关键词包含就升为 high。
+- 对 `interview`、`無英文字幕`、`百度网盘` 等疑似非实体描述词，只做低风险、可解释、集中维护的轻量清洗。
+- 清洗后必须保留原始标题，并输出人工预警，不能静默覆盖基线数据。
+- OMDb 只作为 IMDb ID、英文标题、rating/votes 和 totalSeasons 的补充验证源，不替代 TMDB / Trakt 主匹配逻辑。
+- OMDb API key 不得写入仓库；所有响应应可缓存，避免超过免费额度。
+验收标准：
+- Jack Ryan S01-S04 不再被判为 low。
+- La casa de papel S01-S05 选择 TMDB 71446，而不是 TMDB 308014。
+- O Rio do DESEJO 选择 TMDB 764541，且不再被判为 low。
+- Wedding Plan S01 interview 能给出 TMDB 229242 候选，并输出标题污染预警。
+- OMDb 验证能返回 Wedding Plan、Jack Ryan、Money Heist 的 IMDb ID 和关键字段。
+- reason 明确显示 matched_field 或核心标题命中依据。
+- 既有实体匹配测试继续通过。
+测试要求：
+- 增加 TMDB original_name/original_title 解析测试。
+- 增加 La casa de papel 多候选选择回归测试。
+- 增加 Jack Ryan 品牌/作者前缀回归测试。
+- 增加 O Rio do DESEJO 原始电影标题置信度回归测试。
+- 增加 Wedding Plan interview 标题污染清洗和人工预警回归测试。
+- 增加 OMDb 响应解析测试，覆盖 movie、series、no_match 和 rating/votes 字段。
+验证命令：
+- python3 -m unittest tests/test_source_clients.py tests/test_entity_matching.py
+风险点：
+- 不能把所有包含关系都升为 high，否则容易误匹配衍生剧或翻拍版。
+- original_name 对非拉丁语标题可能被 ASCII 归一化丢失，需要保留原始字段并谨慎比较。
+- 年份规则不能过强，否则可能误伤跨年上线或分季发行的剧集。
+- 标题污染清洗不能写成大量分散硬编码，否则维护成本高且容易误删真实标题词。
+- OMDb 对原始外语标题覆盖不稳定，不能作为外语标题匹配的唯一依据。
+- OMDb 内容许可和商业生产授权边界需要确认，不能默认替代 IMDb 商业数据。
+完成后输出要求：
+- 汇报修改文件。
+- 汇报新增测试覆盖的人工复核案例。
+- 汇报验证命令和结果。
+- 汇报仍需人工复核的剩余风险。
+```
+
+### 15.2 本地 canonical 写入结果
+
+更新日期：2026-05-10
+
+前置条件：
+
+- 已完成人工复核。
+- 已修正 CASE-001 至 CASE-004 对应的实体匹配规则。
+- 已接入 OMDb 作为 TMDB 的跨源匹配建议来源。
+- 已重跑 855 条 `baseline_items` 全量实体匹配 dry run。
+
+执行范围：
+
+- 只提升 `confidence=high` 的 `match_candidates`。
+- 只写本地 SQLite `canonical_items`、`external_ids`，并回写 `baseline_items.canonical_item_id`、`match_status`、`match_confidence`。
+- 不写飞书正式表。
+- 不提升 `medium`、`low`、`no_match`。
+
+跨源匹配规则：
+
+- 每条 baseline 同时输出 TMDB 建议和 OMDb 建议。
+- TMDB / OMDb 类型、标题和年份兼容时，标记 `cross_source=tmdb_omdb_consistent`，可直接过关。
+- 单一来源强确认时，标记 `cross_source=single_strong_tmdb` 或 `cross_source=single_strong_omdb`，可直接过关。
+- TMDB / OMDb 都有结果但类型、年份或标题冲突时，标记 `cross_source=tmdb_omdb_conflict`，保留为 medium，交给人工审核。
+- 当同名或近名实体存在多个版本，且标题和类型足够接近、本地没有显式年份时，优先选择较新的影视实体，标记 `version_disambiguation=newer_entity_preferred`。
+- 本地标题含显式年份时，显式年份优先，不被新近版本规则覆盖。
+- 报告 `reports/full_entity_matching_report.md` 增加 `TMDB / OMDb 全量建议与差异` 表。
+
+执行结果：
+
+| 指标 | 数量 |
+| --- | ---: |
+| baseline_items | 855 |
+| matched candidates | 853 |
+| API errors | 2 |
+| high candidates | 779 |
+| medium candidates | 73 |
+| low candidates | 1 |
+| no_match candidates | 2 |
+| promoted baseline_items | 779 |
+| created canonical_items | 389 |
+| created external_ids | 389 |
+| remaining unmatched baseline_items | 76 |
+
+跨源分布：
+
+| 类型 | 置信度 | 数量 |
+| --- | --- | ---: |
+| TMDB / OMDb consistent | high | 740 |
+| single strong source | high | 39 |
+| TMDB / OMDb conflict | medium | 42 |
+| no cross-source reason | medium | 31 |
+| no cross-source reason | low | 1 |
+| no cross-source reason | no_match | 2 |
+
+当前剩余未提升项：
+
+| match_candidates.confidence | baseline_items.match_status | 数量 |
+| --- | --- | ---: |
+| medium | unmatched | 73 |
+| low | unmatched | 1 |
+| no_match | unmatched | 2 |
+
+后续建议：
+
+1. 对 73 条 medium 做人工复核，重点看 TV season 被 TMDB movie 候选吸走、标题过短或 OMDb 无可用建议的情况。
+2. 单独处理 `Special Ops Lioness S01` 这条 low。
+3. 对 2 条 no_match 重试 API 或人工补外部 ID。
+4. 在进入候选发现前，补充 canonical 写入报告或 SQL 核对脚本，避免误写。
