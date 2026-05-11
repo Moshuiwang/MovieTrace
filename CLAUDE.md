@@ -1,220 +1,156 @@
-# CLAUDE.md
+# CLAUDE.md — MovieTrace 项目宪法
 
-> 本文件供 **Claude Code**（claude.ai/code）读取。  
-> 项目规则、工作流阶段、决策门控的权威来源是 **`AGENTS.md`**，本文件是在此基础上的 Claude 专用补充。
-
----
-
-## 项目概览
-
-**MovieTrace** 是一个生产级内容更新推荐系统，自动发现英语影视内容在流媒体平台（Netflix、Prime Video、Disney+、Apple TV+、HBO/Max、Hulu）的热度变化，标记是否已在飞书基线中，并为运营团队生成可审核的更新推荐清单。
-
-**当前阶段：Phase 1 V1 MVP 开发**  
-Phase 0（实体匹配验证）和 Phase 0+（FlixPatrol 接入验证）均已完成，GO 决策通过。  
-当前目标：实现 V1 完整流水线——FlixPatrol 数据采集、多源评分、飞书写入、CLI 入口。
+> 本文件是 **Claude Code** 入口；Codex 入口是 [`AGENTS.md`](AGENTS.md)。
+> 两者**内容等价**，无需交叉读取——修改时两边同步即可。
+> 当前项目状态权威：[`STATE.md`](STATE.md)（每次会话先读它）。
 
 ---
 
-## 核心架构
+## 角色与核心判断
 
-```
-飞书（基线内容读取）
-       ↓
-SQLite（canonical_items / baseline / external_ids / candidates / cache）
-       ↓
-Pipeline（entity_matching → canonical_promotion → candidate_scoring）
-       ↓
-飞书（推荐表写入 → 人工审核 → 批次追踪）
-```
-
-**关键模块：**
-
-| 模块 | 用途 | 状态 |
-|------|------|------|
-| `src/movietrace/feishu/` | 飞书 API 客户端（基线读取） | Phase 0 已验证 |
-| `src/movietrace/db/schema.py` | SQLite schema + 迁移 + 连接池 | 已初始化 |
-| `src/movietrace/pipeline/baseline_import.py` | 飞书基线导入 SQLite | 已测试 |
-| `src/movietrace/pipeline/entity_matching.py` | 基线 + 候选条目匹配 TMDb/Trakt/IMDb | Phase 0 核心模块 |
-| `src/movietrace/pipeline/canonical_promotion.py` | 去重合并为 canonical 记录 | Phase 0 已验证 |
-| `src/movietrace/sources/` | TMDb / Trakt / OMDb HTTP 客户端 | 核心数据源，不得删除 |
-| `src/movietrace/sources/flixpatrol.py` | FlixPatrol HTML 解析器（`parse_top10_page`） | Phase 0+ 已验证，48 个测试通过，P1-B 直接复用 |
-
-**SQLite 表：**
-- `feishu_import_runs` — 飞书基线导入记录
-- `source_records` — 外部 API 原始响应
-- `baseline_items` — 平台现有内容（来自飞书）
-- `canonical_items` — 去重匹配后的内容（父：片名；子：季 → 集）
-- `external_ids` — TMDb/Trakt/IMDb/OMDb ID 映射
-- `candidates` — 推荐内容候选（待运营审核）
-
-完整 schema 见 `src/movietrace/db/schema.py`。
+- solo 开发者的 AI 协作助手；中文沟通。
+- AI 可提问、整理、建议、实现、验证、复盘；不能替开发者做最终产品判断或架构拍板。
+- 核心原则：不是"AI 能不能写"，而是"现在是否已经清楚到可以让 AI 写"。
 
 ---
 
-## 开发环境
+## 项目一句话
 
-```bash
-# 创建并激活虚拟环境
-python3 -m venv .venv
-source .venv/bin/activate
+**MovieTrace** 自动发现英语影视在 6 个流媒体平台（Netflix / Prime Video / Disney+ / Apple TV+ / HBO·Max / Hulu）的热度变化，标记是否在飞书基线，生成可审核推荐清单。生产商业型严谨度。
 
-# 安装依赖
-pip install -r requirements.txt
-```
+---
 
-当前依赖：`beautifulsoup4`（FlixPatrol 解析器）、`pytest`（测试）。
+## 项目约束
 
-**环境变量（`.env`，不提交）：**
-- `FEISHU_APP_ID` / `FEISHU_APP_SECRET` — 飞书凭证
-- `TMDB_API_KEY` — TMDb API key
-- `TRAKT_CLIENT_ID` — Trakt client ID（可选）
+| 项目项 | 当前约定 |
+| --- | --- |
+| 项目名称 | MovieTrace |
+| 当前阶段 | 见 [`STATE.md`](STATE.md) |
+| 项目类型 | 生产商业型；按较高严谨度推进 |
+| 技术栈 | Python 3.12 + `.venv/` + `.env` + `config.yaml`；依赖见 `requirements.txt` |
+| 框架 | 无；引入任何新依赖前必须有任务包授权 |
+| 数据库 | SQLite（`data/movietrace.db`）；schema 见 `src/movietrace/db/schema.py`；变更须提 migration plan |
+| 目录结构 | `src/movietrace/` 源码 · `tests/` 测试 · `docs/` 文档 · `reports/` 验证报告 · `journal/` 日报 · `scripts/` 验证脚本 |
 
-**TMDb Bearer Token**：从 `/tmp/movietrace_phase0_secrets.json` 读取（`tmdb.api_read_access_token`）。参考 `scripts/sup_c_flixpatrol_matching.py` 中的 `_load_bearer_token()` 模式。
+---
+
+## 启动顺序（每次会话）
+
+1. [`STATE.md`](STATE.md) — 当前阶段、进行中任务、阻塞项
+2. 本文件 12 条规则
+3. `journal/` 最新 1-2 篇日报 — 上个 Agent 做了什么
+4. 任务相关的 `docs/tasks/<task>.md`（如有）
+
+---
+
+## 12 条操作规则
+
+1. 中文沟通。
+2. 先确认当前阶段，再决定行动方式。
+3. 编码前必须有明确任务包（模板见 [docs/tasks/TEMPLATE.md](docs/tasks/TEMPLATE.md)）。
+4. 只修改任务包允许范围内的文件。
+5. 不主动引入新依赖。
+6. 不擅自改变技术栈、目录结构、数据库设计或架构边界。
+7. 不删除已有逻辑来掩盖问题。
+8. 不删除或重写无关文件。
+9. 不隐藏失败或不确定点。
+10. 测试失败时，先解释失败，再修复当前任务范围内的问题。
+11. 没有运行验证命令，不声明完成。
+12. 完成后必须汇报修改内容、验证结果和剩余风险（格式见 [docs/workflow/report-format.md](docs/workflow/report-format.md)）。
+
+---
+
+## 验证规则
+
+- 任务包提供验证命令 → 必须运行并读取输出
+- 任务包没有验证命令 → 应要求补充；纯文档任务可用结构检查、链接检查、人工阅读
+- 核心功能必须有测试或明确人工验证方式
+- Bug 修复必须说明原因，并补充或更新回归验证
+- 测试失败时，禁止继续开发新功能
+- 验证失败时，不能声明完成
+- 失败原因不明时，报告**现象、已排除内容、下一步定位计划**
+
+---
+
+## 失败信号：何时停止编码
+
+出现下列任一情形，停下来澄清，**不要继续敲键盘**：
+
+- AI 开始猜测需求
+- 单次任务跨越多个目标
+- 修改范围无法说清楚
+- 验证命令不存在或无法运行
+- 代码改动无法解释为什么需要
+- 架构、环境或验收用例还没有确认
+- 测试失败但仍想继续开发新功能
+
+---
+
+## 4 个易踩坑
+
+- **`PYTHONPATH=src`** — 运行测试/脚本必须带，src layout。
+- **TMDb Bearer Token** — `/tmp/movietrace_phase0_secrets.json` → `tmdb.api_read_access_token`。
+- **FlixPatrol 合规** — 每 URL 每 24h ≤ 1 次、间隔 ≥ 2 秒、UA = `MovieTraceBot/0.1`、仅内部使用。
+- **飞书失败不静默重试** — 记录时间戳、来源 ID、HTTP 状态，向用户报告（规则 9）。
+
+---
+
+## 按需加载（在做这件事前先读对应文件）
+
+| 准备做的事 | 先读 |
+|-----------|------|
+| 写新任务包 | [docs/tasks/TEMPLATE.md](docs/tasks/TEMPLATE.md) |
+| 会话收尾 | [docs/workflow/session-checklist.md](docs/workflow/session-checklist.md) |
+| 写日报 | [docs/workflow/journal-spec.md](docs/workflow/journal-spec.md) |
+| 完成任务汇报 | [docs/workflow/report-format.md](docs/workflow/report-format.md) |
+| 写新 ADR | [docs/decisions/README.md](docs/decisions/README.md) |
+| 排查故障 | [docs/workflow/troubleshooting.md](docs/workflow/troubleshooting.md) |
+| 新项目/阶段切换/方法论参考 | [docs/workflow/phases.md](docs/workflow/phases.md) |
+| 判断任务是否在 V1 范围内 / 用户请求可能超界 | [SCOPE.md](SCOPE.md) |
 
 ---
 
 ## 常用命令
 
 ```bash
-# 运行全部测试（项目使用 src layout，必须加 PYTHONPATH）
+# 激活环境
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# 全部测试
 PYTHONPATH=src python -m pytest tests/ -v
 
-# 运行单个测试文件
-PYTHONPATH=src python -m pytest tests/test_flixpatrol_parsing.py -v
-
-# 初始化 / 重置数据库
+# 初始化/重置数据库
 PYTHONPATH=src python -c "from movietrace.db.schema import init_database; init_database()"
 
-# 查看数据库 schema
-sqlite3 data/movietrace.db ".schema"
-
-# 检查 git 状态
+# git 状态
 git status --short --branch
 ```
 
 ---
 
-## 接收任务前的检查
+## 仓库与代码风格
 
-**任务包必须包含以下字段，缺一不填，不进入编码：**
-
-| 字段 | 说明 |
-|------|------|
-| 任务名称 | 明确具体 |
-| 任务类型 | feat / fix / docs / refactor / test |
-| 当前阶段 | Phase 1 等 |
-| 来源任务 | 设计文档或任务列表的具体位置 |
-| 目标 | 单一、可判断的结果 |
-| 非目标 | 明确排除什么 |
-| 允许修改范围 | 哪些文件可以动 |
-| 禁止修改范围 | 哪些文件不能动 |
-| 验收标准 | 怎么判断完成 |
-| 验证命令 | 可执行的命令 |
-| 风险点 | 已知不确定因素 |
-
-**编码前确认清单：**
-- ✅ 当前阶段明确
-- ✅ 来源文档存在且可追溯
-- ✅ 目标与非目标无冲突
-- ✅ 修改范围清楚
-- ✅ 验收标准可判断
-- ✅ 验证命令可运行
-- ✅ 风险点已列出
+| 主题 | 约定 |
+| --- | --- |
+| 项目结构 | `docs/` 文档为主 · `src/movietrace/` 源码 · `tests/` 测试 · `scripts/` 验证脚本 |
+| 现有文档 | `STATE.md`、`SCOPE.md`、`docs/requirements.md`、`docs/decisions/`、`docs/tasks/`、`docs/workflow/`、`journal/` |
+| Markdown 风格 | 标题清晰、段落短、列表直接；文件名小写下划线（如 `operating_cost_estimate.md`） |
+| Python 风格 | 4 空格缩进；公共函数类型标注；模块/函数/变量 `snake_case` |
+| 测试命名 | 按行为命名，如 `test_scoring.py`、`test_deduplication.py` |
+| SQL | 必须用 prepared statements，禁止字符串拼接 |
+| 外部 API | 必须记录时间戳和响应状态 |
+| 提交信息 | Conventional Commit，如 `docs: update feasibility plan`、`feat: add scoring configuration` |
+| PR | 摘要 · 关键改动 · 验证结果 · 配置或密钥处理说明 |
+| 安全 | 不提交 API Key、Token、飞书密钥、`.env`；只提交脱敏示例 |
 
 ---
 
-## Phase 状态
+## 外部参考路径（跨项目模板）
 
-**Phase 0：** ✅ 完成 — 实体匹配率 96.6%，GO 决策
-
-**Phase 0+：** ✅ 完成 — FlixPatrol 接入验证（SUP-A~F 全部通过）
-- 解析器：`src/movietrace/sources/flixpatrol.py`（48 个测试，100% 提取率）
-- TMDb 匹配率：118/118 = 100%
-- 合规约束：每 URL 每 24h ≤ 1 次，间隔 ≥ 2 秒，`MovieTraceBot/0.1` UA，仅内部使用
-
-**Phase 1（当前）：** V1 MVP 开发
-- P1-A：实体匹配回归修复（可立即启动）
-- P1-B：FlixPatrol HTTP 客户端 + DB（可立即启动，与 P1-A 并行）
-- P1-C：多源合并 + hot_score 评分
-- P1-D：飞书基线匹配标记
-- P1-E：每日 Markdown 日报
-- P1-F：飞书推荐表写入
-- P1-G：CLI 命令
-- P1-H：集成测试 + 首次运行
-
-任务包尚未写。**写任务包，再开始编码。**
-
----
-
-## 会话结束检查清单
-
-每次会话结束前（用户说"收尾"，或主线工作完成时），**必须依次执行**：
-
-- [ ] **STATE.md** — 更新当前阶段、进行中任务、阻塞项、待用户决策
-- [ ] **日报** — 写 `journal/YYYY-MM-DD_<tool>_<model>.md`（见 AGENTS.md 日报规范）
-- [ ] **ADR** — 如有新决策或状态变更（Proposed→Accepted 等），更新对应文件和 `docs/decisions/README.md`
-- [ ] **CLAUDE.md / AGENTS.md** — 如有阶段变化、新模块、新约定，同步更新
-- [ ] **git commit** — 上述文档变更统一提交，message 以 `docs(meta):`、`docs(state):`、`docs(journal):` 开头
-
-即使用户没有明确说"收尾"，只要会话中有阶段推进、重大决策或产出物，也必须执行上述清单。
-
----
-
-## 代码规范
-
-- 4 空格缩进
-- 公共函数必须有类型标注
-- 命名：`snake_case`（模块、函数、变量）
-- 测试文件按行为命名：`test_entity_matching.py`、`test_flixpatrol_parsing.py`
-- Commit message：Conventional Commit 格式（`feat:`、`fix:`、`docs:` 等）
-- SQL 查询必须用 prepared statements，禁止字符串拼接
-- 外部 API 调用必须记录时间戳和响应状态
-
----
-
-## 常见问题
-
-**Q：能引入新依赖吗？**  
-A：不能主动引入。需要在任务包中提出，说明业务理由，用户授权后才能引入。
-
-**Q：FlixPatrol 怎么用？**  
-A：使用 `src/movietrace/sources/flixpatrol.py` 中的 `parse_top10_page(html, platform, region)`。合规约束见上方 Phase 0+ 节。
-
-**Q：TMDb Token 在哪？**  
-A：`/tmp/movietrace_phase0_secrets.json` → `tmdb.api_read_access_token`。参考 `scripts/sup_c_flixpatrol_matching.py`。
-
-**Q：飞书 API 调用失败怎么办？**  
-A：记录时间戳和来源 ID，向用户报告，不静默重试。遵守 AGENTS.md 规则 9：不隐藏失败。
-
----
-
-## 故障排查
-
-**测试失败：**
-1. 确认 `.venv` 已激活，依赖已安装
-2. 命令必须加 `PYTHONPATH=src`（src layout）
-3. 加 `-v` 查看完整错误
-4. 测试失败时禁止继续开发新功能
-
-**实体匹配率低：**
-1. 检查基线数据质量（100-300 样本，>70% 有效建议）
-2. 查看 TMDb/Trakt/IMDb ID 覆盖率
-3. 在 `tests/test_entity_matching.py` 补充测试用例
-4. 调整置信度阈值前，需在任务中说明原因
-
-**飞书连接超时：**
-1. 检查 `.env` 中 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET`
-2. 检查 `api.feishu.cn` 网络可达性
-3. 检查飞书应用权限配置
-
----
-
-## 相关文档
-
-- `AGENTS.md` — 项目宪法（规则、阶段、决策门控，权威来源）
-- `STATE.md` — 当前项目状态快照（每次会话必读）
-- `SCOPE.md` — V1 范围边界（防止 scope creep）
-- `docs/decisions/` — 架构决策记录（ADR）
-- `docs/tasks/` — 任务包
-- `journal/` — 工作日报
-- `reports/` — 验证报告
+- 提示词模板：`~/ai-dev-workflow/docs/ai/prompt-templates.md`
+- 决策清单：`~/ai-dev-workflow/docs/human/decision-checklists.md`
+- 任务包模板：`~/ai-dev-workflow/docs/templates/task-brief.md`
+- 项目定义模板：`~/ai-dev-workflow/docs/templates/project-brief.md`
+- 方案设计模板：`~/ai-dev-workflow/docs/templates/design-brief.md`
+- 评审复盘模板：`~/ai-dev-workflow/docs/templates/review-retro.md`

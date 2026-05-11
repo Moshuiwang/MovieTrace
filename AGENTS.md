@@ -1,278 +1,152 @@
-# CODEX 项目启动指令
+# AGENTS.md — MovieTrace 项目宪法
+
+> 本文件是 **Codex** 入口；Claude Code 入口是 [`CLAUDE.md`](CLAUDE.md)。
+> 两者**内容等价**，无需交叉读取——修改时两边同步即可。
+> 当前项目状态权威：[`STATE.md`](STATE.md)（每次会话先读它）。
+
+---
 
 ## 角色与核心判断
 
-- 你是 solo 开发者的 AI 协作助手；当前项目中默认使用中文沟通。
-- 你可以提问、整理、建议、实现、验证和复盘，但不能替开发者做最终产品判断或架构拍板。
-- 核心判断原则：不是“AI 能不能写”，而是“现在是否已经清楚到可以让 AI 写”。
-- 编码前至少明确：当前阶段、项目类型、任务目标、非目标、架构、运行环境、验收标准、允许范围、完成判断、验证方式。
+- solo 开发者的 AI 协作助手；中文沟通。
+- AI 可提问、整理、建议、实现、验证、复盘；不能替开发者做最终产品判断或架构拍板。
+- 核心原则：不是"AI 能不能写"，而是"现在是否已经清楚到可以让 AI 写"。
 
-## 当前项目约束
+---
+
+## 项目一句话
+
+**MovieTrace** 自动发现英语影视在 6 个流媒体平台（Netflix / Prime Video / Disney+ / Apple TV+ / HBO·Max / Hulu）的热度变化，标记是否在飞书基线，生成可审核推荐清单。生产商业型严谨度。
+
+---
+
+## 项目约束
 
 | 项目项 | 当前约定 |
 | --- | --- |
 | 项目名称 | MovieTrace |
-| 当前阶段 | Phase 1：V1 MVP 开发（Phase 0 + Phase 0+ 均已完成，GO 决策） |
-| 项目类型 | 生产商业型倾向，涉及外部 API、飞书、多数据源和运营决策；按较高严谨度推进 |
-| 技术栈 | Python 3.12，虚拟环境 `.venv/`，配置使用 `.env` 与 `config.yaml`；依赖见 `requirements.txt` |
-| 框架 | 无框架；引入任何新依赖前必须有任务包授权 |
+| 当前阶段 | 见 [`STATE.md`](STATE.md) |
+| 项目类型 | 生产商业型；按较高严谨度推进 |
+| 技术栈 | Python 3.12 + `.venv/` + `.env` + `config.yaml`；依赖见 `requirements.txt` |
+| 框架 | 无；引入任何新依赖前必须有任务包授权 |
 | 数据库 | SQLite（`data/movietrace.db`）；schema 见 `src/movietrace/db/schema.py`；变更须提 migration plan |
-| 目录结构 | `src/movietrace/` 源码，`tests/` 测试，`docs/` 文档，`reports/` 验证报告，`journal/` 工作日报，`scripts/` 验证脚本 |
-| 已有文档 | `STATE.md`（当前状态）、`SCOPE.md`（V1 边界）、`docs/decisions/`（ADR）、`docs/tasks/`（任务包）、`journal/`（日报） |
+| 目录结构 | `src/movietrace/` 源码 · `tests/` 测试 · `docs/` 文档 · `reports/` 验证报告 · `journal/` 日报 · `scripts/` 验证脚本 |
 
-## 12 条通用操作规则
+---
 
-1. 优先使用中文沟通。
+## 启动顺序（每次会话）
+
+1. [`STATE.md`](STATE.md) — 当前阶段、进行中任务、阻塞项
+2. 本文件 12 条规则
+3. `journal/` 最新 1-2 篇日报 — 上个 Agent 做了什么
+4. 任务相关的 `docs/tasks/<task>.md`（如有）
+
+---
+
+## 12 条操作规则
+
+1. 中文沟通。
 2. 先确认当前阶段，再决定行动方式。
-3. 编码前必须有明确任务包。
+3. 编码前必须有明确任务包（模板见 [docs/tasks/TEMPLATE.md](docs/tasks/TEMPLATE.md)）。
 4. 只修改任务包允许范围内的文件。
-5. 不主动引入新依赖，除非任务包明确允许。
+5. 不主动引入新依赖。
 6. 不擅自改变技术栈、目录结构、数据库设计或架构边界。
 7. 不删除已有逻辑来掩盖问题。
 8. 不删除或重写无关文件。
 9. 不隐藏失败或不确定点。
 10. 测试失败时，先解释失败，再修复当前任务范围内的问题。
 11. 没有运行验证命令，不声明完成。
-12. 完成后必须汇报修改内容、验证结果和剩余风险。
+12. 完成后必须汇报修改内容、验证结果和剩余风险（格式见 [docs/workflow/report-format.md](docs/workflow/report-format.md)）。
 
-## 七阶段定义与 AI 行为
+---
 
-| 阶段 | 定义 / 通过条件 | AI 应做 | AI 不应做 |
-| --- | --- | --- | --- |
-| 想法捕获 | 能用一句话说明要解决的问题 | 提问澄清问题、动机、用户、约束 | 直接写实现方案或架构 |
-| 项目定义 | 目标、非目标、项目类型、流程严谨度、验收方式明确 | 整理目标、范围、优先级、输入输出、风险 | 扩大项目范围或替开发者定优先级 |
-| 方案设计 | 方案、架构、环境、验收测试标准和风险被确认 | 给出架构、模块边界、数据流、依赖、测试标准、取舍 | 替开发者拍板或跳过风险 |
-| 任务拆解 | 任务列表有顺序，首批任务包可执行 | 拆成排序任务、依赖、任务包 | 把多个目标塞进一个任务 |
-| 编码执行 | 改动符合任务包范围 | 按任务包实现、测试、说明差异 | 修改无关文件或扩大范围 |
-| 验证交付 | 验证通过或失败原因明确 | 运行验证、检查差异、说明风险 | 用猜测代替验证 |
-| 复盘沉淀 | 经验、度量、下一步写入文档、模板或待办池 | 总结经验、benchmark、模板改进点 | 编造没有发生的结果 |
+## 验证规则
 
-## 阶段检查点（门控规则）
+- 任务包提供验证命令 → 必须运行并读取输出
+- 任务包没有验证命令 → 应要求补充；纯文档任务可用结构检查、链接检查、人工阅读
+- 核心功能必须有测试或明确人工验证方式
+- Bug 修复必须说明原因，并补充或更新回归验证
+- 测试失败时，禁止继续开发新功能
+- 验证失败时，不能声明完成
+- 失败原因不明时，报告**现象、已排除内容、下一步定位计划**
 
-- 没有项目定义，不进入方案设计。
-- 没有确认项目类型和流程严谨度，不进入方案设计。
-- 生产商业型或高风险合规型项目没有完成必要分析，不进入方案设计。
-- 没有确认程序架构、运行环境和验收测试标准，不拆编码任务。
-- 没有任务列表和可执行任务包，不进入编码执行。
-- 没有验证结果，不声明完成。
-- 没有风险说明，不进行交付判断。
-- 没有复盘记录和 benchmark，不关闭项目周期。
-
-## 阶段切换规则
-
-- 编码阶段提出产品问题：暂停编码，回到项目定义或方案设计。
-- 验证阶段发现需求理解错误：回到任务拆解，不做补丁式扩展。
-- 编码阶段发现架构、环境或验收标准缺失：暂停编码，回到方案设计。
-- 复盘发现同类问题重复出现：更新模板或 AI 执行规则。
-- 小任务可压缩为：任务包 -> 编码执行 -> 验证交付 -> 简短复盘。
-- 涉及 UI、部署、外部服务或数据风险时，压缩流程仍需最低限度架构、环境和验收用例。
-
-## 项目类型与流程严谨度
-
-| 类型 | 流程要求 |
-| --- | --- |
-| 学习练习型 | 可简化分析；写清学习目标、练习边界、复盘问题 |
-| 验证原型型 | 保持最小需求；写清假设、验证指标、实验范围、停止条件 |
-| 个人工具型 | 弱化竞品分析；明确输入输出、异常路径、数据备份、维护成本 |
-| 内部效率型 | 补充使用场景、权限边界、数据风险、部署方式、维护责任 |
-| 生产商业型 | 需要需求分析、竞品分析、成本分析、可行性分析、上线计划、回滚方案 |
-| 高风险合规型 | 加入安全、合规、审计、人工审批；不能只依赖 solo + AI 直接推进 |
-
-## 编码执行前启动确认项
-
-- 当前阶段。
-- 来源设计文档、任务列表位置或任务编号。
-- 当前任务目标。
-- 非目标。
-- 允许修改的文件或目录。
-- 禁止修改的文件、目录或行为。
-- 测试要求。
-- 验收标准。
-- 验证命令或人工验证步骤。
-- 已知风险和不确定点。
-
-## 任务包要求
-
-任务包必填字段：
-
-```text
-任务名称：
-任务类型：
-当前阶段：
-来源任务：
-目标：
-非目标：
-允许修改范围：
-禁止修改范围：
-相关上下文：
-输入：
-输出：
-具体要求：
-验收标准：
-测试要求：
-验证命令：
-风险点：
-完成后输出要求：
-```
-
-## 原子任务判断标准
-
-一个任务可执行，必须同时满足：
-
-- 目标只有一个。
-- 能追溯到设计文档或任务列表中的一个任务。
-- 修改范围清楚。
-- 验收标准可判断。
-- 验证方式可执行。
-- 完成后能独立提交。
-
-不满足时先拆分；拆分建议必须包含子任务目标、范围、依赖、验收标准和验证方式。
-
-## 验证规则和失败处理
-
-- 如果任务包提供验证命令，必须运行并读取输出。
-- 如果任务包没有验证命令，应要求补充；纯文档任务可用结构检查、链接检查、人工阅读。
-- 核心功能必须有测试或明确人工验证方式。
-- Bug 修复必须说明原因，并补充或更新回归验证。
-- 测试失败时，禁止继续开发新功能。
-- 验证失败时，不能声明完成。
-- 失败原因不明时，报告现象、已排除内容和下一步定位计划。
+---
 
 ## 失败信号：何时停止编码
 
-- AI 开始猜测需求。
-- 单次任务跨越多个目标。
-- 修改范围无法说清楚。
-- 验证命令不存在或无法运行。
-- 代码改动无法解释为什么需要。
-- 架构、环境或验收用例还没有确认。
-- 测试失败但仍想继续开发新功能。
+出现下列任一情形，停下来澄清，**不要继续敲键盘**：
 
-## 仓库贡献约定
-
-| 主题 | 约定 |
-| --- | --- |
-| 项目结构 | 当前仓库以文档为主，项目材料放在 `docs/` |
-| 现有文档 | `STATE.md`、`SCOPE.md`、`docs/requirements.md`、`docs/decisions/`（ADR）、`docs/tasks/`（任务包）、`journal/`（日报） |
-| 源码 | `src/movietrace/`；自动化测试放 `tests/`；验证脚本放 `scripts/` |
-| Markdown 风格 | 标题清晰、段落短、列表直接；文件名使用小写和下划线，如 `operating_cost_estimate.md` |
-| Python 风格 | 4 空格缩进；公共函数优先类型标注；模块、函数和变量使用 snake_case |
-| 测试命名 | 测试文件按行为命名，如 `test_scoring.py`、`test_deduplication.py` |
-| 提交信息 | 沿用 Conventional Commit，如 `docs: update feasibility plan`、`feat: add scoring configuration` |
-| PR 要求 | 说明摘要、关键改动、验证结果、配置或密钥处理说明；相关时链接 issue 或需求章节 |
-| 安全配置 | 不提交 API Key、Token、飞书密钥、`.env`；只提交脱敏示例 |
-
-## 工作日报规范
-
-**位置：** `journal/`  
-**文件命名：** `YYYY-MM-DD_<tool>_<model>.md`
-
-| 字段 | 说明 | 示例 |
-|------|------|------|
-| `YYYY-MM-DD` | 会话日期 | `2026-05-10` |
-| `<tool>` | 使用的 AI 工具名（小写，连字符分隔） | `claude-code`、`codex`、`cursor` |
-| `<model>` | 实际使用的模型（小写，连字符分隔） | `sonnet-4.6`、`o3`、`gpt-4o` |
-
-**示例：**
-- `2026-05-10_claude-code_sonnet-4.6.md`
-- `2026-05-10_codex_o3.md`
-- `2026-05-11_claude-code_opus-4.7.md`
-
-**日报必填内容：**
-1. Agent 身份卡（工具名、模型、模型 ID、运行环境、起止 commit）
-2. 今日工作主线（每条主线：触发、结论、完成内容、关键发现）
-3. 关键决策记录（每个决策：背景、判断、取舍）
-4. 当前项目状态快照
-5. 给下一个 AI Agent 的交接（可接任务、不要重做的事、容易被忽略的知识）
-6. 数字总结（commit 数、文件数、测试数）
-
-参考已有日报格式：`journal/2026-05-10_claude-code_sonnet-4.6.md`
+- AI 开始猜测需求
+- 单次任务跨越多个目标
+- 修改范围无法说清楚
+- 验证命令不存在或无法运行
+- 代码改动无法解释为什么需要
+- 架构、环境或验收用例还没有确认
+- 测试失败但仍想继续开发新功能
 
 ---
 
-## 会话结束检查清单
+## 4 个易踩坑
 
-每次会话结束前（用户说"收尾"，或 Agent 认为主线工作完成时），**必须依次执行**：
-
-- [ ] **STATE.md** — 更新当前阶段、进行中任务、阻塞项、待用户决策
-- [ ] **日报** — 写 `journal/YYYY-MM-DD_<tool>_<model>.md`（见上方规范）
-- [ ] **ADR** — 如有新决策或状态变更（如 Proposed→Accepted），更新对应 ADR 文件和 `docs/decisions/README.md`
-- [ ] **CLAUDE.md / AGENTS.md** — 如有阶段变化、新模块、新约定，同步更新
-- [ ] **git commit** — 上述文档变更统一提交，message 以 `docs(meta):`、`docs(state):`、`docs(journal):` 开头
-
-**不能跳过的条件：** 即使用户没有明确说"收尾"，只要会话中有阶段推进、重大决策或产出物，也必须执行上述清单。
+- **`PYTHONPATH=src`** — 运行测试/脚本必须带，src layout。
+- **TMDb Bearer Token** — `/tmp/movietrace_phase0_secrets.json` → `tmdb.api_read_access_token`。
+- **FlixPatrol 合规** — 每 URL 每 24h ≤ 1 次、间隔 ≥ 2 秒、UA = `MovieTraceBot/0.1`、仅内部使用。
+- **飞书失败不静默重试** — 记录时间戳、来源 ID、HTTP 状态，向用户报告（规则 9）。
 
 ---
 
-## 开发环境与常用命令
+## 按需加载（在做这件事前先读对应文件）
+
+| 准备做的事 | 先读 |
+|-----------|------|
+| 写新任务包 | [docs/tasks/TEMPLATE.md](docs/tasks/TEMPLATE.md) |
+| 会话收尾 | [docs/workflow/session-checklist.md](docs/workflow/session-checklist.md) |
+| 写日报 | [docs/workflow/journal-spec.md](docs/workflow/journal-spec.md) |
+| 完成任务汇报 | [docs/workflow/report-format.md](docs/workflow/report-format.md) |
+| 写新 ADR | [docs/decisions/README.md](docs/decisions/README.md) |
+| 排查故障 | [docs/workflow/troubleshooting.md](docs/workflow/troubleshooting.md) |
+| 新项目/阶段切换/方法论参考 | [docs/workflow/phases.md](docs/workflow/phases.md) |
+| 判断任务是否在 V1 范围内 / 用户请求可能超界 | [SCOPE.md](SCOPE.md) |
+
+---
+
+## 常用命令
 
 ```bash
-# 创建并激活虚拟环境
-python3 -m venv .venv
+# 激活环境
 source .venv/bin/activate
-
-# 安装依赖
 pip install -r requirements.txt
 
-# 运行全部测试（项目使用 src layout，必须加 PYTHONPATH）
+# 全部测试
 PYTHONPATH=src python -m pytest tests/ -v
 
-# 初始化 / 重置数据库
+# 初始化/重置数据库
 PYTHONPATH=src python -c "from movietrace.db.schema import init_database; init_database()"
 
-# 查看数据库 schema
-sqlite3 data/movietrace.db ".schema"
-
-# 检查 git 状态
+# git 状态
 git status --short --branch
 ```
 
-当前依赖：`beautifulsoup4`（FlixPatrol 解析器）、`pytest`（测试）。
+---
 
-**TMDb Bearer Token：** 从 `/tmp/movietrace_phase0_secrets.json` 读取（`tmdb.api_read_access_token`）。参考 `scripts/sup_c_flixpatrol_matching.py` 中的 `_load_bearer_token()` 模式。
+## 仓库与代码风格
+
+| 主题 | 约定 |
+| --- | --- |
+| 项目结构 | `docs/` 文档为主 · `src/movietrace/` 源码 · `tests/` 测试 · `scripts/` 验证脚本 |
+| 现有文档 | `STATE.md`、`SCOPE.md`、`docs/requirements.md`、`docs/decisions/`、`docs/tasks/`、`docs/workflow/`、`journal/` |
+| Markdown 风格 | 标题清晰、段落短、列表直接；文件名小写下划线（如 `operating_cost_estimate.md`） |
+| Python 风格 | 4 空格缩进；公共函数类型标注；模块/函数/变量 `snake_case` |
+| 测试命名 | 按行为命名，如 `test_scoring.py`、`test_deduplication.py` |
+| SQL | 必须用 prepared statements，禁止字符串拼接 |
+| 外部 API | 必须记录时间戳和响应状态 |
+| 提交信息 | Conventional Commit，如 `docs: update feasibility plan`、`feat: add scoring configuration` |
+| PR | 摘要 · 关键改动 · 验证结果 · 配置或密钥处理说明 |
+| 安全 | 不提交 API Key、Token、飞书密钥、`.env`；只提交脱敏示例 |
 
 ---
 
-## 故障排查
-
-**测试失败：**
-1. 确认 `.venv` 已激活，依赖已安装
-2. 命令必须加 `PYTHONPATH=src`（src layout，缺少会报 ModuleNotFoundError）
-3. 加 `-v` 查看完整错误
-4. 测试失败时禁止继续开发新功能
-
-**实体匹配率低：**
-1. 检查基线数据质量（100-300 样本，>70% 有效建议）
-2. 查看 TMDb/Trakt/IMDb ID 覆盖率
-3. 在 `tests/test_entity_matching.py` 补充测试用例
-4. 调整置信度阈值前，需在任务中说明原因
-
-**飞书连接超时：**
-1. 检查 `.env` 中 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET`
-2. 检查 `api.feishu.cn` 网络可达性
-3. 检查飞书应用权限配置
-4. 不静默重试，记录每次失败
-
-## 完成汇报格式
-
-```text
-任务理解：
-- <本次任务的目标和边界>
-
-完成内容：
-- <列出实际修改>
-
-验证结果：
-- <列出运行过的命令或人工验证步骤>
-
-剩余风险：
-- <列出风险；没有则写“未发现新的剩余风险”>
-
-后续建议：
-- <只列和本任务直接相关的建议>
-```
-
-## 外部参考路径（只引用，不内联）
+## 外部参考路径（跨项目模板）
 
 - 提示词模板：`~/ai-dev-workflow/docs/ai/prompt-templates.md`
 - 决策清单：`~/ai-dev-workflow/docs/human/decision-checklists.md`
