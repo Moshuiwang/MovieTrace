@@ -6,3 +6,4 @@ data/
 *.sqlite
 *.sqlite3
 *.db
+source_records/
