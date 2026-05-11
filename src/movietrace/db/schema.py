@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 4
 
 
 SCHEMA_SQL = """
@@ -149,7 +149,27 @@ def connect_database(path: str | Path) -> sqlite3.Connection:
     return conn
 
 
+def _apply_migration(conn: sqlite3.Connection, version: int, sql: str) -> None:
+    """Apply a migration if not already recorded."""
+    applied = conn.execute(
+        "select 1 from schema_migrations where version = ?", (version,)
+    ).fetchone()
+    if not applied:
+        conn.executescript(sql)
+        conn.execute(
+            "insert or ignore into schema_migrations(version) values (?)", (version,)
+        )
+
+
+def _load_migration_sql(filename: str) -> str:
+    migrations_dir = Path(__file__).parent / "migrations"
+    return (migrations_dir / filename).read_text()
+
+
 def initialize_database(path: str | Path) -> None:
     with connect_database(path) as conn:
         conn.executescript(SCHEMA_SQL)
+        _apply_migration(conn, 2, _load_migration_sql("002_flixpatrol_top10.sql"))
+        _apply_migration(conn, 3, _load_migration_sql("003_candidates.sql"))
+        _apply_migration(conn, 4, _load_migration_sql("004_candidate_matches.sql"))
         conn.commit()

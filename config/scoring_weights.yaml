@@ -1,0 +1,27 @@
+weights:
+  flixpatrol: 0.30
+  tmdb_popularity: 0.15
+  trakt: 0.10
+  tmdb_rating: 0.10
+  imdb_rating: 0.10
+  platform_weight: 0.10
+  content_type: 0.05
+  freshness: 0.05
+  language: 0.05
+
+priority_thresholds:
+  P0: 85
+  P1: 70
+  P2: 50
+
+platform_weight:
+  netflix: 1.0
+  prime-video: 1.0
+  disney-plus: 0.9
+  hbo-max: 0.85
+  apple-tv-plus: 0.8
+  hulu: 0.8
+
+freshness:
+  full_score_days: 90
+  half_score_days: 180

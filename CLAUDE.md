@@ -120,8 +120,14 @@ pip install -r requirements.txt
 # 全部测试
 PYTHONPATH=src python -m pytest tests/ -v
 
+# 日发现流水线（dry-run）
+PYTHONPATH=src python -m movietrace.cli daily-discover --dry-run
+
+# 基线查询
+PYTHONPATH=src python -m movietrace.cli inspect-baseline
+
 # 初始化/重置数据库
-PYTHONPATH=src python -c "from movietrace.db.schema import init_database; init_database()"
+PYTHONPATH=src python -c "from movietrace.db.schema import initialize_database; initialize_database('data/movietrace.db')"
 
 # git 状态
 git status --short --branch
