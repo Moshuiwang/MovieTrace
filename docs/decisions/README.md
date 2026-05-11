@@ -17,6 +17,7 @@
 | [0003](0003-flixpatrol-as-v1-data-source.md) | V1 引入 FlixPatrol 作为真实平台热度源 | ✅ Accepted | 2026-05-10 |
 | [0004](0004-phase0-medium-no-auto-promotion.md) | Phase 0 不自动升级 26 条电影误标记录 | ✅ Accepted | 2026-05-10 |
 | [0005](0005-sup-a-stdlib-only.md) | SUP-A 任务包仅使用 stdlib，不引入新依赖 | ✅ Accepted | 2026-05-10 |
+| [0006](0006-flixpatrol-api-over-html.md) | P1-B 数据源从 HTML 爬虫切换到付费 API | ✅ Accepted | 2026-05-11 |
 
 ---
 
