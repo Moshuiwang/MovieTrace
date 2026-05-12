@@ -993,8 +993,12 @@ def match_upstream_program(
     conn: sqlite3.Connection,
     upstream_program_id: int,
     tmdb_client: object,
+    detail_client: object | None = None,
 ) -> dict | None:
     """Match a single upstream_program to TMDb and create canonical_item + external_id.
+
+    Uses type-specific search (search_tv for names with S\d\d, search_movie otherwise)
+    and validates the best match via detail endpoint before committing.
 
     Returns a result dict with match details, or None if the program doesn't exist.
     """
@@ -1023,10 +1027,28 @@ def match_upstream_program(
         upstream_program_id, name, content_type, season_number
     )
 
+    # ── Type-specific search ──
     search_results: list[ExternalSearchResult] = []
     api_error: str | None = None
     try:
-        search_results = tmdb_client.search(parsed.query, item)
+        if content_type == "tv":
+            search_results = tmdb_client.search_tv(parsed.query)
+            if not search_results:
+                # Fallback: name has S\d\d but no TV match → try movie search
+                # (handles A库 data quality: movies incorrectly tagged with S01)
+                search_results = tmdb_client.search_movie(parsed.query)
+                if search_results:
+                    content_type = "movie"
+                    content_granularity = "movie"
+                    season_number = None
+        else:
+            search_results = tmdb_client.search_movie(parsed.query)
+    except AttributeError:
+        # Fallback to generic /search/multi for backward compatibility
+        try:
+            search_results = tmdb_client.search(parsed.query, item)
+        except Exception as exc:
+            api_error = f"{type(exc).__name__}: {exc}"
     except Exception as exc:
         api_error = f"{type(exc).__name__}: {exc}"
 
@@ -1070,6 +1092,64 @@ def match_upstream_program(
 
     result = decision.result
     tmdb_id = result.external_id
+
+    # ── Validate via detail endpoint ──
+    if detail_client is not None:
+        try:
+            if content_type == "tv":
+                details = detail_client.get_tv_details(tmdb_id)
+            else:
+                details = detail_client.get_movie_details(tmdb_id)
+            if not details or not details.get("id"):
+                _ensure_quality_issues_table(conn)
+                _record_quality_issue(
+                    conn, upstream_program_id, name,
+                    "entity_matching_invalid_id",
+                    "no_match",
+                    f"TMDb detail returned empty for {content_type}/{tmdb_id}",
+                )
+                return {
+                    "upstream_program_id": upstream_program_id,
+                    "name": name,
+                    "matched": False,
+                    "confidence": "no_match",
+                    "reason": f"detail validation failed for {tmdb_id}",
+                }
+            # Use the detail result's title/type which is authoritative
+            actual_type = details.get("media_type") or (
+                "tv" if details.get("name") and not details.get("title") else "movie"
+            )
+            if content_type == "tv" and "number_of_seasons" not in details:
+                # Not actually a TV show
+                _ensure_quality_issues_table(conn)
+                _record_quality_issue(
+                    conn, upstream_program_id, name,
+                    "entity_matching_wrong_type",
+                    "no_match",
+                    f"Expected TV but detail has no seasons for {tmdb_id}",
+                )
+                return {
+                    "upstream_program_id": upstream_program_id,
+                    "name": name,
+                    "matched": False,
+                    "confidence": "no_match",
+                    "reason": f"detail says {tmdb_id} is not a TV show",
+                }
+        except Exception as exc:
+            _ensure_quality_issues_table(conn)
+            _record_quality_issue(
+                conn, upstream_program_id, name,
+                "entity_matching_detail_error",
+                "no_match",
+                f"Detail API error for {tmdb_id}: {exc}",
+            )
+            return {
+                "upstream_program_id": upstream_program_id,
+                "name": name,
+                "matched": False,
+                "confidence": "no_match",
+                "reason": f"detail API error: {exc}",
+            }
 
     if season_number is not None:
         canonical_item_key = f"tmdb:tv:{tmdb_id}:season:{season_number}"

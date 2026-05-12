@@ -23,7 +23,7 @@ from movietrace.pipeline.entity_matching import (
     _ensure_quality_issues_table,
     match_upstream_program,
 )
-from movietrace.sources.tmdb import TmdbSearchClient
+from movietrace.sources.tmdb import TmdbDetailClient, TmdbSearchClient
 
 
 def load_tmdb_token(secrets_path: str = "/tmp/movietrace_phase0_secrets.json") -> str:
@@ -45,6 +45,7 @@ def main() -> None:
 
     token = load_tmdb_token(args.secrets)
     client = TmdbSearchClient(token)
+    detail_client = TmdbDetailClient(token) if not args.dry_run else None
 
     db_path = args.db
     conn = connect_database(db_path)
@@ -104,7 +105,7 @@ def main() -> None:
             print(f"DRY-RUN type={ctype} season={season}")
             continue
 
-        result = match_upstream_program(conn, upstream_id, client)
+        result = match_upstream_program(conn, upstream_id, client, detail_client)
         stats["api_calls"] += 1
 
         if result is None:

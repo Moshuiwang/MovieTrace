@@ -31,13 +31,45 @@ class TmdbSearchClient:
             return []
         return parse_tmdb_search_results(payload)
 
+    def search_tv(self, query: str) -> list[ExternalSearchResult]:
+        """Search /search/tv — returns only TV results."""
+        payload = get_json(
+            f"{self.base_url}/search/tv",
+            params={"query": query, "include_adult": "false", "language": "en-US"},
+            headers={
+                "Authorization": f"Bearer {self.bearer_token}",
+                "Accept": "application/json",
+            },
+        )
+        if not isinstance(payload, dict):
+            return []
+        return parse_tmdb_search_results(payload, default_media_type="tv")
 
-def parse_tmdb_search_results(payload: dict[str, Any]) -> list[ExternalSearchResult]:
+    def search_movie(self, query: str) -> list[ExternalSearchResult]:
+        """Search /search/movie — returns only movie results."""
+        payload = get_json(
+            f"{self.base_url}/search/movie",
+            params={"query": query, "include_adult": "false", "language": "en-US"},
+            headers={
+                "Authorization": f"Bearer {self.bearer_token}",
+                "Accept": "application/json",
+            },
+        )
+        if not isinstance(payload, dict):
+            return []
+        return parse_tmdb_search_results(payload, default_media_type="movie")
+
+
+def parse_tmdb_search_results(
+    payload: dict[str, Any], default_media_type: str | None = None
+) -> list[ExternalSearchResult]:
+    """Parse TMDb search results. default_media_type is used when items lack media_type
+    (as happens with /search/tv and /search/movie endpoints)."""
     parsed: list[ExternalSearchResult] = []
     for item in payload.get("results") or []:
         if not isinstance(item, dict):
             continue
-        media_type = item.get("media_type")
+        media_type = item.get("media_type") or default_media_type
         if media_type not in {"movie", "tv"}:
             continue
         title = item.get("title") if media_type == "movie" else item.get("name")
@@ -85,6 +117,20 @@ class TmdbDetailClient:
         """GET /tv/{tv_id} — returns raw TMDb response dict."""
         payload = get_json(
             f"{self.base_url}/tv/{tmdb_tv_id}",
+            params={"language": "en-US"},
+            headers={
+                "Authorization": f"Bearer {self.bearer_token}",
+                "Accept": "application/json",
+            },
+        )
+        if isinstance(payload, dict):
+            return payload
+        return {}
+
+    def get_movie_details(self, tmdb_movie_id: str) -> dict:
+        """GET /movie/{movie_id} — returns raw TMDb response dict."""
+        payload = get_json(
+            f"{self.base_url}/movie/{tmdb_movie_id}",
             params={"language": "en-US"},
             headers={
                 "Authorization": f"Bearer {self.bearer_token}",
