@@ -2,7 +2,7 @@
 
 **状态：** 待验证  
 **日期：** 2026-05-10  
-**前置：** [Phase 0 完成报告](../reports/phase0_completion_report.md)、[Go/No-Go 决策](../reports/go_no_go_decision.md)  
+**前置：** [Phase 0 完成报告](../../reports/phase0_completion_report.md)、[Go/No-Go 决策](../../reports/go_no_go_decision.md)  
 **目标：** 验证 FlixPatrol 作为 V1 关键数据源的可行性、合规性和数据质量
 
 ---

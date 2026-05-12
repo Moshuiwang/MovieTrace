@@ -1,5 +1,8 @@
 # MovieTrace Phase 0 → Phase 1 Go/No-Go 决策报告
 
+- [ ] 决策已确认
+
+
 **决策日期：** 2026-05-10  
 **决策人：** Phase 0 验证完成  
 **决策版本：** Final  

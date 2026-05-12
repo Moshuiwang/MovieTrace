@@ -665,7 +665,7 @@ Phase 0+（FlixPatrol 接入验证）
 
 ## 来源任务
 
-- `docs/phase0_supplement.md` § 任务 SUP-C
+- `docs/reference/phase0_supplement.md` § 任务 SUP-C
 - SUP-B 已完成：`data/flixpatrol_parsed_items.json` 就绪
 
 ## 目标

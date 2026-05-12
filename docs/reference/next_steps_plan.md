@@ -3,7 +3,7 @@
 **状态：** 实施规划版 V2（产品方向重新对齐）  
 **日期：** 2026-05-10（V2 重新规划）  
 **原始日期：** 2026-05-08  
-**依据：** [requirements.md](requirements.md)、[product_roadmap.md](product_roadmap.md)、[feasibility.md](feasibility.md)、[operating_cost_estimate.md](operating_cost_estimate.md)
+**依据：** [requirements.md](../requirements.md)、[product_roadmap.md](../product_roadmap.md)、[feasibility.md](feasibility.md)、[operating_cost_estimate.md](operating_cost_estimate.md)
 
 ---
 
@@ -18,7 +18,7 @@
 - 旧逻辑：飞书基线 + TMDb/Trakt → 推荐"基线没有的新更新"
 - 新逻辑：FlixPatrol + TMDb + Trakt + OMDb 独立发现 → 与基线匹配标记 → 输出"新增 + 已有可补充"
 
-详细见 [product_roadmap.md](product_roadmap.md) 第 1 节。
+详细见 [product_roadmap.md](../product_roadmap.md) 第 1 节。
 
 ### 1.2 V1 / V2 划分
 
@@ -76,9 +76,9 @@ Phase 0 已完成的核心验证仍然有效（飞书读取、SQLite、实体匹
 
 ### 3.2 已产出
 
-- `docs/feishu_api_validation_notes.md`
-- `docs/baseline_export_schema.md`
-- `docs/local_database_architecture.md`
+- `docs/notes/feishu_api_validation_notes.md`
+- `docs/reference/baseline_export_schema.md`
+- `docs/reference/local_database_architecture.md`
 - `reports/baseline_quality_report.md`
 - `reports/entity_matching_report.md`
 - `reports/baseline_import_report.md`

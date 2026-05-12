@@ -95,4 +95,4 @@
 - 用户讨论：今日多轮对话（2026-05-10）
 - 关联 ADR：[ADR-0001（飞书基线标记）](0001-feishu-baseline-as-marker-not-filter.md)、[ADR-0003（FlixPatrol）](0003-flixpatrol-as-v1-data-source.md)
 - 文档：[`docs/product_roadmap.md`](../product_roadmap.md) § 2-3、[`SCOPE.md`](../../SCOPE.md)
-- 路线图：[`docs/next_steps_plan.md`](../next_steps_plan.md) § 1
+- 路线图：[`docs/next_steps_plan.md`](../reference/next_steps_plan.md) § 1

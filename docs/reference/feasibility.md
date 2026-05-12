@@ -2,7 +2,7 @@
 
 状态：扩展评估版  
 日期：2026-05-07  
-评估依据：[docs/requirements.md](requirements.md)
+评估依据：[docs/requirements.md](../requirements.md)
 
 ## 1. 总体结论
 

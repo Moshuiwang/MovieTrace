@@ -1,3 +1,5 @@
+> **历史文档，格式已被 [journal-spec.md](../docs/workflow/journal-spec.md) 取代。**
+
 # MovieTrace Phase 0 Day 2 日报
 
 记录时间：2026-05-10 13:22:39 Asia/Shanghai

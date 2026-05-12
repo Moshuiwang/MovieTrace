@@ -1,5 +1,8 @@
 # MovieTrace Phase 1 V1 MVP 完成报告
 
+- [ ] 报告已审阅，可归档
+
+
 **日期：** 2026-05-11
 **执行 Agent：** Claude Code (deepseek-v4-pro)
 **分支：** `main`

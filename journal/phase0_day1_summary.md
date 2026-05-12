@@ -1,3 +1,5 @@
+> **历史文档，格式已被 [journal-spec.md](../docs/workflow/journal-spec.md) 取代。**
+
 # MovieTrace Phase 0 Day 1 总结
 
 日期：2026-05-09  
