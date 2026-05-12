@@ -5,7 +5,7 @@
 
 ---
 
-**最后更新：** 2026-05-12 22:58 +08
+**最后更新：** 2026-05-12 23:29 +08
 **更新人：** Claude Code (DeepSeek V4 Pro) + moshuiwang
 **所在分支：** `main`
 
@@ -101,6 +101,29 @@ P1.5-F（日报模板 + CLI 语义 + 导出）               ✅ export_writer +
 
 ### P1.5-F：报告导出
 - 导出 6 条 content_updates → `reports/recommendations_*.md` + `.json`
+
+### P1.5-E 修复（第二次）
+- **根因**：`/search/tv` 和 `/search/movie` 返回结果不含 `media_type` 字段，被 `parse_tmdb_search_results` 过滤掉
+- **修复**：`parse_tmdb_search_results` 加 `default_media_type` 参数；`match_upstream_program` 改用类型专用搜索 + detail 端点验证 ID 有效性；TV 搜索为空时回退 movie 搜索（处理 A 库错标 S01 的电影）
+- **结果**：35 条错误匹配全部修复，TV 链接率 100%
+
+### 匹配质量增强（第三次）
+- low/medium 置信度均记入 `baseline_quality_issues`
+- 新增 `_check_close_alternatives`：当选中有多候选接近时记录备选项（最多 5 个）
+- 测试验证：Dream（2 个同名电影）、Sly（4 个低 sim 候选无正确答案）正确识别
+
+---
+
+## 生产数据画像（最终）
+
+```
+canonical_items:  903 (TV season 502 · TV series 288 · Movie 113)
+virtual_series:   307 (urgent 84 · low 181 · skip 35 · normal 7)
+content_updates:  6 (new_season)
+external_ids:     upstream 631 · tmdb 458
+TV 链接率:        790/790 = 100%
+测试:             317 passed
+```
 
 ### 生产数据画像
 ```
