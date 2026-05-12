@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """P1.5-C: One-time virtual_series backfill from canonical_items + external_ids.
 
+Two-phase approach to avoid redundant TMDb API calls:
+  Phase 1: Collect unique tmdb_tv_ids → one API call per series → upsert virtual_series
+  Phase 2: Link each canonical_item to its virtual_series + update local_max_season
+
 Usage:
     PYTHONPATH=src python scripts/p1_5_c_backfill_virtual_series.py [--dry-run] [--limit N] [--db path]
 """
@@ -17,11 +21,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from movietrace.db.schema import connect_database
-from movietrace.pipeline.entity_matching import _ensure_quality_issues_table, _record_quality_issue
+from movietrace.pipeline.entity_matching import _ensure_quality_issues_table
 from movietrace.pipeline.virtual_series import (
-    find_or_create_virtual_series_for_canonical_item,
+    _extract_tmdb_tv_id_from_key,
     link_to_virtual_series,
     update_local_max_season,
+    upsert_virtual_series,
 )
 from movietrace.sources.tmdb import TmdbDetailClient
 
@@ -34,19 +39,49 @@ def load_tmdb_token(secrets_path: str = "/tmp/movietrace_phase0_secrets.json") -
     return token
 
 
-def _has_low_confidence(conn, upstream_program_id: int) -> bool:
-    row = conn.execute(
-        """select 1 from baseline_quality_issues
-           where upstream_program_id = ?
-             and issue_type = 'entity_matching_low_confidence'""",
-        (upstream_program_id,),
-    ).fetchone()
-    return row is not None
+def _collect_unique_tmdb_tv_ids(conn, limit: int | None) -> dict[str, list[tuple]]:
+    """Collect all unlinked TV canonical_items, grouped by tmdb_tv_id.
+
+    Returns {tmdb_tv_id: [(ci_id, ci_key, ci_title, season_number), ...]}
+    """
+    rows = conn.execute(
+        """select ci.id, ci.canonical_item_key, ci.title, ci.season_number
+           from canonical_items ci
+           where ci.content_type = 'tv'
+             and ci.virtual_series_id is null
+           order by ci.id"""
+    ).fetchall()
+
+    if limit:
+        rows = rows[:limit]
+
+    grouped: dict[str, list[tuple]] = {}
+    no_id_items: list[tuple] = []
+
+    for ci_id, ci_key, ci_title, ci_season in rows:
+        # Try external_ids first, then fallback to canonical_item_key
+        ext_row = conn.execute(
+            "select external_id from external_ids where canonical_item_id = ? and source = 'tmdb'",
+            (ci_id,),
+        ).fetchone()
+        if ext_row:
+            tmdb_tv_id = ext_row[0]
+        else:
+            tmdb_tv_id = _extract_tmdb_tv_id_from_key(ci_key)
+
+        if tmdb_tv_id:
+            grouped.setdefault(tmdb_tv_id, []).append(
+                (ci_id, ci_key, ci_title, ci_season)
+            )
+        else:
+            no_id_items.append((ci_id, ci_key, ci_title, ci_season))
+
+    return grouped, no_id_items
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="P1.5-C: One-time virtual_series backfill"
+        description="P1.5-C: One-time virtual_series backfill (deduped)"
     )
     parser.add_argument("--db", default="data/movietrace.db")
     parser.add_argument("--secrets", default="/tmp/movietrace_phase0_secrets.json")
@@ -58,128 +93,114 @@ def main() -> None:
     conn = connect_database(args.db)
     _ensure_quality_issues_table(conn)
 
-    rows = conn.execute(
-        """select ci.id, ci.canonical_item_key, ci.title, ci.content_type,
-                  ci.content_granularity, ci.season_number
-           from canonical_items ci
-           where ci.content_type = 'tv'
-             and ci.virtual_series_id is null
-           order by ci.id"""
-    ).fetchall()
+    # ── Phase 1: Collect unique tmdb_tv_ids ──
+    grouped, no_id_items = _collect_unique_tmdb_tv_ids(conn, args.limit)
 
-    if args.limit:
-        rows = rows[: args.limit]
+    unique_ids = len(grouped)
+    total_items = sum(len(v) for v in grouped.values()) + len(no_id_items)
+    print(f"TV canonical_items to process: {total_items}")
+    print(f"Unique TMDb series IDs:       {unique_ids}")
+    print(f"Items with no tmdb_id:        {len(no_id_items)}")
+    print(f"Dry run: {args.dry_run}")
+    print()
 
-    total = len(rows)
-    if total == 0:
-        print("No TV canonical_items need virtual_series linking.")
+    if args.dry_run:
+        print(f"[DRY-RUN] Would make {unique_ids} TMDb API calls "
+              f"(instead of {total_items - len(no_id_items)} without dedup)")
         conn.close()
         return
 
-    print(f"TV canonical_items to process: {total}")
-    print(f"Dry run: {args.dry_run}")
-
+    # ── Phase 2: One API call per unique tmdb_tv_id → upsert virtual_series ──
     token = load_tmdb_token(args.secrets)
     tmdb_client = TmdbDetailClient(token)
 
-    stats = {
-        "total": total,
-        "linked": 0,
-        "virtual_series_created": 0,
-        "virtual_series_reused": 0,
-        "skipped_low_confidence": 0,
-        "skipped_no_tmdb_id": 0,
-        "skipped_api_error": 0,
-        "api_calls": 0,
-    }
+    vs_map: dict[str, int] = {}  # tmdb_tv_id → virtual_series_id
+    api_calls = 0
+    api_errors = 0
+    created = 0
+    reused = 0
 
     t_start = time.monotonic()
-    vs_tracker: set[str] = set()  # track tmdb_tv_ids we've already seen
-
-    for i, (ci_id, ci_key, ci_title, ci_type, ci_granularity, ci_season) in enumerate(
-        rows
-    ):
+    for i, (tmdb_tv_id, items) in enumerate(grouped.items()):
+        title_preview = items[0][2][:50] if items[0][2] else "?"
+        season_count = len(items)
         print(
-            f"[{i + 1}/{total}] canonical_item #{ci_id} {ci_title[:50]} ... ",
+            f"[{i + 1}/{unique_ids}] {title_preview} "
+            f"(tmdb_id={tmdb_tv_id}, {season_count} seasons) ... ",
             end="",
             flush=True,
         )
 
-        if args.dry_run:
-            print("DRY-RUN")
+        try:
+            details = tmdb_client.get_tv_details(tmdb_tv_id)
+        except Exception as exc:
+            print(f"API ERROR: {exc}")
+            api_errors += 1
+            api_calls += 1
             continue
 
-        # Check for low confidence via quality issues
-        # (low confidence items are skipped for virtual_series aggregation)
-        ext_id_row = conn.execute(
-            "select external_id from external_ids where canonical_item_id = ? and source = 'tmdb'",
-            (ci_id,),
-        ).fetchone()
-        if not ext_id_row:
-            _record_quality_issue(
-                conn,
-                ci_id,
-                ci_key,
-                "virtual_series_no_tmdb_id",
-                "no_match",
-                "no tmdb external_id found",
-            )
-            stats["skipped_no_tmdb_id"] += 1
-            print("SKIP (no tmdb external_id)")
+        api_calls += 1
+
+        if not details or not details.get("name"):
+            print("SKIP (empty response)")
+            api_errors += 1
             continue
 
-        tmdb_tv_id = ext_id_row[0]
+        vs_id = upsert_virtual_series(conn, tmdb_tv_id, details)
 
-        vs_id = find_or_create_virtual_series_for_canonical_item(
-            conn, ci_id, tmdb_client
-        )
-        stats["api_calls"] += 1
-
-        if vs_id is None:
-            _record_quality_issue(
-                conn,
-                ci_id,
-                ci_key,
-                "virtual_series_api_error",
-                "no_match",
-                "TMDb API call failed",
-            )
-            stats["skipped_api_error"] += 1
-            print("SKIP (API error)")
-            continue
-
-        if tmdb_tv_id not in vs_tracker:
-            vs_tracker.add(tmdb_tv_id)
-            stats["virtual_series_created"] += 1
+        if tmdb_tv_id in vs_map:
+            reused += 1
         else:
-            stats["virtual_series_reused"] += 1
+            created += 1
+        vs_map[tmdb_tv_id] = vs_id
 
-        link_to_virtual_series(conn, ci_id, vs_id)
-
-        if ci_season is not None:
-            update_local_max_season(conn, vs_id, int(ci_season))
-
-        stats["linked"] += 1
         print(f"OK → virtual_series #{vs_id}")
 
         conn.commit()
         time.sleep(args.interval)
 
-    conn.close()
+    # ── Phase 3: Link all canonical_items to their virtual_series ──
+    linked = 0
+    for tmdb_tv_id, items in grouped.items():
+        vs_id = vs_map.get(tmdb_tv_id)
+        if vs_id is None:
+            continue
+        for ci_id, ci_key, ci_title, ci_season in items:
+            link_to_virtual_series(conn, ci_id, vs_id)
+            if ci_season is not None:
+                update_local_max_season(conn, vs_id, int(ci_season))
+            linked += 1
 
+    # No-ID items get skipped
+    for ci_id, ci_key, ci_title, ci_season in no_id_items:
+        print(f"  SKIP #{ci_id} {ci_title[:50] if ci_title else '?'} (no tmdb_id)")
+
+    conn.commit()
+
+    # ── Final stats ──
     elapsed_total = time.monotonic() - t_start
     print()
     print("=" * 60)
     print("P1.5-C Virtual Series Backfill Complete")
     print("=" * 60)
-    print(f"Total processed:            {stats['total']}")
-    print(f"Linked:                     {stats['linked']}")
-    print(f"Virtual series created:     {stats['virtual_series_created']}")
-    print(f"Virtual series reused:      {stats['virtual_series_reused']}")
-    print(f"Skipped (no tmdb id):       {stats['skipped_no_tmdb_id']}")
-    print(f"Skipped (API error):        {stats['skipped_api_error']}")
-    print(f"API calls:                  {stats['api_calls']}")
+    print(f"Total canonical_items:      {total_items}")
+    print(f"Unique TMDb series:         {unique_ids}")
+    print(f"API calls:                  {api_calls}")
+    print(f"  (saved: {total_items - len(no_id_items) - api_calls})")
+    print(f"Virtual series created:     {created}")
+    print(f"Virtual series reused:      {reused} (already existed)")
+    print(f"Linked:                     {linked}")
+    print(f"Skipped (no tmdb_id):       {len(no_id_items)}")
+    print(f"API errors:                 {api_errors}")
     print(f"Elapsed:                    {elapsed_total:.0f}s")
+
+    # Verify
+    remaining = conn.execute(
+        "select count(*) from canonical_items where content_type='tv' and virtual_series_id is null"
+    ).fetchone()[0]
+    print(f"Remaining unlinked:         {remaining}")
+
+    conn.close()
 
 
 if __name__ == "__main__":

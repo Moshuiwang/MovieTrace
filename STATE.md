@@ -5,7 +5,7 @@
 
 ---
 
-**最后更新：** 2026-05-12 19:10 +08
+**最后更新：** 2026-05-12 22:58 +08
 **更新人：** Claude Code (DeepSeek V4 Pro) + moshuiwang
 **所在分支：** `main`
 
@@ -19,7 +19,7 @@
 | Phase 0+：FlixPatrol 接入验证 | ✅ 已完成（SUP-A~G 全部通过） |
 | Phase 1：V1 MVP 开发 | ✅ 全部完成（284 测试） |
 | **Phase 1.5：V1 定位翻转** | ✅ 全部完成（326 测试） |
-| Phase 1.6：首次真实运行 + 验收 | ⏳ 下一阶段 |
+| **Phase 1.6：首次真实运行 + 验收** | ✅ 已完成（2026-05-12） |
 | Phase 1.7：条件性调优 | ⏳ 待 1.6 数据反馈 |
 
 ---
@@ -66,6 +66,49 @@ P1.5-F（日报模板 + CLI 语义 + 导出）               ✅ export_writer +
 - [P1.5-C](docs/tasks/p1.5_c_virtual_series_backfill.md) ✅
 - [P1.5-D](docs/tasks/p1.5_d_baseline_active_tracking.md) ✅
 - [P1.5-F](docs/tasks/p1.5_f_report_cli_export.md) ✅
+
+---
+
+## Phase 1.6 执行结果（2026-05-12）
+
+生产环境真实运行，按 B→E→C→D→F 顺序执行。
+
+### P1.5-E：A库全量实体匹配
+| 指标 | 数值 |
+|------|------|
+| 处理数 | 594（online_flag=1 且未匹配） |
+| 匹配成功 | 594/594 (100%) |
+| 置信度 | high 587 · medium 7 · low 0 |
+| 新建 canonical_items | 513 |
+| 复用已有 | 81 |
+| API 调用 | 594 · 耗时 15 分钟 |
+
+### P1.5-C：virtual_series 回填
+| 指标 | 数值 |
+|------|------|
+| 最终 virtual_series | **300**（urgent 84 / low 181 / skip 35） |
+| 已链接 canonical_items | 763/798 (95.6%) |
+| API 调用 | 192（去重后，节省 185 次） |
+| 发现并修复 | 旧版 baseline_quality_issues 表冲突 · 多季同 ID fallback · 两阶段去重优化 |
+
+### P1.5-D：基线追踪
+| 指标 | 数值 |
+|------|------|
+| 轮询计划 | 7（urgent 优先） |
+| 检测到新季 | 8 |
+| 写入 content_updates | 6（2 条去重） |
+| 示例 | FROM S4 · Silo S2 · American Horror Story S11 |
+
+### P1.5-F：报告导出
+- 导出 6 条 content_updates → `reports/recommendations_*.md` + `.json`
+
+### 生产数据画像
+```
+canonical_items: 905 (TV season 509 · TV series 289 · Movie 107)
+virtual_series:  300
+content_updates: 6 (new_season)
+external_ids:    upstream 597 · tmdb 424
+```
 
 ---
 

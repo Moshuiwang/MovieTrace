@@ -932,6 +932,19 @@ def _extract_season_number(name: str) -> int | None:
 
 
 def _ensure_quality_issues_table(conn: sqlite3.Connection) -> None:
+    # If the old V1 baseline_quality_issues table exists with incompatible schema,
+    # drop and recreate. Check by looking for the upstream_program_id column.
+    existing = conn.execute(
+        "select name from sqlite_master where type='table' and name='baseline_quality_issues'"
+    ).fetchone()
+    if existing:
+        cols = {
+            r[1]
+            for r in conn.execute("pragma table_info(baseline_quality_issues)").fetchall()
+        }
+        if "upstream_program_id" not in cols:
+            conn.execute("drop table baseline_quality_issues")
+
     conn.execute("""
         create table if not exists baseline_quality_issues (
             id integer primary key autoincrement,
