@@ -5,7 +5,7 @@
 
 ---
 
-**最后更新：** 2026-05-12 18:51 +08
+**最后更新：** 2026-05-12 19:10 +08
 **更新人：** Claude Code (DeepSeek V4 Pro) + moshuiwang
 **所在分支：** `main`
 
@@ -56,7 +56,8 @@ P1.5-F（日报模板 + CLI 语义 + 导出）               ✅ export_writer +
 
 **已砍掉：**
 - ~~飞书写入~~ — daily-discover 已移除飞书写入步骤
-- ~~feishu.recommendation_writer~~ — 不再调用
+- ~~`feishu/recommendation_writer.py`~~ — 已删除（含测试）
+- ~~`tests/test_recommendation_writer.py`~~ — 已删除
 
 **任务包文档（全部已执行）：**
 - [P1.5-A](docs/tasks/p1.5_a_documentation_repositioning.md) ✅

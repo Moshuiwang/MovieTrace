@@ -147,7 +147,7 @@ def _build_report(
         "",
         f"**生成时间：** {now}",
         f"**覆盖日期：** {report_date.isoformat()}",
-        "**数据版本：** v1（Phase 1 MVP）",
+        "**数据版本：** v1.5（Phase 1.5）",
         "",
         "---",
         "",
@@ -185,7 +185,7 @@ def _build_report(
         "## 备注",
         "",
         "- 日报基于 MovieTrace Phase 1 hot_score 评分公式和基线匹配规则生成",
-        "- 低置信度候选标记为「待人工确认」，不会自动写入飞书",
+        "- 低置信度候选标记为「待人工确认」，不会自动输出",
         "- 已有基线内容可作为热度变化追踪，观察 hot_score 趋势",
     ])
 
@@ -195,7 +195,7 @@ def _build_report(
 def _section_new(items: list[dict]) -> list[str]:
     lines = [
         "",
-        "## 🆕 新发现（未在飞书基线中）",
+        "## 🆕 新发现（未在基线中）",
         "",
         f"**数量：** {len(items)}",
         "",
@@ -349,11 +349,11 @@ def _empty_report(report_date: date) -> str:
         "# MovieTrace 每日发现日报\n\n"
         f"**生成时间：** {now}\n"
         f"**覆盖日期：** {report_date.isoformat()}\n"
-        "**数据版本：** v1（Phase 1 MVP）\n\n"
+        "**数据版本：** v1.5（Phase 1.5）\n\n"
         "---\n\n"
         "## 📊 统计汇总\n\n"
         "*暂无候选数据*\n\n"
-        "> 请先运行数据采集和评分流水线（P1-B → P1-C → P1-D）\n"
+        "> 请先运行 daily-discover → baseline-track → export-recommendations\n"
     )
 
 

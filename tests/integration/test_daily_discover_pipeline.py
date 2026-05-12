@@ -119,27 +119,24 @@ class TestEndToEndPipeline:
         assert "📊" in report
         assert "The Crown" in report or "Brand New Show" in report
 
-    def test_feishu_write_dry_run_with_synthetic_data(self, seeded_db):
-        """Feishu recommendation write generates audit log."""
+    def test_export_dry_run_with_synthetic_data(self, seeded_db):
+        """Export recommendations dry-run works with synthetic data."""
         from movietrace.pipeline.discovery import run_discovery
         from movietrace.pipeline.baseline_matching import run_baseline_matching
-        from movietrace.feishu.recommendation_writer import write_recommendations
+        from movietrace.reports.export_writer import export_recommendations
 
         run_discovery(date_from="2026-05-11", dry_run=False, db_path=seeded_db)
         run_baseline_matching(db_path=seeded_db)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            stats = write_recommendations(dry_run=True, db_path=seeded_db, output_dir=tmpdir)
-            assert stats["total"] >= 3
-            log_files = list(Path(tmpdir).glob("*.jsonl"))
-            assert len(log_files) == 1
+        result = export_recommendations(db_path=seeded_db, days=365, dry_run=True)
+        assert result.get("dry_run") is True
 
     def test_full_pipeline_integration(self, seeded_db):
-        """End-to-end pipeline: discovery → matching → report → Feishu."""
+        """End-to-end pipeline: discovery → matching → report → export."""
         from movietrace.pipeline.discovery import run_discovery
         from movietrace.pipeline.baseline_matching import run_baseline_matching
         from movietrace.reports.daily_writer import generate_daily_report
-        from movietrace.feishu.recommendation_writer import write_recommendations
+        from movietrace.reports.export_writer import export_recommendations
 
         # Step 1: Discovery
         disc_result = run_discovery(date_from="2026-05-11", dry_run=False, db_path=seeded_db)
@@ -153,10 +150,12 @@ class TestEndToEndPipeline:
         report = generate_daily_report(date.today(), db_path=seeded_db)
         assert len(report) > 100
 
-        # Step 4: Feishu dry-run
+        # Step 4: Export
         with tempfile.TemporaryDirectory() as tmpdir:
-            feishu_stats = write_recommendations(dry_run=True, db_path=seeded_db, output_dir=tmpdir)
-            assert feishu_stats["total"] == match_result["total"]
+            export_result = export_recommendations(
+                db_path=seeded_db, output_dir=tmpdir, days=365
+            )
+            assert "md_path" in export_result
 
     def test_full_pipeline_is_idempotent(self, seeded_db):
         """Running the pipeline twice produces consistent confidence counts."""

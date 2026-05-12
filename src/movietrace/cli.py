@@ -74,24 +74,29 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
         return 1
 
     # Step 5: Baseline tracking (P1.5-D)
-    print("[5/5] Baseline tracking (new season detection)...", end=" ", flush=True)
-    try:
-        from movietrace.pipeline.baseline_tracking import run_baseline_tracking
+    cfg = _load_config()
+    bt_cfg = cfg.get("baseline_tracking", {})
+    if bt_cfg.get("enabled", True):
+        print("[5/5] Baseline tracking (new season detection)...", end=" ", flush=True)
+        try:
+            from movietrace.pipeline.baseline_tracking import run_baseline_tracking
 
-        tmdb_token = _load_tmdb_token()
-        bt_result = run_baseline_tracking(
-            db_path="data/movietrace.db",
-            tmdb_token=tmdb_token,
-            dry_run=dry_run,
-        )
-        print(
-            f"OK (polled={bt_result.get('polled',0)} "
-            f"detected={bt_result.get('detected',0)} "
-            f"written={bt_result.get('written',0)})"
-        )
-    except Exception as exc:
-        print(f"FAILED: {exc}")
-        return 1
+            tmdb_token = _load_tmdb_token()
+            bt_result = run_baseline_tracking(
+                db_path="data/movietrace.db",
+                tmdb_token=tmdb_token,
+                dry_run=dry_run,
+            )
+            print(
+                f"OK (polled={bt_result.get('polled',0)} "
+                f"detected={bt_result.get('detected',0)} "
+                f"written={bt_result.get('written',0)})"
+            )
+        except Exception as exc:
+            print(f"FAILED: {exc}")
+            return 1
+    else:
+        print("[5/5] Baseline tracking skipped (disabled in config.yaml)")
 
     print()
     print("✓ Daily discovery complete")
@@ -156,49 +161,66 @@ def cmd_validate_feishu(args: argparse.Namespace) -> int:
 
 
 def cmd_inspect_baseline(args: argparse.Namespace) -> int:
-    """Query local baseline data."""
+    """Query local baseline data (A库 upstream_programs + canonical_items)."""
     conn = connect_database("data/movietrace.db")
     fmt = args.format or "table"
 
     if args.query:
-        rows = _query_baseline(conn, args.query)
-        _output_rows(rows, fmt)
+        rows = _query_upstream(conn, args.query)
+        _output_upstream_rows(rows, fmt)
     else:
-        # Summary stats
-        total = conn.execute("select count(*) from baseline_items").fetchone()[0]
-        movies = conn.execute(
-            "select count(*) from baseline_items where content_type = 'movie'"
+        # A库 upstream_programs stats
+        up_total = conn.execute("select count(*) from upstream_programs").fetchone()[0]
+        up_online = conn.execute(
+            "select count(*) from upstream_programs where online_flag = '1'"
         ).fetchone()[0]
-        tv = conn.execute(
-            "select count(*) from baseline_items where content_type = 'tv_show'"
-        ).fetchone()[0]
-        matched = conn.execute(
-            "select count(*) from baseline_items where match_status = 'matched'"
-        ).fetchone()[0]
-        canonical = conn.execute(
-            "select count(distinct canonical_item_id) from baseline_items where canonical_item_id is not null"
+        up_with_s = conn.execute(
+            "select count(*) from upstream_programs where online_flag = '1' and name like '%S__%'"
         ).fetchone()[0]
 
-        n_candidates = conn.execute("select count(*) from candidates").fetchone()[0]
-        n_matches = conn.execute("select count(*) from candidate_matches").fetchone()[0]
+        # Canonical items stats
+        ci_total = conn.execute("select count(*) from canonical_items").fetchone()[0]
+        ci_tv = conn.execute(
+            "select count(*) from canonical_items where content_type = 'tv'"
+        ).fetchone()[0]
+        ci_movie = conn.execute(
+            "select count(*) from canonical_items where content_type = 'movie'"
+        ).fetchone()[0]
 
-        print("Baseline Summary:")
-        print(f"  Total baseline items: {total}")
-        print(f"  Movies: {movies}")
-        print(f"  TV Shows: {tv}")
-        print(f"  Matched to canonical: {matched}")
-        print(f"  Unique canonical items: {canonical}")
+        # Virtual series stats
+        vs_total = conn.execute("select count(*) from virtual_series").fetchone()[0]
+
+        # Content updates stats
+        cu_new_season = conn.execute(
+            "select count(*) from content_updates where update_type = 'new_season'"
+        ).fetchone()[0]
+
+        # Legacy baseline_items stats
+        bl_total = conn.execute("select count(*) from baseline_items").fetchone()[0]
+
+        print("A库（upstream_programs）:")
+        print(f"  总节目数: {up_total}")
+        print(f"  上架中 (online_flag=1): {up_online}")
+        print(f"  含季号 (S\d\d): {up_with_s}")
+        print(f"  推测电影 (无季号): {up_online - up_with_s}")
         print()
-        print("Phase 1 Status:")
-        print(f"  Candidates (today): {n_candidates}")
-        print(f"  Candidate matches: {n_matches}")
+        print("B库（canonical_items + virtual_series）:")
+        print(f"  canonical_items: {ci_total} (TV: {ci_tv}, Movie: {ci_movie})")
+        print(f"  virtual_series: {vs_total}")
+        print(f"  content_updates (new_season): {cu_new_season}")
+        print()
+        print("Legacy（baseline_items）:")
+        print(f"  baseline_items: {bl_total} (历史飞书导入，保留不动)")
+        print()
+        print("Phase 1.5 Status: 全部任务包已完成")
+        print("  Next: Phase 1.6 (首次真实运行 + 验收)")
 
     conn.close()
     return 0
 
 
-def _query_baseline(conn, query: str) -> list[tuple]:
-    """Parse simple query string and execute against baseline_items."""
+def _query_upstream(conn, query: str) -> list[tuple]:
+    """Parse simple query string and execute against upstream_programs."""
     conditions = []
     params = []
     for part in query.split(" AND "):
@@ -207,12 +229,12 @@ def _query_baseline(conn, query: str) -> list[tuple]:
             key, val = part.split("=", 1)
             key = key.strip()
             val = val.strip()
-            valid_cols = {"title", "year", "content_type", "match_status", "content_granularity"}
+            valid_cols = {"name", "online_flag", "program_status", "code"}
             if key in valid_cols:
                 conditions.append(f"{key} like ?")
                 params.append(f"%{val}%")
 
-    sql = "select id, title, content_type, year, match_status from baseline_items"
+    sql = "select id, name, online_flag, program_status from upstream_programs"
     if conditions:
         sql += " where " + " and ".join(conditions)
     sql += " limit 50"
@@ -220,22 +242,22 @@ def _query_baseline(conn, query: str) -> list[tuple]:
     return conn.execute(sql, params).fetchall()
 
 
-def _output_rows(rows: list[tuple], fmt: str) -> None:
+def _output_upstream_rows(rows: list[tuple], fmt: str) -> None:
     if not rows:
         print("No results.")
         return
 
     if fmt == "json":
         data = [
-            {"id": r[0], "title": r[1], "type": r[2], "year": r[3], "status": r[4]}
+            {"id": r[0], "name": r[1], "online_flag": r[2], "program_status": r[3]}
             for r in rows
         ]
         print(json.dumps(data, indent=2, ensure_ascii=False, default=str))
     elif fmt == "table":
-        print(f"| ID | Title | Type | Year | Status |")
-        print(f"|----|-------|------|------|--------|")
+        print(f"| ID | Name | Online | Status |")
+        print(f"|----|------|--------|--------|")
         for r in rows:
-            print(f"| {r[0]} | {r[1] or 'N/A'} | {r[2] or 'N/A'} | {r[3] or 'N/A'} | {r[4] or 'N/A'} |")
+            print(f"| {r[0]} | {r[1] or 'N/A'} | {r[2] or 'N/A'} | {r[3] or 'N/A'} |")
         print(f"\n{len(rows)} row(s)")
     else:
         # CSV
@@ -313,6 +335,16 @@ def cmd_check_feishu_schema(args: argparse.Namespace) -> int:
 # ── Argument parsing ────────────────────────────────────────────────────
 
 
+def _load_config(path: str = "config.yaml") -> dict:
+    try:
+        import yaml
+
+        with open(path) as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
 def _load_tmdb_token(
     secrets_path: str = "/tmp/movietrace_phase0_secrets.json",
 ) -> str:
@@ -328,6 +360,12 @@ def _load_tmdb_token(
 
 def cmd_baseline_track(args: argparse.Namespace) -> int:
     """Run baseline tracking (new season detection)."""
+    cfg = _load_config()
+    bt_cfg = cfg.get("baseline_tracking", {})
+    if not bt_cfg.get("enabled", True):
+        print("baseline_tracking is disabled in config.yaml (enabled: false)")
+        return 0
+
     print("MovieTrace baseline-track")
     print(f"Dry-run: {args.dry_run}")
     if args.limit:
