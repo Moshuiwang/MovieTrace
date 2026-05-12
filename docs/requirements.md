@@ -1037,7 +1037,7 @@ hot_score =
 7. 一次性回填脚本必须能从现有 baseline_items 中识别 TV 类型并创建对应 virtual_series 记录（详见 P1.5-C 任务包）。
 8. 轮询日志记录每次的 API 调用次数、检测到的新季数、跳过原因。
 
-**实现细节** 详见任务包 [`p1.5_c_virtual_series.md`](tasks/p1.5_c_virtual_series.md)（待起草）、[`p1.5_d_baseline_tracking.md`](tasks/p1.5_d_baseline_tracking.md)（待起草）。
+**实现细节** 详见任务包 [`p1.5_c_virtual_series_backfill.md`](tasks/p1.5_c_virtual_series_backfill.md)、[`p1.5_d_baseline_active_tracking.md`](tasks/p1.5_d_baseline_active_tracking.md)。
 
 ## 15. 非功能需求
 

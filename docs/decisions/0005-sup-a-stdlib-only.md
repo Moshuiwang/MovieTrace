@@ -75,6 +75,6 @@ SUP-A（FlixPatrol 可访问性测试）需要做 HTTP 请求，可选择：
 
 ## 引用
 
-- 任务包：[`docs/tasks/sup_a_flixpatrol_accessibility.md`](../tasks/sup_a_flixpatrol_accessibility.md)
+- 任务包：[`docs/tasks/sup_a_flixpatrol_accessibility.md`](../tasks/archive/sup_a_flixpatrol_accessibility.md)
 - 现有代码：[`src/movietrace/sources/http.py`](../../src/movietrace/sources/http.py)
 - AGENTS.md 第 5、6 条
