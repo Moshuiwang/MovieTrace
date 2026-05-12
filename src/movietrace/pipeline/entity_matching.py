@@ -989,6 +989,53 @@ def _make_dummy_baseline_item(
     )
 
 
+def _check_close_alternatives(
+    conn: sqlite3.Connection,
+    upstream_program_id: int,
+    name: str,
+    query: str,
+    selected: ExternalSearchResult,
+    all_results: list[ExternalSearchResult],
+    similarity_threshold: float = 0.15,
+) -> None:
+    """Check if there were other close candidates and record them."""
+    if len(all_results) <= 1:
+        return
+
+    selected_sim = _title_similarity(query, selected.title)
+    alternatives: list[dict] = []
+
+    for r in all_results:
+        if r.external_id == selected.external_id:
+            continue
+        sim = _title_similarity(query, r.title)
+        # Close alternative: within threshold of the selected, or close in absolute terms
+        if abs(selected_sim - sim) <= similarity_threshold or sim >= 0.80:
+            alternatives.append({
+                "tmdb_id": r.external_id,
+                "title": r.title,
+                "media_type": r.media_type,
+                "year": r.year,
+                "similarity": round(sim, 3),
+            })
+
+    if alternatives:
+        import json
+        # Keep top 5 closest
+        alternatives.sort(key=lambda x: x["similarity"], reverse=True)
+        alt_json = json.dumps(alternatives[:5], ensure_ascii=False)
+        _ensure_quality_issues_table(conn)
+        _record_quality_issue(
+            conn,
+            upstream_program_id,
+            name,
+            "entity_matching_close_alternatives",
+            "info",
+            f"selected={selected.title} sim={selected_sim:.3f} id={selected.external_id}; "
+            f"alternatives={alt_json}",
+        )
+
+
 def match_upstream_program(
     conn: sqlite3.Connection,
     upstream_program_id: int,
@@ -997,7 +1044,7 @@ def match_upstream_program(
 ) -> dict | None:
     """Match a single upstream_program to TMDb and create canonical_item + external_id.
 
-    Uses type-specific search (search_tv for names with S\d\d, search_movie otherwise)
+    Uses type-specific search (search_tv for names with S##, search_movie otherwise)
     and validates the best match via detail endpoint before committing.
 
     Returns a result dict with match details, or None if the program doesn't exist.
@@ -1207,16 +1254,22 @@ def match_upstream_program(
         ),
     )
 
-    if decision.confidence == "low":
+    # ── Record quality issues for low/medium confidence ──
+    if decision.confidence in ("low", "medium"):
         _ensure_quality_issues_table(conn)
         _record_quality_issue(
             conn,
             upstream_program_id,
             name,
-            "entity_matching_low_confidence",
+            f"entity_matching_{decision.confidence}_confidence",
             decision.confidence,
             decision.reason,
         )
+
+    # ── Record close alternatives ──
+    _check_close_alternatives(
+        conn, upstream_program_id, name, parsed.query, result, search_results,
+    )
 
     return {
         "upstream_program_id": upstream_program_id,
