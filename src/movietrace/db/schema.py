@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 SCHEMA_SQL = """
@@ -172,4 +172,5 @@ def initialize_database(path: str | Path) -> None:
         _apply_migration(conn, 2, _load_migration_sql("002_flixpatrol_top10.sql"))
         _apply_migration(conn, 3, _load_migration_sql("003_candidates.sql"))
         _apply_migration(conn, 4, _load_migration_sql("004_candidate_matches.sql"))
+        _apply_migration(conn, 5, _load_migration_sql("005_upstream_tables.sql"))
         conn.commit()

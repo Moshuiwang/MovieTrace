@@ -268,3 +268,26 @@ FlixPatrol/TMDb 热度榜抓)。
 - V1 完成报告:[`reports/phase1_completion_report.md`](../../reports/phase1_completion_report.md)
 - 配套任务包:P1.5-A ~ P1.5-G(详见 `docs/tasks/`,本 ADR 通过后陆续
   起草)
+
+---
+
+## 2026-05-12 修正：飞书从系统链路完全移除
+
+**修正日期：** 2026-05-12 +08
+**触发：** 生产环境 DB（A 库）CSV 数据接入，`upstream_programs` / `upstream_episodes` 表落地
+
+本 ADR 原文 § 二 的三层架构中，A 库当时实现为飞书"线上内容基线表"，中间表为飞书"建议更新表"。A 库真实数据接入后，两个飞书角色均被替代：
+
+| 原角色 | 原实现 | 新实现 |
+|--------|--------|--------|
+| A 库（内容目录来源） | 飞书"线上内容基线表" | `upstream_programs` / `upstream_episodes` (SQLite) |
+| 中间表（输出渠道） | 飞书"建议更新表" | `reports/recommendations_*.md` + `*.json` 文件导出 |
+
+**修正内容：**
+- **P1.5-E 原方案（飞书写入翻新）砍掉**，替换为 A 库全量实体匹配（新 P1.5-E）
+- **P1.5-F/G 合并** —— 日报 + CLI + 文件导出，飞书不再参与
+- `feishu_import_runs` / `source_records` / `baseline_items` 表保留（历史记录，不删）
+- 原文 § 七 的"写入中间表"改为"导出为报告文件"
+- 原文 § 八"仍硬编码飞书实现"的约束自然失效
+
+本修正不影响 ADR-0007 的核心定位（系统是更新追踪系统、三层架构概念、virtual_series 聚合、智能轮询策略），仅改变 A 库和中间表的具体实现载体。

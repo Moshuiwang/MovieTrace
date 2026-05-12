@@ -57,6 +57,7 @@
 10. 测试失败时，先解释失败，再修复当前任务范围内的问题。
 11. 没有运行验证命令，不声明完成。
 12. 完成后必须汇报修改内容、验证结果和剩余风险（格式见 [docs/workflow/report-format.md](docs/workflow/report-format.md)）。
+13. **写 STATE.md / 日报 / commit 时，必须从 system prompt 自行获取当前模型名和运行环境**（`You are powered by the model ...` + `VSCode Extension Context` 等标签），禁止假设、继承或沿用上一会话的值。
 
 ---
 

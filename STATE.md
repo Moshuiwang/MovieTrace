@@ -5,9 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-12 01:20 +08
-**更新人：** Claude Code (Opus 4.7)
-**Git Commit：** `5237b8b`（更新前，流程文档时间精度规范落地）
+**最后更新：** 2026-05-12  +08
+**更新人：** Claude Code (DeepSeek V4 Pro) + moshuiwang
 **所在分支：** `main`
 
 ---
@@ -17,99 +16,110 @@
 | 阶段 | 状态 |
 |------|------|
 | Phase 0：开发前验证 | ✅ 已完成（Go 决策） |
-| Phase 0+：FlixPatrol 接入验证 | ✅ 已完成（SUP-A~G 全部通过，API 路径确定） |
-| Phase 1：V1 MVP 开发 | ✅ 全部完成（P1-B~P1-H 共 7 任务，284 测试，收尾报告：reports/phase1_completion_report.md） |
-| **Phase 1.5：V1 定位翻转** | 🟡 进行中（A ✅ / B-D 任务包已起草 / E-G 待 D 完成后起草） |
+| Phase 0+：FlixPatrol 接入验证 | ✅ 已完成（SUP-A~G 全部通过） |
+| Phase 1：V1 MVP 开发 | ✅ 全部完成（284 测试） |
+| **Phase 1.5：V1 定位翻转** | 🟡 进行中（A ✅ / B-D 任务包 v2 已发布 / E 砍掉 / F 合并原 F+G） |
 | Phase 1.6：首次真实运行 + 验收 | ⏳ 待 1.5 完成 |
-| Phase 1.7：条件性调优 | ⏳ 待 1.6 数据反馈（如不需要可跳过） |
-
-历史验证结果详见 [`reports/`](reports/)；已采纳决策详见 [`docs/decisions/`](docs/decisions/)。
+| Phase 1.7：条件性调优 | ⏳ 待 1.6 数据反馈 |
 
 ---
 
-## Phase 1 待办（按依赖顺序）
-
-```
-P1-A（实体匹配回归修复）           ✅ 已完成（归档：docs/tasks/p1_a_entity_matching.md）
-SUP-G（FlixPatrol API 验证）       ✅ 已完成（验证报告：reports/sup_g_flixpatrol_api_validation.md，ADR-0006）
-    ↓
-P1-B（FlixPatrol API 数据接入 + DB）   ✅ 已完成（完成报告：journal/2026-05-11_p1_b.md）
-    ↓
-P1-C（hot_score 评分 + 多源候选合并）  ✅ 已完成（89 candidates 入库，完成报告：journal/2026-05-11_p1_c.md）
-    ↓
-P1-D（飞书基线匹配标记）              ✅ 已完成（89/89 匹配，完成报告：journal/2026-05-11_p1_d.md）
-    ↓
-P1-E（每日 Markdown 日报）            ✅ 已完成（日报 89 候选 4 分组，完成报告：journal/2026-05-11_p1_e.md）
-    ↓
-P1-F（飞书推荐表写入 + 去重 + 字段保护） ✅ 已完成（dry-run 89 条审计日志，完成报告：journal/2026-05-11_p1_f.md）
-    ↓
-P1-G（CLI 命令 4 条）                 ✅ 已完成（4 条子命令，完成报告：journal/2026-05-11_p1_g.md）
-    ↓
-P1-H（集成测试 + 首次实际运行）       ✅ 已完成（284 测试通过，收尾报告：reports/phase1_completion_report.md）
-```
-
-**当前状态：** Phase 1.5 进行中。ADR-0007 Accepted；P1.5-A 文档翻转已完成；P1.5-B/C/D 任务包已起草待审定；P1.5-E/F/G 待 D 完成后再起草（依赖真实数据反馈）。
-
----
-
-## Phase 1.5 待办（全部串行，A→B→C→D→E→F→G）
+## Phase 1.5 待办（B→C→D→F，全部串行）
 
 ```
 P1.5-A（文档翻转）                                ✅ 已完成
     ↓
-P1.5-B（B库 schema 扩展 + 飞书 migration）         📝 任务包已起草，待审定执行
+P1.5-B（schema v6 migration）                     📝 任务包 v2 已发布，待执行
     ↓
-P1.5-C（virtual_series 表 + 一次性回填脚本）       📝 任务包已起草，待 B 完成
+P1.5-E（A 库全量实体匹配 → canonical_items）      📝 任务包 v1 已发布，待 B 完成
     ↓
-P1.5-D（功能 2：基线主动追踪模块）                 📝 任务包已起草，待 C 完成
+P1.5-C（virtual_series 一次性回填）                📝 任务包 v2 已发布，待 E 完成
     ↓
-P1.5-E（飞书写入逻辑翻新）                        ⏳ 待 D 完成后起草任务包
+P1.5-D（基线主动追踪模块）                         📝 任务包 v2 已发布，待 C 完成
     ↓
-P1.5-F（日报模板 + CLI 语义调整）                  ⏳ 待 E 完成后起草任务包
-    ↓
-P1.5-G（检测与导出解耦，export-recommendations）   ⏳ 待 F 完成后起草任务包
+P1.5-F（日报模板 + CLI 语义 + 导出，合并原 F/G）   📝 任务包 v1 已发布，待 D 完成
 ```
+
+**P1.5-E 是新增任务包** — A 库 735 条节目作为输入源后，必须先全量匹配 TMDb 创建 canonical_items，P1.5-C 才有输入。
+
+**已砍掉：**
+- ~~P1.5-E（飞书写入翻新）~~ → 飞书已从系统链路移除
 
 **任务包文档：**
 - [P1.5-A](docs/tasks/p1.5_a_documentation_repositioning.md) ✅
-- [P1.5-B](docs/tasks/p1.5_b_schema_extension_and_migration.md) 📝
+- [P1.5-B](docs/tasks/p1.5_b_schema_v6_migration.md) 📝
+- [P1.5-E](docs/tasks/p1.5_e_entity_matching_full.md) 📝
 - [P1.5-C](docs/tasks/p1.5_c_virtual_series_backfill.md) 📝
 - [P1.5-D](docs/tasks/p1.5_d_baseline_active_tracking.md) 📝
+- [P1.5-F](docs/tasks/p1.5_f_report_cli_export.md) 📝
 
 ---
 
-## 后续阶段（Phase 1.5 完成后）
+## 2026-05-12 关键决策记录
 
-| 阶段 | 内容 | 触发条件 |
-|------|------|---------|
-| **Phase 1.6** | 用真实数据首次跑完整流程（daily-discover + baseline-track + export-recommendations），1-2 周观察 | P1.5-G 完成 |
-| **Phase 1.7** | 根据 1.6 反馈做权重/频率调优（条件性，可跳过） | 1.6 数据显示需要 |
-| **Phase 2 (V2)** | 见 [`docs/product_roadmap.md`](docs/product_roadmap.md) § 3 | ADR-0002 V2 启动条件全部满足 |
+### 决策 1：A 库数据接入 ✅
+
+- 用户从生产 DB 导出两张 CSV：`source_records/节目数据.csv`（735 行）+ `source_records/子节目数据.csv`（6,562 行）
+- 导入到 `data/movietrace.db` 的 `upstream_programs` / `upstream_episodes` 表（migration 005）
+- Schema 参考文档：[reports/upstream_db_schema_reference.md](reports/upstream_db_schema_reference.md)
+- **A 库取代飞书"线上内容基线表"成为 MovieTrace 的内容目录来源**
+
+### 决策 2：飞书从系统链路移除 ✅
+
+- 飞书不再是内容目录来源（被 A 库取代）
+- 飞书不再是输出渠道（被日报 MD + JSON 导出取代）
+- P1.5-E（飞书写入翻新）整包砍掉
+- P1.5-F/G 合并为一个任务包（日报 + CLI + 导出）
+- `feishu_import_runs` / `source_records` / `baseline_items` 表**保留不动**（历史数据）
+
+### 决策 3：Q5-Q8 全部解定 ✅
+
+| 问题 | 决策 |
+|------|------|
+| Q5（多季合并 + season_number） | 正则从 name 提取，同名 tv_id 多季幂等合并到同一条 virtual_series |
+| Q6（写入粒度） | 季级；tmdb_number_of_seasons > local_max_season → 新季 |
+| Q7（增量检测） | last_polled_at（轮询频率）+ modify_instant（定位变更节目）双信号 |
+| Q8（集成方式） | 独立 CLI `baseline-track` + 嵌入 `daily-discover` 最后一步，两者都做 |
+
+### 决策 4：Migration 编号调整
+
+- 005 → `upstream_programs` / `upstream_episodes`（A 库备份表，已执行）
+- 006 → `virtual_series` 表 + `canonical_items.virtual_series_id` + `content_updates.match_confidence_low`（P1.5-B）
+
+---
+
+## 当前 A 库数据画像
+
+| 表 | 行数 | 关键字段 |
+|----|------|---------|
+| `upstream_programs` | 735 | `id`, `name`, `online_flag`(597=上架), `modify_instant` |
+| `upstream_episodes` | 6,562 | `id`, `fk_program_content_id`, `direct_weight`, `modify_instant`, `duration_*` |
+
+- 85% 节目名含 `S\d\d` 季号（可正则提取）
+- `imdb_id` 全空（匹配只能走 TMDb 名称搜索）
+- 无 Series 实体（需 `virtual_series` 聚合）
 
 ---
 
 ## 进行中任务
 
-*无*（P1.5-B/C/D 任务包中 Q1-Q4 已决策并更新；Q5-Q8 暂停等待输入源信息）
+*无*（P1.5-B 任务包 v2 已发布，待其他 Agent 领取执行）
 
 ---
 
 ## 阻塞项
 
-1. **新输入源（生产环境 DB）schema 未确认** — 当前 Airtable 标题解析季号的方案不可靠，用户准备切换到生产环境 DB 作为输入源。等待用户提供：DB 类型、表结构、可用字段、更新频率。此决策影响 P1.5-C 的 canonical_item 粒度策略（Q5）和 P1.5-D 的追踪逻辑（Q6-Q8）
+*无*（之前的阻塞项"生产环境 DB schema 未确认"已解决）
 
 ---
 
 ## 待用户决策
 
-1. **~~P1.5-B/C/D 任务包是否审定通过？~~** → Q1-Q4 已决策（2026-05-12）；Q5-Q8 暂停
-2. **~~P1.5-B Q1 / Q2 已决策~~** — Q1=直接删除（飞书表清空重建）；Q2=drop 旧字段或重建表 ✅ 已写入任务包
-3. **~~P1.5-C Q3 / Q4 / Q5 决策~~** — Q3=直接用 external_ids（288/289 覆盖）；Q4=低置信度跳过记 issues ✅ 已写入任务包；Q5=暂停
-4. **~~P1.5-D Q6 / Q7 / Q8 决策~~** — 全部暂停，等待新输入源确定
-5. **新：生产环境 DB schema** — 等待用户提供 DB 类型、表结构、可用字段、更新频率
+*无*
 
 ---
 
 ## Housekeeping 待办（不阻塞主线）
 
-- **任务包文档归档治理**：当前 `docs/tasks/` 顶层散放 17 个任务包，建议建 `phase0_plus/` / `phase1/` / `phase1.5/` 子目录归档；涉及 ~35 处交叉引用修复。建议 P1.5 全部完成后统一治理。
+- **任务包文档归档治理**：当前 `docs/tasks/` 顶层散放任务包，含 v1 旧版（P1.5-B/C/D 旧版文件名含 `_b_` `_c_` `_d_` 但不含 `v6`/`active` 等新关键词）与新 v2 版。建议 P1.5 全部完成后统一归档旧版到 `docs/tasks/archive/`。
+- **日报归档**：`journal/` 下日报文件命名规范已统一（含 HHMM），但旧文件可能不符合新规。
