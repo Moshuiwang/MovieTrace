@@ -908,5 +908,237 @@ def main() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# P1.5-E: Upstream program matching (A 库 → canonical_items)
+# ---------------------------------------------------------------------------
+
+
+def _strip_season_suffix(name: str) -> str:
+    """Remove season suffix like ' S01' or 'S01' from end of name."""
+    stripped = re.sub(
+        r"\s*S\d{2}\s*$", "", name, flags=re.IGNORECASE
+    ).strip()
+    return stripped or name
+
+
+def _extract_season_number(name: str) -> int | None:
+    """Extract season number from name, e.g. 'Better Call Saul S01' → 1."""
+    m = re.search(
+        r"(?<![A-Za-z0-9])S(\d{1,2})(?![A-Za-z0-9])",
+        name,
+        flags=re.IGNORECASE,
+    )
+    return int(m.group(1)) if m else None
+
+
+def _ensure_quality_issues_table(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        create table if not exists baseline_quality_issues (
+            id integer primary key autoincrement,
+            upstream_program_id integer not null,
+            issue_type text not null,
+            source_name text,
+            confidence text,
+            reason text,
+            created_at text not null default current_timestamp
+        )
+    """)
+
+
+def _record_quality_issue(
+    conn: sqlite3.Connection,
+    upstream_program_id: int,
+    source_name: str,
+    issue_type: str,
+    confidence: str,
+    reason: str,
+) -> None:
+    conn.execute(
+        """insert into baseline_quality_issues(
+            upstream_program_id, issue_type, source_name, confidence, reason
+        ) values (?, ?, ?, ?, ?)""",
+        (upstream_program_id, issue_type, source_name, confidence, reason),
+    )
+
+
+def _make_dummy_baseline_item(
+    upstream_id: int, name: str, content_type: str, season_number: int | None
+) -> BaselineItem:
+    return BaselineItem(
+        id=upstream_id,
+        title=name,
+        content_type=content_type,
+        content_granularity="season" if content_type == "tv" else "movie",
+        season_number=season_number,
+        episode_number=None,
+        year=None,
+        online_status="1",
+    )
+
+
+def match_upstream_program(
+    conn: sqlite3.Connection,
+    upstream_program_id: int,
+    tmdb_client: object,
+) -> dict | None:
+    """Match a single upstream_program to TMDb and create canonical_item + external_id.
+
+    Returns a result dict with match details, or None if the program doesn't exist.
+    """
+    row = conn.execute(
+        "select id, name, online_flag from upstream_programs where id = ?",
+        (upstream_program_id,),
+    ).fetchone()
+    if not row:
+        return None
+
+    name = row[1]
+
+    season_number = _extract_season_number(name)
+    if season_number is not None:
+        content_type = "tv"
+        content_granularity = "season"
+        series_name = _strip_season_suffix(name)
+    else:
+        content_type = "movie"
+        content_granularity = "movie"
+        series_name = name
+        season_number = None
+
+    parsed = parse_title(series_name)
+    item = _make_dummy_baseline_item(
+        upstream_program_id, name, content_type, season_number
+    )
+
+    search_results: list[ExternalSearchResult] = []
+    api_error: str | None = None
+    try:
+        search_results = tmdb_client.search(parsed.query, item)
+    except Exception as exc:
+        api_error = f"{type(exc).__name__}: {exc}"
+
+    if api_error or not search_results:
+        _ensure_quality_issues_table(conn)
+        _record_quality_issue(
+            conn,
+            upstream_program_id,
+            name,
+            "entity_matching_api_error" if api_error else "entity_matching_no_results",
+            "no_match",
+            api_error or "no_external_result",
+        )
+        return {
+            "upstream_program_id": upstream_program_id,
+            "name": name,
+            "matched": False,
+            "confidence": "no_match",
+            "error": api_error,
+        }
+
+    decision = choose_best_match(item, parsed, search_results)
+
+    if decision.result is None or decision.confidence == "no_match":
+        _ensure_quality_issues_table(conn)
+        _record_quality_issue(
+            conn,
+            upstream_program_id,
+            name,
+            "entity_matching_no_match",
+            decision.confidence,
+            decision.reason,
+        )
+        return {
+            "upstream_program_id": upstream_program_id,
+            "name": name,
+            "matched": False,
+            "confidence": decision.confidence,
+            "reason": decision.reason,
+        }
+
+    result = decision.result
+    tmdb_id = result.external_id
+
+    if season_number is not None:
+        canonical_item_key = f"tmdb:tv:{tmdb_id}:season:{season_number}"
+    else:
+        canonical_item_key = f"tmdb:movie:{tmdb_id}"
+
+    existing = conn.execute(
+        "select id from canonical_items where canonical_item_key = ?",
+        (canonical_item_key,),
+    ).fetchone()
+
+    if existing:
+        canonical_item_id = int(existing[0])
+        created = False
+    else:
+        original_title = (
+            result.raw_payload.get("original_name")
+            or result.raw_payload.get("original_title")
+        )
+        conn.execute(
+            """insert into canonical_items(
+                canonical_item_key, title, original_title, content_type,
+                content_granularity, season_number, year
+            ) values (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                canonical_item_key,
+                result.title,
+                str(original_title) if original_title else None,
+                content_type,
+                content_granularity,
+                season_number,
+                result.year,
+            ),
+        )
+        canonical_item_id = int(
+            conn.execute("select last_insert_rowid()").fetchone()[0]
+        )
+        created = True
+
+    conn.execute(
+        """insert or ignore into external_ids(
+            canonical_item_id, source, external_id, external_granularity
+        ) values (?, ?, ?, ?)""",
+        (canonical_item_id, "upstream", str(upstream_program_id), content_granularity),
+    )
+    conn.execute(
+        """insert or ignore into external_ids(
+            canonical_item_id, source, external_id, external_granularity
+        ) values (?, ?, ?, ?)""",
+        (
+            canonical_item_id,
+            "tmdb",
+            tmdb_id,
+            "series" if content_type == "tv" else "movie",
+        ),
+    )
+
+    if decision.confidence == "low":
+        _ensure_quality_issues_table(conn)
+        _record_quality_issue(
+            conn,
+            upstream_program_id,
+            name,
+            "entity_matching_low_confidence",
+            decision.confidence,
+            decision.reason,
+        )
+
+    return {
+        "upstream_program_id": upstream_program_id,
+        "name": name,
+        "matched": True,
+        "canonical_item_id": canonical_item_id,
+        "created": created,
+        "confidence": decision.confidence,
+        "tmdb_id": tmdb_id,
+        "tmdb_title": result.title,
+        "tmdb_year": result.year,
+        "content_type": content_type,
+        "season_number": season_number,
+    }
+
+
 if __name__ == "__main__":
     main()

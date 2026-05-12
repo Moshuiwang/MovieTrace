@@ -53,7 +53,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
         return 1
 
     # Step 3: Baseline matching
-    print("[3/4] Matching against baseline...", end=" ", flush=True)
+    print("[3/5] Matching against baseline...", end=" ", flush=True)
     try:
         from movietrace.pipeline.baseline_matching import run_baseline_matching
         match_result = run_baseline_matching()
@@ -63,18 +63,32 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
         print(f"FAILED: {exc}")
         return 1
 
-    # Step 4: Generate report + write Feishu
-    print("[4/4] Generating report and writing Feishu...", end=" ", flush=True)
+    # Step 4: Generate report
+    print("[4/5] Generating daily report...", end=" ", flush=True)
     try:
         from movietrace.reports.daily_writer import write_daily_report
         report_path = write_daily_report(report_date)
-        print(f"OK")
+        print(f"OK → {report_path}")
+    except Exception as exc:
+        print(f"FAILED: {exc}")
+        return 1
 
-        from movietrace.feishu.recommendation_writer import write_recommendations
-        feishu_stats = write_recommendations(dry_run=dry_run)
-        print(f"     Feishu: insert={feishu_stats['insert']} "
-              f"skip={feishu_stats['skip']} error={feishu_stats['error']}")
-        print(f"     Report: {report_path}")
+    # Step 5: Baseline tracking (P1.5-D)
+    print("[5/5] Baseline tracking (new season detection)...", end=" ", flush=True)
+    try:
+        from movietrace.pipeline.baseline_tracking import run_baseline_tracking
+
+        tmdb_token = _load_tmdb_token()
+        bt_result = run_baseline_tracking(
+            db_path="data/movietrace.db",
+            tmdb_token=tmdb_token,
+            dry_run=dry_run,
+        )
+        print(
+            f"OK (polled={bt_result.get('polled',0)} "
+            f"detected={bt_result.get('detected',0)} "
+            f"written={bt_result.get('written',0)})"
+        )
     except Exception as exc:
         print(f"FAILED: {exc}")
         return 1
@@ -299,6 +313,86 @@ def cmd_check_feishu_schema(args: argparse.Namespace) -> int:
 # ── Argument parsing ────────────────────────────────────────────────────
 
 
+def _load_tmdb_token(
+    secrets_path: str = "/tmp/movietrace_phase0_secrets.json",
+) -> str:
+    secrets = json.loads(open(secrets_path).read())
+    token = (secrets.get("tmdb") or {}).get("api_read_access_token")
+    if not token:
+        raise RuntimeError("TMDb API token not found in secrets file")
+    return token
+
+
+# ── baseline-track ───────────────────────────────────────────────────────
+
+
+def cmd_baseline_track(args: argparse.Namespace) -> int:
+    """Run baseline tracking (new season detection)."""
+    print("MovieTrace baseline-track")
+    print(f"Dry-run: {args.dry_run}")
+    if args.limit:
+        print(f"Limit: {args.limit}")
+    print()
+
+    try:
+        from movietrace.pipeline.baseline_tracking import run_baseline_tracking
+
+        tmdb_token = _load_tmdb_token()
+        result = run_baseline_tracking(
+            db_path=args.db or "data/movietrace.db",
+            tmdb_token=tmdb_token,
+            dry_run=args.dry_run,
+            limit=args.limit,
+        )
+
+        print(f"Plan size: {result.get('plan_size', 0)}")
+        print(f"Polled:    {result.get('polled', 0)}")
+        print(f"Detected:  {result.get('detected', 0)}")
+        print(f"Written:   {result.get('written', 0)}")
+        print(f"Errors:    {result.get('errors', 0)}")
+        print()
+        print("✓ Baseline tracking complete")
+        return 0
+    except Exception as exc:
+        print(f"✗ Baseline tracking failed: {exc}")
+        return 1
+
+
+# ── export-recommendations ────────────────────────────────────────────────
+
+
+def cmd_export_recommendations(args: argparse.Namespace) -> int:
+    """Export content_updates as MD + JSON report files."""
+    print("MovieTrace export-recommendations")
+    print(f"Days: {args.days}")
+    print(f"Output dir: {args.output_dir}")
+    print()
+
+    try:
+        from movietrace.reports.export_writer import export_recommendations
+
+        result = export_recommendations(
+            db_path=args.db or "data/movietrace.db",
+            output_dir=args.output_dir,
+            days=args.days,
+            dry_run=args.dry_run,
+        )
+
+        if result.get("dry_run"):
+            print(f"[DRY-RUN] Would export {result.get('total_items', 0)} items")
+        else:
+            print(f"MD:   {result.get('md_path', '')}")
+            print(f"JSON: {result.get('json_path', '')}")
+            print(f"Total items: {result.get('total_items', 0)}")
+
+        print()
+        print("✓ Export complete")
+        return 0
+    except Exception as exc:
+        print(f"✗ Export failed: {exc}")
+        return 1
+
+
 def _parse_date_arg(date_str: str | None) -> date | None:
     if not date_str:
         return None
@@ -332,6 +426,19 @@ def main() -> None:
     # check-feishu-schema
     sub.add_parser("check-feishu-schema", help="Verify Feishu table schema")
 
+    # baseline-track
+    p_track = sub.add_parser("baseline-track", help="Run baseline new season detection")
+    p_track.add_argument("--db", help="Database path")
+    p_track.add_argument("--dry-run", action="store_true")
+    p_track.add_argument("--limit", type=int)
+
+    # export-recommendations
+    p_export = sub.add_parser("export-recommendations", help="Export recommendations to MD+JSON")
+    p_export.add_argument("--db", help="Database path")
+    p_export.add_argument("--days", type=int, default=7, help="Days to cover (default: 7)")
+    p_export.add_argument("--output-dir", default="reports", help="Output directory")
+    p_export.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
 
     handlers = {
@@ -339,6 +446,8 @@ def main() -> None:
         "validate-feishu": cmd_validate_feishu,
         "inspect-baseline": cmd_inspect_baseline,
         "check-feishu-schema": cmd_check_feishu_schema,
+        "baseline-track": cmd_baseline_track,
+        "export-recommendations": cmd_export_recommendations,
     }
 
     handler = handlers.get(args.command)

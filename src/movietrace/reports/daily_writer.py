@@ -18,10 +18,11 @@ def generate_daily_report(
     conn = connect_database(db_path)
     try:
         rows = _load_report_data(conn)
+        new_seasons = _load_new_season_updates(conn)
     finally:
         conn.close()
 
-    if not rows:
+    if not rows and not new_seasons:
         return _empty_report(report_date)
 
     # Categorize
@@ -46,7 +47,9 @@ def generate_daily_report(
     needs_review.sort(key=lambda r: r["hot_score"] or 0, reverse=True)
 
     # Build report
-    lines = _build_report(report_date, new_discoveries, existing, needs_review)
+    lines = _build_report(
+        report_date, new_discoveries, existing, needs_review, new_seasons
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -90,11 +93,41 @@ def _load_report_data(conn) -> list[dict]:
     ]
 
 
+def _load_new_season_updates(conn) -> list[dict]:
+    """Load new season content_updates from the tracking module."""
+    rows = conn.execute(
+        """select cu.id, cu.content_update_id, cu.update_type, cu.priority,
+                  cu.source_summary_json, cu.created_at,
+                  ci.title, vs.name as series_name, vs.tmdb_tv_id
+           from content_updates cu
+           join canonical_items ci on ci.id = cu.canonical_item_id
+           left join virtual_series vs on vs.id = ci.virtual_series_id
+           where cu.update_type = 'new_season'
+           order by cu.created_at desc"""
+    ).fetchall()
+
+    return [
+        {
+            "id": r[0],
+            "content_update_id": r[1],
+            "update_type": r[2],
+            "priority": r[3],
+            "source_summary_json": r[4],
+            "created_at": r[5],
+            "title": r[6],
+            "series_name": r[7],
+            "tmdb_tv_id": r[8],
+        }
+        for r in rows
+    ]
+
+
 def _build_report(
     report_date: date,
     new_discoveries: list[dict],
     existing: list[dict],
     needs_review: list[dict],
+    new_seasons: list[dict] | None = None,
 ) -> list[str]:
     total = len(new_discoveries) + len(existing) + len(needs_review)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -140,6 +173,10 @@ def _build_report(
 
     # ⚠️ 待确认
     lines.extend(_section_review(needs_review))
+
+    # 📺 基线新季
+    if new_seasons:
+        lines.extend(_section_new_seasons(new_seasons))
 
     lines.extend([
         "",
@@ -231,6 +268,41 @@ def _section_review(items: list[dict]) -> list[str]:
             f"| {baseline_ref} "
             f"| {reason} "
             f"| 确认/驳回 |"
+        )
+    return lines
+
+
+def _section_new_seasons(items: list[dict]) -> list[str]:
+    import json
+
+    lines = [
+        "",
+        "## 📺 基线新季",
+        "",
+        f"**数量：** {len(items)}",
+        "",
+    ]
+    if not items:
+        lines.append("*暂无基线新季更新*")
+        return lines
+
+    lines.append("| 剧集 | TMDb ID | 新季 | 优先级 | 检测时间 |")
+    lines.append("|------|---------|------|--------|----------|")
+    for item in items:
+        source_info = {}
+        raw = item.get("source_summary_json", "")
+        if raw:
+            try:
+                source_info = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        season = source_info.get("season", "?")
+        lines.append(
+            f"| {_esc(item.get('series_name') or item.get('title', 'N/A'))} "
+            f"| {item.get('tmdb_tv_id', 'N/A')} "
+            f"| S{season} "
+            f"| {item.get('priority', 'N/A')} "
+            f"| {item.get('created_at', 'N/A')[:19]} |"
         )
     return lines
 

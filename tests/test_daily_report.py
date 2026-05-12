@@ -59,7 +59,8 @@ def _seed_db(conn):
     conn.execute("insert or ignore into schema_migrations(version) values (1)")
     conn.commit()
     migrations_dir = Path(__file__).parent.parent / "src/movietrace/db/migrations"
-    for fname in ["002_flixpatrol_top10.sql", "003_candidates.sql", "004_candidate_matches.sql"]:
+    for fname in ["002_flixpatrol_top10.sql", "003_candidates.sql", "004_candidate_matches.sql",
+                  "005_upstream_tables.sql", "006_virtual_series.sql"]:
         sql = (migrations_dir / fname).read_text()
         conn.executescript(sql)
         conn.execute(

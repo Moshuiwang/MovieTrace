@@ -5,7 +5,7 @@
 
 ---
 
-**最后更新：** 2026-05-12  +08
+**最后更新：** 2026-05-12 18:51 +08
 **更新人：** Claude Code (DeepSeek V4 Pro) + moshuiwang
 **所在分支：** `main`
 
@@ -18,40 +18,53 @@
 | Phase 0：开发前验证 | ✅ 已完成（Go 决策） |
 | Phase 0+：FlixPatrol 接入验证 | ✅ 已完成（SUP-A~G 全部通过） |
 | Phase 1：V1 MVP 开发 | ✅ 全部完成（284 测试） |
-| **Phase 1.5：V1 定位翻转** | 🟡 进行中（A ✅ / B-D 任务包 v2 已发布 / E 砍掉 / F 合并原 F+G） |
-| Phase 1.6：首次真实运行 + 验收 | ⏳ 待 1.5 完成 |
+| **Phase 1.5：V1 定位翻转** | ✅ 全部完成（326 测试） |
+| Phase 1.6：首次真实运行 + 验收 | ⏳ 下一阶段 |
 | Phase 1.7：条件性调优 | ⏳ 待 1.6 数据反馈 |
 
 ---
 
-## Phase 1.5 待办（B→C→D→F，全部串行）
+## Phase 1.5 执行结果（2026-05-12）
 
 ```
-P1.5-A（文档翻转）                                ✅ 已完成
+P1.5-A（文档翻转）                                ✅
     ↓
-P1.5-B（schema v6 migration）                     📝 任务包 v2 已发布，待执行
+P1.5-B（schema v6 migration）                     ✅ migration 006 已执行
     ↓
-P1.5-E（A 库全量实体匹配 → canonical_items）      📝 任务包 v1 已发布，待 B 完成
+P1.5-E（A 库全量实体匹配 → canonical_items）      ✅ match_upstream_program + 全量脚本
     ↓
-P1.5-C（virtual_series 一次性回填）                📝 任务包 v2 已发布，待 E 完成
+P1.5-C（virtual_series 一次性回填）                ✅ virtual_series 模块 + 回填脚本
     ↓
-P1.5-D（基线主动追踪模块）                         📝 任务包 v2 已发布，待 C 完成
+P1.5-D（基线主动追踪模块）                         ✅ poll_scheduler + baseline_tracking + CLI
     ↓
-P1.5-F（日报模板 + CLI 语义 + 导出，合并原 F/G）   📝 任务包 v1 已发布，待 D 完成
+P1.5-F（日报模板 + CLI 语义 + 导出）               ✅ export_writer + CLI 更新 + 飞书写入移除
 ```
 
-**P1.5-E 是新增任务包** — A 库 735 条节目作为输入源后，必须先全量匹配 TMDb 创建 canonical_items，P1.5-C 才有输入。
+**新增模块：**
+- `src/movietrace/pipeline/virtual_series.py`
+- `src/movietrace/pipeline/poll_scheduler.py`
+- `src/movietrace/pipeline/baseline_tracking.py`
+- `src/movietrace/reports/export_writer.py`
+- `src/movietrace/sources/tmdb.py` — TmdbDetailClient
+
+**新增 CLI 命令：**
+- `baseline-track` — 基线新季检测
+- `export-recommendations` — MD+JSON 导出
+
+**新增配置文件：**
+- `config.yaml` — baseline_tracking 配置
 
 **已砍掉：**
-- ~~P1.5-E（飞书写入翻新）~~ → 飞书已从系统链路移除
+- ~~飞书写入~~ — daily-discover 已移除飞书写入步骤
+- ~~feishu.recommendation_writer~~ — 不再调用
 
-**任务包文档：**
+**任务包文档（全部已执行）：**
 - [P1.5-A](docs/tasks/p1.5_a_documentation_repositioning.md) ✅
-- [P1.5-B](docs/tasks/p1.5_b_schema_v6_migration.md) 📝
-- [P1.5-E](docs/tasks/p1.5_e_entity_matching_full.md) 📝
-- [P1.5-C](docs/tasks/p1.5_c_virtual_series_backfill.md) 📝
-- [P1.5-D](docs/tasks/p1.5_d_baseline_active_tracking.md) 📝
-- [P1.5-F](docs/tasks/p1.5_f_report_cli_export.md) 📝
+- [P1.5-B](docs/tasks/p1.5_b_schema_v6_migration.md) ✅
+- [P1.5-E](docs/tasks/p1.5_e_entity_matching_full.md) ✅
+- [P1.5-C](docs/tasks/p1.5_c_virtual_series_backfill.md) ✅
+- [P1.5-D](docs/tasks/p1.5_d_baseline_active_tracking.md) ✅
+- [P1.5-F](docs/tasks/p1.5_f_report_cli_export.md) ✅
 
 ---
 
@@ -103,19 +116,32 @@ P1.5-F（日报模板 + CLI 语义 + 导出，合并原 F/G）   📝 任务包 
 
 ## 进行中任务
 
-*无*（P1.5-B 任务包 v2 已发布，待其他 Agent 领取执行）
+*无*
 
 ---
 
 ## 阻塞项
 
-*无*（之前的阻塞项"生产环境 DB schema 未确认"已解决）
+*无*
 
 ---
 
 ## 待用户决策
 
-*无*
+- **Phase 1.6 启动时机**：P1.5 全部代码已就绪，测试 326 通过。生产环境实际执行（P1.5-E → C → D → F）需用户确认时间和 TMDb API 配额
+
+---
+
+## 给下一个 Agent 的交接
+
+- **P1.5 全部完成**，Phase 1.6 是下一阶段
+- **生产执行前请注意：**
+  - P1.5-E 匹配脚本需 ~20 分钟（597 条 × 1 次/秒），建议先 `--dry-run --limit 5` 验证 API 连通性
+  - TMDb Bearer Token 路径：`/tmp/movietrace_phase0_secrets.json`
+  - `baseline_quality_issues` 表由 `_ensure_quality_issues_table()` 动态创建（非正式 migration）
+  - `external_ids(source, external_id)` 唯一索引导致同剧多季只存一条 tmdb external_id，P1.5-C 已处理此情况
+- **新增 CLI 命令：** `baseline-track`、`export-recommendations`
+- **Session 报告：** `reports/session_2026-05-12_p1.5_full_execution.md`
 
 ---
 

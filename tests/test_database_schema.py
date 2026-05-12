@@ -46,12 +46,17 @@ class DatabaseSchemaTest(unittest.TestCase):
                 "content_updates",
                 "match_candidates",
                 "api_cache",
+                "upstream_programs",
+                "upstream_episodes",
+                "virtual_series",
             }.issubset(tables)
         )
         self.assertIn("ux_canonical_items_key", indexes)
         self.assertIn("ux_external_ids_source_id", indexes)
         self.assertIn("ux_content_updates_item_type", indexes)
         self.assertIn("idx_baseline_items_title", indexes)
+        self.assertIn("ux_virtual_series_tmdb_tv_id", indexes)
+        self.assertIn("idx_canonical_items_virtual_series", indexes)
 
 
 if __name__ == "__main__":

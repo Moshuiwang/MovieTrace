@@ -67,3 +67,30 @@ def _year_from_date(value: object) -> int | None:
         return int(value[:4])
     except ValueError:
         return None
+
+
+class TmdbDetailClient:
+    """TMDb detail endpoint client (GET /tv/{id}, /movie/{id})."""
+
+    def __init__(
+        self,
+        bearer_token: str,
+        *,
+        base_url: str = "https://api.themoviedb.org/3",
+    ):
+        self.bearer_token = bearer_token
+        self.base_url = base_url.rstrip("/")
+
+    def get_tv_details(self, tmdb_tv_id: str) -> dict:
+        """GET /tv/{tv_id} — returns raw TMDb response dict."""
+        payload = get_json(
+            f"{self.base_url}/tv/{tmdb_tv_id}",
+            params={"language": "en-US"},
+            headers={
+                "Authorization": f"Bearer {self.bearer_token}",
+                "Accept": "application/json",
+            },
+        )
+        if isinstance(payload, dict):
+            return payload
+        return {}
