@@ -1,8 +1,8 @@
 # 任务包模板
 
 > 复制本文件为 `docs/tasks/<task_id>.md`，逐项填写。**字段缺一不进入编码。**
-> 已完成的范例参考：[`sup_c_flixpatrol_matching.md`](sup_c_flixpatrol_matching.md)（精简风格）、
-> [`sup_a_flixpatrol_accessibility.md`](sup_a_flixpatrol_accessibility.md)（详细风格）。
+> 已完成的范例参考：[`archive/sup_c_flixpatrol_matching.md`](archive/sup_c_flixpatrol_matching.md)（精简风格）、
+> [`archive/sup_a_flixpatrol_accessibility.md`](archive/sup_a_flixpatrol_accessibility.md)（详细风格）。
 
 ---
 
@@ -10,6 +10,8 @@
 
 ```markdown
 # 任务包：<任务名称>
+
+- [ ] 任务已审阅，同意执行
 
 **任务包版本：** v1
 **创建时间：** YYYY-MM-DD HH:MM +08

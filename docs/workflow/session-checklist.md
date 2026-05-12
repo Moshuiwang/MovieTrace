@@ -11,6 +11,7 @@
 - [ ] **日报** — 写 `journal/YYYY-MM-DD_HHMM_<tool>_<model>.md`（格式见 [journal-spec.md](journal-spec.md)，2026-05-12 起命名加入 HHMM 时分字段）
 - [ ] **ADR** — 如有新决策或状态变更（Proposed→Accepted 等），更新对应 ADR 和 [docs/decisions/README.md](../decisions/README.md) 索引表
 - [ ] **CLAUDE.md / AGENTS.md** — 如有阶段变化、新模块、新约定，同步更新
+- [ ] **审阅 checkbox** — 检查本次产出的报告/任务包是否包含 `- [ ]` checkbox（见 CLAUDE.md 验证规则）
 - [ ] **git commit** — 上述变更统一提交，message 前缀使用：
   - `docs(meta):` — CLAUDE.md / AGENTS.md / STATE.md
   - `docs(state):` — 仅 STATE.md

@@ -56,6 +56,22 @@
 
 ---
 
+## 已废弃的命名模式
+
+以下为历史命名模式，不再使用。旧文件保留不动（避免破坏 git history 和交叉引用），但新日报严格遵循 `YYYY-MM-DD_HHMM_<tool>_<model>.md`：
+
+| 废弃模式 | 示例 | 说明 |
+|---------|------|------|
+| `YYYY-MM-DD_<tool>_<model>.md` | `2026-05-10_claude-code_sonnet-4.6.md` | 缺 HHMM，无法区分同日多次会话 |
+| `YYYY-MM-DD_p1_X.md` | `2026-05-11_p1_b.md` | Phase 简写替代 tool/model，实际是任务完成报告而非日报 |
+| `phase0_dayX_summary.md` | `phase0_day1_summary.md` | 无日期前缀的阶段摘要，已被日报规范取代 |
+
+## 任务包归档引用
+
+旧版任务包移入 `docs/tasks/archive/` 后，原链接可能失效。引用任务包文档时注意检查路径是否正确。
+
+---
+
 ## 注意
 
 - **不要重复 STATE.md 的全部内容**——日报是过程，STATE.md 是当前快照
