@@ -23,7 +23,7 @@ logger = logging.getLogger("movietrace.pipeline.discovery")
 def _ensure_fp_data(conn: sqlite3.Connection, date_from: str) -> None:
     """Populate flixpatrol_top10 from API if no data exists for the date."""
     existing = conn.execute(
-        "select count(*) from flixpatrol_top10 where snapshot_date >= ?",
+        "select count(*) from flixpatrol_top10 where snapshot_date = ?",
         (date_from,),
     ).fetchone()[0]
     if existing > 0:
@@ -39,6 +39,14 @@ def _ensure_fp_data(conn: sqlite3.Connection, date_from: str) -> None:
         count = 0
         for platform_key, items in results.items():
             for item in items:
+                if item.get("snapshot_date") != date_from:
+                    logger.debug(
+                        "Skipping FP row outside requested date: requested=%s actual=%s fp_id=%s",
+                        date_from,
+                        item.get("snapshot_date"),
+                        item.get("fp_id"),
+                    )
+                    continue
                 try:
                     conn.execute(
                         """insert or ignore into flixpatrol_top10
@@ -67,6 +75,8 @@ def _ensure_fp_data(conn: sqlite3.Connection, date_from: str) -> None:
                     logger.warning("Failed to insert FP row: %s", exc)
         conn.commit()
         logger.info("Inserted %d rows into flixpatrol_top10", count)
+        if count == 0:
+            logger.warning("FlixPatrol API returned no usable rows for %s", date_from)
     except Exception as exc:
         logger.error("Failed to fetch FP data from API: %s", exc)
 

@@ -19,6 +19,8 @@
 | [0005](0005-sup-a-stdlib-only.md) | SUP-A 任务包仅使用 stdlib，不引入新依赖 | ✅ Accepted | 2026-05-10 |
 | [0006](0006-flixpatrol-api-over-html.md) | P1-B 数据源从 HTML 爬虫切换到付费 API | ✅ Accepted | 2026-05-11 |
 | [0007](0007-repositioning-to-update-tracking.md) | 系统定位翻转 —— 从"推荐+人工审核"到"更新追踪+中间表" | ✅ Accepted（2026-05-12 修正：飞书全链路移除，见文末） | 2026-05-11 |
+| [0008](0008-multi-source-union-discovery.md) | 多热门源独立采集与并集发现架构 | ✅ Accepted | 2026-05-13 |
+| [0009](0009-p1-8-api-budget-and-rating-fallback.md) | P1.8 API 预算与评分兜底策略 | ✅ Accepted | 2026-05-13 |
 
 ---
 

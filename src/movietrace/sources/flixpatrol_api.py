@@ -133,6 +133,8 @@ class FlixPatrolClient:
         }
         if date_from:
             params["date[from][gte]"] = date_from
+            if date_to is None:
+                date_to = date_from
         if date_to:
             params["date[from][lte]"] = date_to
 

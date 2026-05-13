@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-13 15:00 +08
-**更新人：** Claude Code (deepseek-v4-pro) + moshuiwang
+**最后更新：** 2026-05-13 23:55 +08
+**更新人：** Codex (GPT-5) + moshuiwang
 **所在分支：** `main`
 
 ---
@@ -21,7 +21,7 @@
 | **Phase 1.5：V1 定位翻转** | ✅ 全部完成（326 测试） |
 | **Phase 1.6：首次真实运行 + 验收** | ✅ 已完成（2026-05-12） |
 | **Phase 1.7：多热门源扩充** | ✅ 全部完成（366 测试, 2026-05-13） |
-| Phase 1.8：条件性调优 | ⏳ 待启动（需 FP 数据恢复） |
+| **Phase 1.8：条件性调优前置数据治理** | 📋 任务包规划中（待用户安排执行） |
 
 ---
 
@@ -237,22 +237,67 @@ daily-discover 2026-05-13:
 
 ---
 
+### P1.7 验收后修复：FlixPatrol 当日数据为 0
+
+- **任务包：** [P1.8-A](docs/tasks/p1.8_a_flixpatrol_zero_data_bugfix.md)
+- **根因：** FP 当日数据检测使用 `snapshot_date >= ?`，未来日期数据会误判目标日期已有数据；同时 FP API 单日请求未强制设置 `date[from][lte]`。
+- **修复：** FP 当日检测改为 `snapshot_date = ?`；单日请求补上 `date[from][lte] = date_from`；入库时跳过非目标日期。
+- **验证：**
+  - `tests/test_discovery.py tests/test_flixpatrol_api.py -v` → 54 passed
+  - `tests/ -v` → 368 passed
+  - `daily-discover --date 2026-05-13 --dry-run` → FP 120 items，P2+ 62（P0=1, P1=6, P2=55）
+- **报告：**
+  - [修复报告](reports/p1.8_a_flixpatrol_zero_data_bugfix_report.md)
+  - [端到端验证报告](reports/session_2026-05-13_p1.8_fp_e2e_validation.md)
+
+---
+
+## Phase 1.8 当前规划（2026-05-13 23:55）
+
+### 已创建任务包（待用户审阅 / 安排执行）
+
+- [P1.8-B OMDb key 授权与配额排查](docs/tasks/p1.8_b_omdb_key_authorization_diagnosis.md)
+- [P1.8-C TMDb 字段结构化与 TV freshness](docs/tasks/p1.8_c_tmdb_structured_fields_and_tv_freshness.md)
+- [P1.8-D API usage logging](docs/tasks/p1.8_d_api_usage_logging.md)
+- [P1.8-E 多源字段结构化与 IMDb ID 补全](docs/tasks/p1.8_e_multi_source_structured_fields_and_imdb_id_backfill.md)
+- [P1.8-F 每日主线 TMDb external_ids 入库](docs/tasks/p1.8_f_daily_external_ids_backfill.md) — v2，已标注与 G 合并执行
+- [P1.8-G 评分前补 IMDb ID 与 TMDb 评分兜底](docs/tasks/p1.8_g_imdb_id_pre_score_backfill_and_tmdb_rating_fallback.md) — v2，已记录降低 OMDb 依赖
+- [P1.8-H FlixPatrol 覆盖范围与 API 预算策略调整](docs/tasks/p1.8_h_flixpatrol_coverage_and_budget_strategy.md)
+- [P1.8 执行顺序与依赖调整](docs/tasks/p1.8_execution_order.md)
+
+### 已确认产品决策
+
+- **OMDb 依赖：** 降低 OMDb 对当天评分链路的阻塞性；OMDb 有结果时优先使用真实 IMDb 分，失败时不阻断评分。
+- **TMDb fallback：** 接受用 TMDb `vote_average` / `vote_count` 作为 IMDb 评分维度兜底，但必须在 `score_breakdown` 中标记 `tmdb_fallback`。
+- **P1.8-F / P1.8-G：** 合并执行，避免重复实现 TMDb external_ids client、缓存和统计。
+- **FP 覆盖策略：** World / United States / Nigeria / Kenya；Netflix / Prime Video / Disney+ / Apple TV+ / HBO Max / Paramount+；TV 每日抓取，Movie 每周抓取；预计约 824-864 FP API calls/month。
+- **ADR：** [ADR-0009 P1.8 API 预算与评分兜底策略](docs/decisions/0009-p1-8-api-budget-and-rating-fallback.md)
+
+### 建议执行顺序
+
+`P1.8-D → P1.8-H → P1.8-C → P1.8-F/G → P1.8-E`
+
+原因见：[P1.8 执行顺序与依赖调整](docs/tasks/p1.8_execution_order.md)。
+
+---
+
 ## 进行中任务
 
-*无*
+- Phase 1.8 任务包已拆分，等待用户安排执行；当前不应主动进入实现。
 
 ---
 
 ## 阻塞项
 
-- **FP 数据恢复**：2026-05-13 FlixPatrol 返回 0 条。Phase 1.8 调优需等 FP 数据正常后验证。
+- **OMDb 免费配额**：2026-05-13 已出现 `Request limit reached!`，当天真实 IMDb 评分补全不可依赖 OMDb 全量成功。
+- **API usage log 尚未实现**：后续 FP 扩围和 TMDb external_ids 增加请求量前，建议先执行 P1.8-D。
 
 ---
 
 ## 待用户决策
 
 - **pyyaml 是否纳入 requirements.txt**（当前已 `pip install`，scoring.py 有 fallback 到 DEFAULT_WEIGHTS）
-- **Phase 1.8 启动时机**：需 FP 数据恢复后再调权重
+- **P1.8 任务执行安排**：当前建议顺序为 D → H → C → F/G → E；等待用户指定启动哪个任务包。
 
 ---
 

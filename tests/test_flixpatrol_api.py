@@ -462,6 +462,22 @@ class TestFlixPatrolClient:
         for k in expected_keys:
             assert k in results
 
+    def test_fetch_top10_uses_closed_single_day_window_when_date_from_given(self, compound_doc_item):
+        """A single-day fetch should not pull later snapshot dates."""
+        client = FlixPatrolClient("test_key")
+        with patch("movietrace.sources.flixpatrol_api.get_json") as mock_get:
+            mock_get.return_value = {"data": [compound_doc_item]}
+            client.fetch_top10(
+                company=PLATFORM_COMPANY_IDS["netflix"],
+                country=US_COUNTRY_ID,
+                content_type=2,
+                date_from="2026-05-13",
+            )
+
+        params = mock_get.call_args.kwargs["params"]
+        assert params["date[from][gte]"] == "2026-05-13"
+        assert params["date[from][lte]"] == "2026-05-13"
+
 
 # ── _extract_http_status tests ──────────────────────────────────────────
 

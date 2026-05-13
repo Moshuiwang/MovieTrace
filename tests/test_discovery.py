@@ -5,6 +5,7 @@ import os
 import sqlite3
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -13,6 +14,7 @@ from movietrace.pipeline.discovery import (
     _build_source_summary,
     _build_reason_text,
     _compute_discovery_stats,
+    _ensure_fp_data,
     _lookup_canonical_id,
     run_discovery,
 )
@@ -119,6 +121,59 @@ class TestLookupCanonicalId:
 
 
 class TestRunDiscovery:
+    def test_ensure_fp_data_ignores_future_dates_when_checking_target_date(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """insert into flixpatrol_top10
+                   (fp_id, title, content_type, platform, country,
+                    snapshot_date, ranking, raw_payload_json)
+                   values (?, ?, ?, ?, ?, ?, ?, ?)""",
+                ("future1", "Future Title", "movie", "netflix", "united-states",
+                 "2026-05-14", 1, "{}"),
+            )
+            conn.commit()
+
+            class FakeClient:
+                def __init__(self, api_key):
+                    self.api_key = api_key
+
+                def fetch_all_platforms(self, date_from=None):
+                    return {
+                        "netflix/movie": [
+                            {
+                                "fp_id": "target1",
+                                "title": "Target Title",
+                                "content_type": "movie",
+                                "platform": "netflix",
+                                "country": "united-states",
+                                "snapshot_date": "2026-05-13",
+                                "ranking": 1,
+                                "ranking_last": 2,
+                                "value": 10,
+                                "days_total": 3,
+                                "tmdb_id": 123,
+                                "imdb_id": 456,
+                            }
+                        ]
+                    }
+
+            with patch("movietrace.sources.flixpatrol_api.load_api_key", return_value="key"):
+                with patch("movietrace.sources.flixpatrol_api.FlixPatrolClient", FakeClient):
+                    _ensure_fp_data(conn, "2026-05-13")
+
+            count = conn.execute(
+                "select count(*) from flixpatrol_top10 where snapshot_date = ?",
+                ("2026-05-13",),
+            ).fetchone()[0]
+            assert count == 1
+            conn.close()
+        finally:
+            os.unlink(db_path)
+
     def test_empty_fp_data_returns_gracefully(self):
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
