@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-13 11:50 +08
-**更新人：** Claude Code (Opus 4.7) + moshuiwang
+**最后更新：** 2026-05-13 15:00 +08
+**更新人：** Claude Code (deepseek-v4-pro) + moshuiwang
 **所在分支：** `main`
 
 ---
@@ -20,8 +20,8 @@
 | Phase 1：V1 MVP 开发 | ✅ 全部完成（284 测试） |
 | **Phase 1.5：V1 定位翻转** | ✅ 全部完成（326 测试） |
 | **Phase 1.6：首次真实运行 + 验收** | ✅ 已完成（2026-05-12） |
-| **Phase 1.7：多热门源扩充** | 🚧 任务包已生成,待用户审阅 |
-| Phase 1.8：条件性调优 | ⏳ 待 1.7 落地后启动 |
+| **Phase 1.7：多热门源扩充** | ✅ 全部完成（366 测试, 2026-05-13） |
+| Phase 1.8：条件性调优 | ⏳ 待启动（需 FP 数据恢复） |
 
 ---
 
@@ -182,56 +182,96 @@ external_ids:    upstream 597 · tmdb 424
 
 ---
 
-## 进行中任务
+## Phase 1.7 执行结果（2026-05-13）
 
-### Phase 1.7 任务包(2026-05-13 已生成,待用户审阅)
+```
+P1.7-A（migration 007 schema 扩展）                ✅
+    ↓
+P1.7-B（TMDb 热门源采集）∥ P1.7-C（Trakt 热门源采集）   ✅ ∥ ✅
+    ↓
+P1.7-D（多源并集 + 富化 + 评分）                    ✅
+    ↓
+P1.7-E（inspect CLI + 端到端验收）                   ✅
+```
 
-| 编号 | 名称 | 路径 | 状态 |
-|------|------|------|------|
-| P1.7-A | 多热门源 schema 扩展 | [docs/tasks/p1.7_a_multi_source_schema.md](docs/tasks/p1.7_a_multi_source_schema.md) | 📝 待审阅 |
-| P1.7-B | TMDb 热门源采集 | [docs/tasks/p1.7_b_tmdb_trending_source.md](docs/tasks/p1.7_b_tmdb_trending_source.md) | 📝 待审阅 |
-| P1.7-C | Trakt 热门源采集 | [docs/tasks/p1.7_c_trakt_trending_source.md](docs/tasks/p1.7_c_trakt_trending_source.md) | 📝 待审阅 |
-| P1.7-D | 多源并集 + 富化 + 评分 | [docs/tasks/p1.7_d_multi_source_merge_and_score.md](docs/tasks/p1.7_d_multi_source_merge_and_score.md) | 📝 待审阅 |
-| P1.7-E | 本地查阅 CLI + 端到端验收 | [docs/tasks/p1.7_e_inspect_updates_cli.md](docs/tasks/p1.7_e_inspect_updates_cli.md) | 📝 待审阅 |
+**新增模块：**
+- `src/movietrace/pipeline/tmdb_trending.py` — TMDb 热门采集
+- `src/movietrace/pipeline/trakt_trending.py` — Trakt 热门采集
+- `src/movietrace/pipeline/multi_source_merge.py` — 三源并集
+- `src/movietrace/pipeline/omdb_enrichment.py` — OMDb 富化 + TMDb 详情补充
+- `src/movietrace/reports/inspect_renderer.py` — 终端表格 / JSON / MD 渲染
 
-**依赖:** A → (B ∥ C) → D → E
+**新增 CLI 命令：**
+- `fetch-tmdb-trending` — TMDb 热门源采集
+- `fetch-trakt-trending` — Trakt 热门源采集
+- `inspect-updates` — 本地查阅 content_updates
 
-**核心目标:** 修复功能 1 当前 `ext_data=None` 导致 hot_score 全部 P3 的核心缺口,使三源(FP/TMDb/Trakt)产出真实的多源加权热度榜。
+**新增 DB 表（migration 007）：**
+- `tmdb_trending` — TMDb 热度榜单
+- `trakt_trending` — Trakt 热度榜单
+
+**任务包文档（全部已执行）：**
+- [P1.7-A](docs/tasks/p1.7_a_multi_source_schema.md) ✅
+- [P1.7-B](docs/tasks/p1.7_b_tmdb_trending_source.md) ✅
+- [P1.7-C](docs/tasks/p1.7_c_trakt_trending_source.md) ✅
+- [P1.7-D](docs/tasks/p1.7_d_multi_source_merge_and_score.md) ✅
+- [P1.7-E](docs/tasks/p1.7_e_inspect_updates_cli.md) ✅
 
 ---
 
-## 阻塞项
+## Phase 1.7 生产运行结果
+
+```
+daily-discover 2026-05-13:
+  FP:        0 items (无当日快照)
+  TMDb:      180 items (trending/day=60, tv/popular=60, movie/popular=60)
+  Trakt:     601 items (shows=500, movies=101)
+  Merged:    649 candidates
+  OMDb enriched: 583
+  P2+ passed:    4 (P0=0 P1=0 P2=4)
+  Written:   1 new_discovery + 5 new_seasons
+  api_cache: 1079 OMDb entries
+```
+
+**注意：** FP 0 数据导致仅 4 条 P2+，正常日预计 30-80 条。
+
+---
+
+## 进行中任务
 
 *无*
 
 ---
 
+## 阻塞项
+
+- **FP 数据恢复**：2026-05-13 FlixPatrol 返回 0 条。Phase 1.8 调优需等 FP 数据正常后验证。
+
+---
+
 ## 待用户决策
 
-- **Phase 1.7 任务包审阅**:每个任务包顶部 checkbox 勾选后才可启动编码
-- **2026-05-13 调研已定决策**:
-  - TMDb 候选范围:`trending/day` + `tv/popular` + `movie/popular` 各 3 页
-  - Trakt 候选范围:`shows/trending` + `movies/trending` 全量(≈730 条)
-  - 多源去重:按 `tmdb_id` 优先,`imdb_id` 次之
-  - 输出阈值:P2 及以上写入(`hot_score ≥ 50`)
+- **pyyaml 是否纳入 requirements.txt**（当前已 `pip install`，scoring.py 有 fallback 到 DEFAULT_WEIGHTS）
+- **Phase 1.8 启动时机**：需 FP 数据恢复后再调权重
 
 ---
 
 ## 给下一个 Agent 的交接
 
-- **P1.5 全部完成**，Phase 1.6 是下一阶段
-- **生产执行前请注意：**
-  - P1.5-E 匹配脚本需 ~20 分钟（597 条 × 1 次/秒），建议先 `--dry-run --limit 5` 验证 API 连通性
-  - TMDb Bearer Token 路径：`/tmp/movietrace_phase0_secrets.json`
-  - `baseline_quality_issues` 表由 `_ensure_quality_issues_table()` 动态创建（非正式 migration）
-  - `external_ids(source, external_id)` 唯一索引导致同剧多季只存一条 tmdb external_id，P1.5-C 已处理此情况
-- **新增 CLI 命令：** `baseline-track`、`export-recommendations`
-- **Session 报告：** `reports/session_2026-05-12_p1.5_full_execution.md`
+- **Phase 1.7 全部完成**，366 测试全过
+- **新增 CLI 命令：** `fetch-tmdb-trending`、`fetch-trakt-trending`、`inspect-updates`（共 3 个）
+- **daily-discover 流程已改为 6 步多源版本**，不再写 candidates 表（改写 content_updates）
+- **OMDb 缓存已在生产 DB**，第二次运行同日会全量命中缓存（≈0 API 调用）
+- **`candidates` 表不再写入**，但 `baseline_matching` 仍依赖。Phase 1.8 需决定是否废弃
+- **TMDb Bearer Token 路径：** `/tmp/movietrace_phase0_secrets.json`
+- **Trakt 需要 Mozilla UA**（已在 http.py 设默认值）
+- **Session 报告：** `reports/session_2026-05-13_p1.7_acceptance.md`
 
 ---
 
 ## Housekeeping 待办（不阻塞主线）
 
-- ~~**任务包文档归档治理**~~ ✅ 已完成（2026-05-12 文档治理）：9 个旧文件移入 `docs/tasks/archive/`
-- ~~**日报归档**~~ ✅ 已完成：`journal/` 旧格式文件加历史标记，新规范固化到 `journal-spec.md`
-- **参考文档分类**：`docs/` 根目录文件仍平铺，可考虑按主题分目录（参考治理方案步骤 5）
+- ~~**任务包文档归档治理**~~ ✅ 已完成（2026-05-12）
+- ~~**日报归档**~~ ✅ 已完成
+- **参考文档分类**：`docs/` 根目录文件可考虑按主题分目录
+- **pyyaml 纳入依赖**：确认后更新 `requirements.txt`

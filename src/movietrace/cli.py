@@ -20,7 +20,7 @@ from movietrace.db.schema import connect_database
 
 
 def cmd_daily_discover(args: argparse.Namespace) -> int:
-    """Run the full daily discovery pipeline."""
+    """Run the full multi-source daily discovery pipeline (P1.7-D)."""
     report_date = _parse_date_arg(args.date) or date.today()
     date_str = report_date.isoformat()
     dry_run = args.dry_run
@@ -29,77 +29,105 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
     print(f"Dry-run: {dry_run}")
     print()
 
+    secrets = _load_secrets()
+    omdb_key = (secrets.get("omdb") or {}).get("api_key", "")
+    tmdb_token = _load_tmdb_token()
+
     # Step 1: Fetch FlixPatrol data
-    print("[1/4] Fetching FlixPatrol data...", end=" ", flush=True)
+    print("[1/6] Fetching FlixPatrol...", end=" ", flush=True)
     try:
         from movietrace.pipeline.discovery import _ensure_fp_data
         conn = connect_database("data/movietrace.db")
         _ensure_fp_data(conn, date_str)
+        fp_count = conn.execute(
+            "select count(*) from flixpatrol_top10 where snapshot_date=?",
+            (date_str,),
+        ).fetchone()[0]
         conn.close()
-        print("OK")
+        print(f"OK ({fp_count} items)")
     except Exception as exc:
         print(f"FAILED: {exc}")
         return 1
 
-    # Step 2: Discovery (score + merge + write candidates)
-    print("[2/4] Scoring candidates...", end=" ", flush=True)
+    # Step 2: Fetch TMDb trending
+    print("[2/6] Fetching TMDb trending...", end=" ", flush=True)
+    try:
+        from movietrace.pipeline.tmdb_trending import fetch_and_store_tmdb_trending
+        tmdb_result = fetch_and_store_tmdb_trending(
+            db_path="data/movietrace.db",
+            bearer_token=tmdb_token,
+            snapshot_date=date_str,
+        )
+        print(f"OK ({tmdb_result.get('inserted', 0)} items)")
+    except Exception as exc:
+        print(f"FAILED: {exc}")
+        return 1
+
+    # Step 3: Fetch Trakt trending
+    print("[3/6] Fetching Trakt trending...", end=" ", flush=True)
+    try:
+        trakt_client_id = (secrets.get("trakt") or {}).get("client_id", "")
+        if trakt_client_id:
+            from movietrace.pipeline.trakt_trending import fetch_and_store_trakt_trending
+            trakt_result = fetch_and_store_trakt_trending(
+                db_path="data/movietrace.db",
+                client_id=trakt_client_id,
+                snapshot_date=date_str,
+            )
+            print(f"OK ({trakt_result.get('inserted', 0)} items)")
+        else:
+            print("SKIPPED (no Trakt client_id)")
+    except Exception as exc:
+        print(f"FAILED: {exc}")
+        return 1
+
+    # Step 4: Merge + Enrich + Score + Write
+    print("[4/6] Merging + enriching...", end=" ", flush=True)
     try:
         from movietrace.pipeline.discovery import run_discovery
-        result = run_discovery(date_from=date_str, dry_run=False)
+        result = run_discovery(date_from=date_str, dry_run=dry_run)
         stats = result.get("stats", {})
-        print(f"OK ({stats.get('total', 0)} candidates)")
+        merged = stats.get("total_merged", 0)
+        omdb_enrich = stats.get("enrich_omdb", {})
+        print(f"OK (merged={merged} omdb_hit={omdb_enrich.get('enriched', 0)})")
     except Exception as exc:
         print(f"FAILED: {exc}")
         return 1
 
-    # Step 3: Baseline matching
-    print("[3/5] Matching against baseline...", end=" ", flush=True)
+    # Step 5: Scoring + filtering
+    print("[5/6] Scoring + filtering...", end=" ", flush=True)
     try:
-        from movietrace.pipeline.baseline_matching import run_baseline_matching
-        match_result = run_baseline_matching()
-        print(f"OK (high={match_result.get('high',0)} medium={match_result.get('medium',0)} "
-              f"low={match_result.get('low',0)} no_match={match_result.get('no_match',0)})")
+        passed_count = stats.get("total_passed", 0)
+        total_merged = stats.get("total_merged", 0)
+        print(f"OK (passed P2+ = {passed_count} of {total_merged})")
     except Exception as exc:
         print(f"FAILED: {exc}")
         return 1
 
-    # Step 4: Generate report
-    print("[4/5] Generating daily report...", end=" ", flush=True)
-    try:
-        from movietrace.reports.daily_writer import write_daily_report
-        report_path = write_daily_report(report_date)
-        print(f"OK → {report_path}")
-    except Exception as exc:
-        print(f"FAILED: {exc}")
-        return 1
-
-    # Step 5: Baseline tracking (P1.5-D)
+    # Step 6: Baseline tracking
     cfg = _load_config()
     bt_cfg = cfg.get("baseline_tracking", {})
+    written = stats.get("written", 0)
     if bt_cfg.get("enabled", True):
-        print("[5/5] Baseline tracking (new season detection)...", end=" ", flush=True)
+        print(f"[6/6] Writing content_updates + baseline tracking...", end=" ", flush=True)
         try:
             from movietrace.pipeline.baseline_tracking import run_baseline_tracking
-
-            tmdb_token = _load_tmdb_token()
             bt_result = run_baseline_tracking(
                 db_path="data/movietrace.db",
                 tmdb_token=tmdb_token,
                 dry_run=dry_run,
             )
             print(
-                f"OK (polled={bt_result.get('polled',0)} "
-                f"detected={bt_result.get('detected',0)} "
-                f"written={bt_result.get('written',0)})"
+                f"OK (written={written} + {bt_result.get('written', 0)} new_seasons)"
             )
         except Exception as exc:
             print(f"FAILED: {exc}")
             return 1
     else:
-        print("[5/5] Baseline tracking skipped (disabled in config.yaml)")
+        print(f"[6/6] Writing content_updates... OK (written={written}, baseline skipped)")
 
     print()
-    print("✓ Daily discovery complete")
+    print(f"✓ Daily discovery complete (P0={stats.get('P0',0)} P1={stats.get('P1',0)} P2={stats.get('P2',0)})")
     return 0
 
 
@@ -201,7 +229,7 @@ def cmd_inspect_baseline(args: argparse.Namespace) -> int:
         print("A库（upstream_programs）:")
         print(f"  总节目数: {up_total}")
         print(f"  上架中 (online_flag=1): {up_online}")
-        print(f"  含季号 (S\d\d): {up_with_s}")
+        print(f"  含季号 (S\\d\\d): {up_with_s}")
         print(f"  推测电影 (无季号): {up_online - up_with_s}")
         print()
         print("B库（canonical_items + virtual_series）:")
@@ -345,6 +373,13 @@ def _load_config(path: str = "config.yaml") -> dict:
         return {}
 
 
+def _load_secrets(path: str = "/tmp/movietrace_phase0_secrets.json") -> dict:
+    try:
+        return json.loads(open(path).read())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
 def _load_tmdb_token(
     secrets_path: str = "/tmp/movietrace_phase0_secrets.json",
 ) -> str:
@@ -431,6 +466,54 @@ def cmd_export_recommendations(args: argparse.Namespace) -> int:
         return 1
 
 
+# ── inspect-updates ─────────────────────────────────────────────────────
+
+
+def cmd_inspect_updates(args: argparse.Namespace) -> int:
+    """Query and display content_updates from local DB."""
+    from movietrace.reports.inspect_renderer import (
+        query_updates,
+        format_table,
+        format_detail,
+        format_json_enhanced,
+        format_markdown_enhanced,
+    )
+
+    days = args.days or 7
+    fmt = args.format or "table"
+
+    updates = query_updates(
+        db_path="data/movietrace.db",
+        days=days,
+        priority=args.priority,
+        update_type=getattr(args, "type", None),
+        content_update_id=args.id,
+    )
+
+    if args.id:
+        if updates:
+            print(format_detail(updates[0]))
+        else:
+            print(f"No update found with id: {args.id}")
+        return 0
+
+    if fmt == "json":
+        print(format_json_enhanced(updates))
+    elif fmt == "md":
+        from datetime import datetime
+        ts = datetime.now().strftime("%Y-%m-%d_%H%M")
+        path = f"reports/inspect_{ts}.md"
+        content = format_markdown_enhanced(updates, days)
+        from pathlib import Path
+        Path("reports").mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(content, encoding="utf-8")
+        print(f"Written to {path}")
+    else:
+        print(format_table(updates))
+
+    return 0
+
+
 def _parse_date_arg(date_str: str | None) -> date | None:
     if not date_str:
         return None
@@ -439,6 +522,83 @@ def _parse_date_arg(date_str: str | None) -> date | None:
     except ValueError:
         print(f"Invalid date format: {date_str}. Use YYYY-MM-DD.", file=sys.stderr)
         sys.exit(1)
+
+
+# ── fetch-tmdb-trending ──────────────────────────────────────────────────
+
+
+def cmd_fetch_tmdb_trending(args: argparse.Namespace) -> int:
+    """Fetch TMDb trending/popular data and store in tmdb_trending table."""
+    report_date = _parse_date_arg(args.date) or date.today()
+    date_str = report_date.isoformat()
+
+    print(f"MovieTrace fetch-tmdb-trending for {date_str}")
+    print(f"Pages per endpoint: {args.pages}")
+    print()
+
+    try:
+        from movietrace.pipeline.tmdb_trending import fetch_and_store_tmdb_trending
+
+        tmdb_token = _load_tmdb_token()
+        result = fetch_and_store_tmdb_trending(
+            db_path="data/movietrace.db",
+            bearer_token=tmdb_token,
+            snapshot_date=date_str,
+            pages_per_endpoint=args.pages,
+        )
+
+        print(f"Fetched:  {result.get('fetched', 0)}")
+        print(f"Inserted: {result.get('inserted', 0)}")
+        print(f"Errors:   {result.get('errors', 0)}")
+        print()
+        print("✓ TMDb trending fetch complete")
+        return 0 if result.get("errors", 0) == 0 else 1
+    except Exception as exc:
+        print(f"✗ TMDb trending fetch failed: {exc}")
+        return 1
+
+
+# ── fetch-trakt-trending ─────────────────────────────────────────────────
+
+
+def cmd_fetch_trakt_trending(args: argparse.Namespace) -> int:
+    """Fetch Trakt trending data and store in trakt_trending table."""
+    report_date = _parse_date_arg(args.date) or date.today()
+    date_str = report_date.isoformat()
+
+    print(f"MovieTrace fetch-trakt-trending for {date_str}")
+    print()
+
+    secrets_path = "/tmp/movietrace_phase0_secrets.json"
+    try:
+        secrets = json.loads(open(secrets_path).read())
+    except FileNotFoundError:
+        print(f"✗ Secrets file not found: {secrets_path}")
+        return 1
+
+    client_id = (secrets.get("trakt") or {}).get("client_id")
+    if not client_id:
+        print("✗ Trakt client_id not found in secrets file")
+        return 1
+
+    try:
+        from movietrace.pipeline.trakt_trending import fetch_and_store_trakt_trending
+
+        result = fetch_and_store_trakt_trending(
+            db_path="data/movietrace.db",
+            client_id=client_id,
+            snapshot_date=date_str,
+        )
+
+        print(f"Fetched:  {result.get('fetched', 0)}")
+        print(f"Inserted: {result.get('inserted', 0)}")
+        print(f"Errors:   {result.get('errors', 0)}")
+        print()
+        print("✓ Trakt trending fetch complete")
+        return 0 if result.get("errors", 0) == 0 else 1
+    except Exception as exc:
+        print(f"✗ Trakt trending fetch failed: {exc}")
+        return 1
 
 
 def main() -> None:
@@ -477,6 +637,23 @@ def main() -> None:
     p_export.add_argument("--output-dir", default="reports", help="Output directory")
     p_export.add_argument("--dry-run", action="store_true")
 
+    # fetch-tmdb-trending
+    p_tmdb = sub.add_parser("fetch-tmdb-trending", help="Fetch TMDb trending/popular data")
+    p_tmdb.add_argument("--date", help="Date in YYYY-MM-DD format")
+    p_tmdb.add_argument("--pages", type=int, default=3, help="Pages per endpoint (default: 3)")
+
+    # fetch-trakt-trending
+    p_trakt = sub.add_parser("fetch-trakt-trending", help="Fetch Trakt trending data")
+    p_trakt.add_argument("--date", help="Date in YYYY-MM-DD format")
+
+    # inspect-updates
+    p_inspect_up = sub.add_parser("inspect-updates", help="Query and display content_updates")
+    p_inspect_up.add_argument("--days", type=int, default=7, help="Days to cover (default: 7)")
+    p_inspect_up.add_argument("--priority", help="Filter: P0,P1,P2")
+    p_inspect_up.add_argument("--type", help="Filter: new_discovery, new_season, re_promotion")
+    p_inspect_up.add_argument("--id", help="Show detail for specific content_update_id")
+    p_inspect_up.add_argument("--format", choices=["table", "json", "md"], default="table")
+
     args = parser.parse_args()
 
     handlers = {
@@ -486,6 +663,9 @@ def main() -> None:
         "check-feishu-schema": cmd_check_feishu_schema,
         "baseline-track": cmd_baseline_track,
         "export-recommendations": cmd_export_recommendations,
+        "fetch-tmdb-trending": cmd_fetch_tmdb_trending,
+        "fetch-trakt-trending": cmd_fetch_trakt_trending,
+        "inspect-updates": cmd_inspect_updates,
     }
 
     handler = handlers.get(args.command)

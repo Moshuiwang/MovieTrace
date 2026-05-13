@@ -111,3 +111,35 @@ def _votes_or_zero(value: object) -> int:
         return int(value.replace(",", ""))
     except ValueError:
         return 0
+
+
+class OmdbDetailClient:
+    """OMDb detail lookup by IMDb ID (P1.7-D)."""
+
+    def __init__(self, api_key: str, *, base_url: str = "https://www.omdbapi.com/"):
+        self.api_key = api_key
+        self.base_url = base_url
+
+    def get_by_imdb_id(self, imdb_id: str) -> dict | None:
+        """GET ?i=<imdb_id>&apikey=... — returns {imdbRating, imdbVotes} or None."""
+        payload = get_json(
+            self.base_url,
+            params={"i": imdb_id, "apikey": self.api_key},
+        )
+        if not isinstance(payload, dict) or payload.get("Response") != "True":
+            return None
+        return payload
+
+
+def format_imdb_id(raw: str) -> str:
+    """Normalize a raw IMDb ID to tt-prefixed 7-digit format.
+
+    '1190634' → 'tt1190634', 'tt1190634' → 'tt1190634'.
+    """
+    cleaned = str(raw).strip()
+    if cleaned.lower().startswith("tt"):
+        digits = cleaned[2:]
+    else:
+        digits = cleaned
+    digits = digits.zfill(7)
+    return f"tt{digits}"

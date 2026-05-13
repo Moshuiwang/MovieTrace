@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from movietrace.pipeline.entity_matching import BaselineItem, ExternalSearchResult
@@ -140,3 +141,93 @@ class TmdbDetailClient:
         if isinstance(payload, dict):
             return payload
         return {}
+
+
+class TmdbTrendingClient:
+    """TMDb trending / popular endpoint client (P1.7-B)."""
+
+    def __init__(
+        self,
+        bearer_token: str,
+        *,
+        base_url: str = "https://api.themoviedb.org/3",
+    ):
+        self.bearer_token = bearer_token
+        self.base_url = base_url.rstrip("/")
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.bearer_token}",
+            "Accept": "application/json",
+        }
+
+    def fetch_trending_all_day(self, page: int = 1) -> list[dict]:
+        """GET /trending/all/day?page=N&language=en-US"""
+        payload = get_json(
+            f"{self.base_url}/trending/all/day",
+            params={"page": str(page), "language": "en-US"},
+            headers=self._headers(),
+        )
+        if not isinstance(payload, dict):
+            return []
+        return payload.get("results") or []
+
+    def fetch_tv_popular(self, page: int = 1) -> list[dict]:
+        """GET /tv/popular?page=N&language=en-US"""
+        payload = get_json(
+            f"{self.base_url}/tv/popular",
+            params={"page": str(page), "language": "en-US"},
+            headers=self._headers(),
+        )
+        if not isinstance(payload, dict):
+            return []
+        results = payload.get("results") or []
+        for item in results:
+            if isinstance(item, dict):
+                item["media_type"] = "tv"
+        return results
+
+    def fetch_movie_popular(self, page: int = 1) -> list[dict]:
+        """GET /movie/popular?page=N&language=en-US"""
+        payload = get_json(
+            f"{self.base_url}/movie/popular",
+            params={"page": str(page), "language": "en-US"},
+            headers=self._headers(),
+        )
+        if not isinstance(payload, dict):
+            return []
+        results = payload.get("results") or []
+        for item in results:
+            if isinstance(item, dict):
+                item["media_type"] = "movie"
+        return results
+
+
+def normalize_tmdb_trending_row(item: dict, source_endpoint: str, source_page: int, snapshot_date: str) -> dict | None:
+    """Normalize a raw TMDb trending/popular item into a tmdb_trending row dict."""
+    tmdb_id = item.get("id")
+    if tmdb_id is None:
+        return None
+    media_type = item.get("media_type", "movie")
+    if media_type not in ("movie", "tv"):
+        return None
+    title = item.get("title") if media_type == "movie" else item.get("name")
+    if not title:
+        return None
+    original_title = item.get("original_title") if media_type == "movie" else item.get("original_name")
+    release_date = item.get("release_date") if media_type == "movie" else item.get("first_air_date")
+    return {
+        "tmdb_id": int(tmdb_id),
+        "media_type": media_type,
+        "title": str(title),
+        "original_title": str(original_title) if original_title else None,
+        "release_date": str(release_date) if release_date else None,
+        "original_language": str(item.get("original_language")) if item.get("original_language") else None,
+        "popularity": float(item.get("popularity") or 0.0),
+        "vote_average": float(item.get("vote_average")) if item.get("vote_average") is not None else None,
+        "vote_count": int(item.get("vote_count")) if item.get("vote_count") is not None else None,
+        "source_endpoint": source_endpoint,
+        "source_page": source_page,
+        "snapshot_date": snapshot_date,
+        "raw_payload_json": json.dumps(item, ensure_ascii=False),
+    }
