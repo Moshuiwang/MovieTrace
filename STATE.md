@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-12 23:29 +08
-**更新人：** Claude Code (DeepSeek V4 Pro) + moshuiwang
+**最后更新：** 2026-05-13 11:50 +08
+**更新人：** Claude Code (Opus 4.7) + moshuiwang
 **所在分支：** `main`
 
 ---
@@ -20,7 +20,8 @@
 | Phase 1：V1 MVP 开发 | ✅ 全部完成（284 测试） |
 | **Phase 1.5：V1 定位翻转** | ✅ 全部完成（326 测试） |
 | **Phase 1.6：首次真实运行 + 验收** | ✅ 已完成（2026-05-12） |
-| Phase 1.7：条件性调优 | ⏳ 待 1.6 数据反馈 |
+| **Phase 1.7：多热门源扩充** | 🚧 任务包已生成,待用户审阅 |
+| Phase 1.8：条件性调优 | ⏳ 待 1.7 落地后启动 |
 
 ---
 
@@ -183,7 +184,19 @@ external_ids:    upstream 597 · tmdb 424
 
 ## 进行中任务
 
-*无*
+### Phase 1.7 任务包(2026-05-13 已生成,待用户审阅)
+
+| 编号 | 名称 | 路径 | 状态 |
+|------|------|------|------|
+| P1.7-A | 多热门源 schema 扩展 | [docs/tasks/p1.7_a_multi_source_schema.md](docs/tasks/p1.7_a_multi_source_schema.md) | 📝 待审阅 |
+| P1.7-B | TMDb 热门源采集 | [docs/tasks/p1.7_b_tmdb_trending_source.md](docs/tasks/p1.7_b_tmdb_trending_source.md) | 📝 待审阅 |
+| P1.7-C | Trakt 热门源采集 | [docs/tasks/p1.7_c_trakt_trending_source.md](docs/tasks/p1.7_c_trakt_trending_source.md) | 📝 待审阅 |
+| P1.7-D | 多源并集 + 富化 + 评分 | [docs/tasks/p1.7_d_multi_source_merge_and_score.md](docs/tasks/p1.7_d_multi_source_merge_and_score.md) | 📝 待审阅 |
+| P1.7-E | 本地查阅 CLI + 端到端验收 | [docs/tasks/p1.7_e_inspect_updates_cli.md](docs/tasks/p1.7_e_inspect_updates_cli.md) | 📝 待审阅 |
+
+**依赖:** A → (B ∥ C) → D → E
+
+**核心目标:** 修复功能 1 当前 `ext_data=None` 导致 hot_score 全部 P3 的核心缺口,使三源(FP/TMDb/Trakt)产出真实的多源加权热度榜。
 
 ---
 
@@ -195,7 +208,12 @@ external_ids:    upstream 597 · tmdb 424
 
 ## 待用户决策
 
-- **Phase 1.6 启动时机**：P1.5 全部代码已就绪，测试 326 通过。生产环境实际执行（P1.5-E → C → D → F）需用户确认时间和 TMDb API 配额
+- **Phase 1.7 任务包审阅**:每个任务包顶部 checkbox 勾选后才可启动编码
+- **2026-05-13 调研已定决策**:
+  - TMDb 候选范围:`trending/day` + `tv/popular` + `movie/popular` 各 3 页
+  - Trakt 候选范围:`shows/trending` + `movies/trending` 全量(≈730 条)
+  - 多源去重:按 `tmdb_id` 优先,`imdb_id` 次之
+  - 输出阈值:P2 及以上写入(`hot_score ≥ 50`)
 
 ---
 
