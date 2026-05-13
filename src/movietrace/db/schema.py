@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 10
 
 
 SCHEMA_SQL = """
@@ -175,4 +175,7 @@ def initialize_database(path: str | Path) -> None:
         _apply_migration(conn, 5, _load_migration_sql("005_upstream_tables.sql"))
         _apply_migration(conn, 6, _load_migration_sql("006_virtual_series.sql"))
         _apply_migration(conn, 7, _load_migration_sql("007_multi_source_trending.sql"))
+        _apply_migration(conn, 8, _load_migration_sql("008_api_usage_log.sql"))
+        _apply_migration(conn, 9, _load_migration_sql("009_tmdb_structured_fields.sql"))
+        _apply_migration(conn, 10, _load_migration_sql("010_multi_source_structured_fields.sql"))
         conn.commit()

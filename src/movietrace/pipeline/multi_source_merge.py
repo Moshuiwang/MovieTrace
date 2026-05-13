@@ -89,7 +89,9 @@ def _read_tmdb(conn: sqlite3.Connection, snapshot_date: str) -> list[dict]:
     rows = conn.execute(
         """select tmdb_id, media_type, title, original_title, release_date,
                   original_language, popularity, vote_average, vote_count,
-                  source_endpoint, source_page, snapshot_date
+                  source_endpoint, source_page, snapshot_date,
+                  first_air_date, last_air_date, movie_release_date,
+                  last_episode_air_date
            from tmdb_trending
            where snapshot_date = ?""",
         (snapshot_date,),
@@ -103,6 +105,8 @@ def _read_tmdb(conn: sqlite3.Connection, snapshot_date: str) -> list[dict]:
             "vote_average": r[7], "vote_count": r[8],
             "source_endpoint": r[9], "source_page": r[10],
             "snapshot_date": r[11],
+            "first_air_date": r[12], "last_air_date": r[13],
+            "movie_release_date": r[14], "last_episode_air_date": r[15],
         })
     return out
 
@@ -211,6 +215,12 @@ def _upsert_candidate(merged: dict, key: str, row: dict, source: str) -> None:
                 "vote_count": row.get("vote_count"),
                 "release_date": row.get("release_date"),
                 "original_language": row.get("original_language"),
+                # P1.8-C: structured fields for freshness
+                "first_air_date": row.get("first_air_date"),
+                "last_air_date": row.get("last_air_date"),
+                "movie_release_date": row.get("movie_release_date"),
+                "last_episode_air_date": row.get("last_episode_air_date"),
+                "media_type": row.get("media_type"),
             }
     elif source == "trakt":
         if c.trakt_data is None:

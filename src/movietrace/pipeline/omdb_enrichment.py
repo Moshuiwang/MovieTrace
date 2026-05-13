@@ -13,17 +13,58 @@ from movietrace.sources.tmdb import TmdbDetailClient
 logger = logging.getLogger("movietrace.pipeline.omdb_enrichment")
 
 
+def backfill_imdb_ids(
+    candidates: list[MergedCandidate],
+    bearer_token: str,
+    *,
+    db_path: str = "data/movietrace.db",
+    request_date: str = "",
+) -> dict:
+    """P1.8-F/G: Pre-score IMDb ID backfill via TMDb external_ids.
+
+    For candidates with tmdb_id but no imdb_id, fetch the IMDb ID
+    from TMDb's external_ids endpoint. Caches results in api_cache.
+    Returns {"api_calls": int, "backfilled": int}.
+    """
+    client = TmdbDetailClient(bearer_token, db_path=db_path, request_date=request_date)
+    api_calls = 0
+    backfilled = 0
+
+    for c in candidates:
+        if c.imdb_id or not c.tmdb_id:
+            continue
+        try:
+            imdb_id = client.fetch_imdb_id(c.tmdb_id, c.media_type)
+            api_calls += 1
+            if imdb_id:
+                c.imdb_id = format_imdb_id(imdb_id)
+                backfilled += 1
+        except Exception as exc:
+            logger.warning(
+                "Failed to backfill IMDb ID for tmdb_id=%s: %s", c.tmdb_id, exc
+            )
+
+    logger.info(
+        "IMDb backfill: api_calls=%d backfilled=%d of %d candidates",
+        api_calls, backfilled, len(candidates),
+    )
+    return {"api_calls": api_calls, "backfilled": backfilled}
+
+
 def enrich_with_omdb(
     conn: sqlite3.Connection,
     candidates: list[MergedCandidate],
     omdb_api_key: str,
     cache_ttl_hours: int = 24,
+    *,
+    db_path: str = "data/movietrace.db",
+    request_date: str = "",
 ) -> dict:
     """Enrich candidates with IMDb rating/votes via OMDb, with 24h cache.
 
     Returns {"api_calls": int, "cache_hits": int, "enriched": int}.
     """
-    client = OmdbDetailClient(omdb_api_key)
+    client = OmdbDetailClient(omdb_api_key, db_path=db_path, request_date=request_date)
     api_calls = 0
     cache_hits = 0
     enriched = 0
@@ -71,12 +112,15 @@ def enrich_with_tmdb_details(
     candidates: list[MergedCandidate],
     bearer_token: str,
     cache_ttl_hours: int = 24,
+    *,
+    db_path: str = "data/movietrace.db",
+    request_date: str = "",
 ) -> dict:
     """Fill release_date and language for candidates missing them (mainly FP-only).
 
     Returns {"api_calls": int, "cache_hits": int, "enriched": int}.
     """
-    client = TmdbDetailClient(bearer_token)
+    client = TmdbDetailClient(bearer_token, db_path=db_path, request_date=request_date)
     api_calls = 0
     cache_hits = 0
     enriched = 0

@@ -127,22 +127,33 @@ def compute_tmdb_rating_score(ext_data: dict | None) -> float:
     return min(100, (raw / 30) * 100)
 
 
-def compute_imdb_rating_score(ext_data: dict | None) -> float:
+def compute_imdb_rating_score(ext_data: dict | None) -> tuple[float, str | None]:
     """Compute IMDb rating score: rating × log10(votes+1), normalized 0-100.
 
-    Returns 0 when data is unavailable.
+    Returns (score, source) where source is None (no data), 'omdb', or 'tmdb_fallback'.
     """
     if not ext_data:
-        return 0.0
+        return 0.0, None
     rating = ext_data.get("imdb_rating")
     votes = ext_data.get("imdb_votes")
-    if rating is None or votes is None:
-        return 0.0
-    try:
-        raw = float(rating) * math.log10(int(votes) + 1)
-    except (ValueError, TypeError):
-        return 0.0
-    return min(100, (raw / 40) * 100)
+    if rating is not None and votes is not None:
+        try:
+            raw = float(rating) * math.log10(int(votes) + 1)
+        except (ValueError, TypeError):
+            return 0.0, None
+        return min(100, (raw / 40) * 100), "omdb"
+
+    # P1.8-G: TMDb fallback when OMDb rating unavailable
+    tmdb_rating = ext_data.get("tmdb_vote_average")
+    tmdb_votes = ext_data.get("tmdb_vote_count")
+    if tmdb_rating is not None and tmdb_votes is not None:
+        try:
+            raw = float(tmdb_rating) * math.log10(int(tmdb_votes) + 1)
+        except (ValueError, TypeError):
+            return 0.0, None
+        return min(100, (raw / 40) * 100), "tmdb_fallback"
+
+    return 0.0, None
 
 
 def compute_platform_weight_score(platform: str, cfg: dict) -> float:
@@ -207,7 +218,7 @@ def compute_hot_score(candidate: dict, cfg: dict) -> tuple[float, dict]:
     tmdb_pop = compute_tmdb_popularity_score(candidate.get("ext_data"))
     trakt_s = compute_trakt_score(candidate.get("ext_data"))
     tmdb_rating = compute_tmdb_rating_score(candidate.get("ext_data"))
-    imdb_rating = compute_imdb_rating_score(candidate.get("ext_data"))
+    imdb_rating, imdb_source = compute_imdb_rating_score(candidate.get("ext_data"))
     platform_s = compute_platform_weight_score(
         candidate.get("platform", "hulu"), cfg
     )
@@ -238,6 +249,7 @@ def compute_hot_score(candidate: dict, cfg: dict) -> tuple[float, dict]:
         "trakt_score": round(trakt_s, 1) if trakt_s else None,
         "tmdb_rating_score": round(tmdb_rating, 1) if tmdb_rating else None,
         "imdb_rating_score": round(imdb_rating, 1) if imdb_rating else None,
+        "imdb_rating_source": imdb_source,
         "platform_weight_score": round(platform_s, 1),
         "content_type_score": round(content_s, 1),
         "freshness_score": round(freshness_s, 1),

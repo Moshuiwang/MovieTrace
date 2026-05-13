@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-13 23:55 +08
-**更新人：** Codex (GPT-5) + moshuiwang
+**最后更新：** 2026-05-14 +08
+**更新人：** Claude Code (deepseek-v4-pro) + moshuiwang
 **所在分支：** `main`
 
 ---
@@ -21,7 +21,7 @@
 | **Phase 1.5：V1 定位翻转** | ✅ 全部完成（326 测试） |
 | **Phase 1.6：首次真实运行 + 验收** | ✅ 已完成（2026-05-12） |
 | **Phase 1.7：多热门源扩充** | ✅ 全部完成（366 测试, 2026-05-13） |
-| **Phase 1.8：条件性调优前置数据治理** | 📋 任务包规划中（待用户安排执行） |
+| **Phase 1.8：条件性调优前置数据治理** | ✅ 全部完成（402 测试, 2026-05-14） |
 
 ---
 
@@ -252,65 +252,109 @@ daily-discover 2026-05-13:
 
 ---
 
-## Phase 1.8 当前规划（2026-05-13 23:55）
+## Phase 1.8 执行结果（2026-05-14）
 
-### 已创建任务包（待用户审阅 / 安排执行）
+按 D → H → C → F/G → E 顺序全部完成。
 
-- [P1.8-B OMDb key 授权与配额排查](docs/tasks/p1.8_b_omdb_key_authorization_diagnosis.md)
-- [P1.8-C TMDb 字段结构化与 TV freshness](docs/tasks/p1.8_c_tmdb_structured_fields_and_tv_freshness.md)
-- [P1.8-D API usage logging](docs/tasks/p1.8_d_api_usage_logging.md)
-- [P1.8-E 多源字段结构化与 IMDb ID 补全](docs/tasks/p1.8_e_multi_source_structured_fields_and_imdb_id_backfill.md)
-- [P1.8-F 每日主线 TMDb external_ids 入库](docs/tasks/p1.8_f_daily_external_ids_backfill.md) — v2，已标注与 G 合并执行
-- [P1.8-G 评分前补 IMDb ID 与 TMDb 评分兜底](docs/tasks/p1.8_g_imdb_id_pre_score_backfill_and_tmdb_rating_fallback.md) — v2，已记录降低 OMDb 依赖
-- [P1.8-H FlixPatrol 覆盖范围与 API 预算策略调整](docs/tasks/p1.8_h_flixpatrol_coverage_and_budget_strategy.md)
-- [P1.8 执行顺序与依赖调整](docs/tasks/p1.8_execution_order.md)
+```
+P1.8-D（API usage logging）                          ✅  migration 008 + logger + 4 sources + CLI
+    ↓
+P1.8-H（FP 覆盖范围与 API 预算策略）                   ✅  4国×6平台 + TV每日/Movie每周 + config.yaml
+    ↓
+P1.8-C（TMDb 结构化字段 + TV freshness）              ✅  migration 009 + last_air_date优先
+    ↓
+P1.8-F/G（external_ids + IMDb backfill + TMDb fallback） ✅  backfill + external_ids + tmdb_fallback标记
+    ↓
+P1.8-E（多源结构化字段）                              ✅  migration 010 + FP/Trakt新字段
+```
 
-### 已确认产品决策
+### P1.8-D：API usage logging
 
-- **OMDb 依赖：** 降低 OMDb 对当天评分链路的阻塞性；OMDb 有结果时优先使用真实 IMDb 分，失败时不阻断评分。
-- **TMDb fallback：** 接受用 TMDb `vote_average` / `vote_count` 作为 IMDb 评分维度兜底，但必须在 `score_breakdown` 中标记 `tmdb_fallback`。
-- **P1.8-F / P1.8-G：** 合并执行，避免重复实现 TMDb external_ids client、缓存和统计。
-- **FP 覆盖策略：** World / United States / Nigeria / Kenya；Netflix / Prime Video / Disney+ / Apple TV+ / HBO Max / Paramount+；TV 每日抓取，Movie 每周抓取；预计约 824-864 FP API calls/month。
-- **ADR：** [ADR-0009 P1.8 API 预算与评分兜底策略](docs/decisions/0009-p1-8-api-budget-and-rating-fallback.md)
+**新增模块：**
+- `src/movietrace/logging/api_usage.py` — logger helper + key fingerprinting
+- `src/movietrace/db/migrations/008_api_usage_log.sql` → `api_usage_log` 表
 
-### 建议执行顺序
+**改动：**
+- `http.py::get_json()` 增加 `log_context` 参数，自动记录成功/失败/耗时
+- 4 个 API source（tmdb/trakt/omdb/flixpatrol）全部传入 log_context
+- 所有 pipeline client 创建时传入 `db_path` + `request_date`
+- 新增 `inspect-api-usage` CLI 命令
 
-`P1.8-D → P1.8-H → P1.8-C → P1.8-F/G → P1.8-E`
+**密钥安全：**
+- `key_fingerprint` = SHA-256 前 12 位，不可逆
+- 测试覆盖"不泄露完整 key"
+- metadata 自动过滤 `apikey`/`authorization`/`token` 等敏感字段
 
-原因见：[P1.8 执行顺序与依赖调整](docs/tasks/p1.8_execution_order.md)。
+### P1.8-H：FlixPatrol 覆盖范围
+
+**国家/范围：** World · United States · Nigeria · Kenya（API 确认 ID）
+**平台：** Netflix · Prime Video · Disney+ · Apple TV+ · HBO Max · Paramount+（移除 Hulu）
+**调度：** TV 每日 24 calls · Movie 每周一 48 calls · 月估算 824-864 calls
+**配置：** `config.yaml` → `flixpatrol` 节
+**CLI：** `daily-discover --force-fp-movies`
+
+### P1.8-C：TMDb 字段结构化 + TV freshness
+
+**Migration 009：** `tmdb_trending` 新增 27 个结构化字段
+**TV freshness 修正：** 优先使用 `last_air_date`，fallback 链：last_air_date → last_episode_air_date → first_air_date → release_date
+**例：** FROM（TMDb 124364）`last_air_date=2026-05-10`，不再被按 `first_air_date=2022-02-20` 扣分
+
+### P1.8-F/G：external_ids + IMDb 回填 + TMDb 评分兜底
+
+- `TmdbDetailClient.fetch_imdb_id()` — 通过 /tv/{id}/external_ids 或 /movie/{id}/external_ids
+- `backfill_imdb_ids()` — 评分前补 IMDb ID（P1.8-F/G 合并实现）
+- `compute_imdb_rating_score()` → 返回 `(score, source)` 元组，source 为 `omdb` / `tmdb_fallback` / None
+- `score_breakdown` 新增 `imdb_rating_source` 字段
+
+### P1.8-E：多源结构化字段
+
+**Migration 010：** `flixpatrol_top10` 新增 `updated_at`/`country_id`/`company_id`；`trakt_trending` 新增 10 个字段（genres_json, trakt_status, country, network, runtime, overview, first_aired, aired_episodes, certification, updated_at）
+
+### 新增 DB migrations
+
+| Migration | 描述 |
+|-----------|------|
+| 008 | `api_usage_log` 表 |
+| 009 | `tmdb_trending` 结构化字段 |
+| 010 | `flixpatrol_top10` + `trakt_trending` 结构化字段 |
+
+### 新增 CLI 命令
+
+- `inspect-api-usage` — 查询 API 用量日志（支持 --date/--days/--service/--format table|json）
 
 ---
 
 ## 进行中任务
 
-- Phase 1.8 任务包已拆分，等待用户安排执行；当前不应主动进入实现。
+- 无。Phase 1.8 全部完成，等待用户验收和下一阶段安排。
 
 ---
 
 ## 阻塞项
 
-- **OMDb 免费配额**：2026-05-13 已出现 `Request limit reached!`，当天真实 IMDb 评分补全不可依赖 OMDb 全量成功。
-- **API usage log 尚未实现**：后续 FP 扩围和 TMDb external_ids 增加请求量前，建议先执行 P1.8-D。
+- 无。OMDb 配额问题已通过 TMDb fallback 降低影响；API usage log 已实现。
 
 ---
 
 ## 待用户决策
 
-- **pyyaml 是否纳入 requirements.txt**（当前已 `pip install`，scoring.py 有 fallback 到 DEFAULT_WEIGHTS）
-- **P1.8 任务执行安排**：当前建议顺序为 D → H → C → F/G → E；等待用户指定启动哪个任务包。
+- **pyyaml 是否纳入 requirements.txt**（延续）
+- **下一阶段方向**：Phase 1.8 已完成全部前置数据治理，可进入 Phase 1.9（如有）或进行全链路 dry-run 验收
+- **P1.8-B（OMDb key 授权排查）**：纯调研任务，未在本轮执行；如需要可单独安排
 
 ---
 
 ## 给下一个 Agent 的交接
 
-- **Phase 1.7 全部完成**，366 测试全过
-- **新增 CLI 命令：** `fetch-tmdb-trending`、`fetch-trakt-trending`、`inspect-updates`（共 3 个）
-- **daily-discover 流程已改为 6 步多源版本**，不再写 candidates 表（改写 content_updates）
-- **OMDb 缓存已在生产 DB**，第二次运行同日会全量命中缓存（≈0 API 调用）
-- **`candidates` 表不再写入**，但 `baseline_matching` 仍依赖。Phase 1.8 需决定是否废弃
+- **Phase 1.8 全部完成**，402 测试全过
+- **新增 CLI 命令：** `inspect-api-usage`（共 4 个，加上之前的 3 个）
+- **schema version = 10**（migrations 001-010）
+- **FP 覆盖已扩至 4 国 × 6 平台**，TV 每日、Movie 每周一
+- **TV freshness 已修正**：使用 last_air_date 而非 first_air_date
+- **IMDb 评分已支持 TMDb fallback**：`score_breakdown.imdb_rating_source` 标记来源
+- **API usage log 已上线**：所有外部 API 调用记录到 `api_usage_log` 表
 - **TMDb Bearer Token 路径：** `/tmp/movietrace_phase0_secrets.json`
-- **Trakt 需要 Mozilla UA**（已在 http.py 设默认值）
-- **Session 报告：** `reports/session_2026-05-13_p1.7_acceptance.md`
+- **未提交 commit**，等待用户确认后提交
 
 ---
 

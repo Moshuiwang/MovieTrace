@@ -14,7 +14,7 @@ from movietrace.sources.flixpatrol_api import (
     SECRETS_PATH,
     TYPE_INT_TO_STR,
     PLATFORM_COMPANY_IDS,
-    US_COUNTRY_ID,
+    FP_COUNTRIES,
     COMPANY_TO_PLATFORM,
     load_api_key,
     unwrap_item,
@@ -272,7 +272,7 @@ class TestFieldMapping:
         assert COMPANY_TO_PLATFORM["cmp_oGtsgdpOrjIu3XzTEnWPt87Y"] == "disney-plus"
         assert COMPANY_TO_PLATFORM["cmp_VvmYc7OphiUds0Hgjbz5MESn"] == "apple-tv-plus"
         assert COMPANY_TO_PLATFORM["cmp_6UhCvnTeRkgZUtcNGslX9bJL"] == "hbo-max"
-        assert COMPANY_TO_PLATFORM["cmp_9iwHIMYOCvD6zprSPoHgTJau"] == "hulu"
+        assert COMPANY_TO_PLATFORM["cmp_riMmDaNhomIc4J2dWGQPKbkZ"] == "paramount-plus"
 
 
 # ── load_api_key tests ──────────────────────────────────────────────────
@@ -369,7 +369,7 @@ class TestFlixPatrolClient:
             with pytest.raises(RuntimeError, match="authentication failed"):
                 client.fetch_top10(
                     company="cmp_IA6TdMqwf6kuyQvxo9bJ4nKX",
-                    country=US_COUNTRY_ID,
+                    country=FP_COUNTRIES["united-states"],
                     content_type=2,
                 )
 
@@ -381,7 +381,7 @@ class TestFlixPatrolClient:
             with pytest.raises(RuntimeError, match="authentication failed"):
                 client.fetch_top10(
                     company="cmp_IA6TdMqwf6kuyQvxo9bJ4nKX",
-                    country=US_COUNTRY_ID,
+                    country=FP_COUNTRIES["united-states"],
                     content_type=2,
                 )
 
@@ -396,7 +396,7 @@ class TestFlixPatrolClient:
             with patch("movietrace.sources.flixpatrol_api.time.sleep") as mock_sleep:
                 results = client.fetch_top10(
                     company="cmp_IA6TdMqwf6kuyQvxo9bJ4nKX",
-                    country=US_COUNTRY_ID,
+                    country=FP_COUNTRIES["united-states"],
                     content_type=2,
                 )
             mock_sleep.assert_called_once_with(5)
@@ -414,7 +414,7 @@ class TestFlixPatrolClient:
             with patch("movietrace.sources.flixpatrol_api.time.sleep"):
                 results = client.fetch_top10(
                     company="cmp_IA6TdMqwf6kuyQvxo9bJ4nKX",
-                    country=US_COUNTRY_ID,
+                    country=FP_COUNTRIES["united-states"],
                     content_type=2,
                 )
             assert results == []
@@ -426,7 +426,7 @@ class TestFlixPatrolClient:
             mock_get.side_effect = Exception("HTTP Error 502: Bad Gateway")
             results = client.fetch_top10(
                 company="cmp_IA6TdMqwf6kuyQvxo9bJ4nKX",
-                country=US_COUNTRY_ID,
+                country=FP_COUNTRIES["united-states"],
                 content_type=2,
             )
             assert results == []
@@ -438,29 +438,42 @@ class TestFlixPatrolClient:
             mock_get.side_effect = TimeoutError("timed out")
             results = client.fetch_top10(
                 company="cmp_IA6TdMqwf6kuyQvxo9bJ4nX",
-                country=US_COUNTRY_ID,
+                country=FP_COUNTRIES["united-states"],
                 content_type=2,
             )
             assert results == []
 
-    def test_fetch_all_platforms_returns_12_keys(self, compound_doc_item):
-        """fetch_all_platforms should return 12 keys (6 platforms × 2 types)."""
+    def test_fetch_all_platforms_returns_stats_and_results(self, compound_doc_item):
+        """fetch_all_platforms returns stats dict with results key (P1.8-H)."""
         client = FlixPatrolClient("test_key")
         with patch("movietrace.sources.flixpatrol_api.get_json") as mock_get:
             mock_get.return_value = {"data": [compound_doc_item]}
             with patch("movietrace.sources.flixpatrol_api.time.sleep"):
-                results = client.fetch_all_platforms(date_from="2026-05-10")
-        assert len(results) == 12
-        expected_keys = [
-            "netflix/movie", "netflix/tv_show",
-            "prime-video/movie", "prime-video/tv_show",
-            "disney-plus/movie", "disney-plus/tv_show",
-            "apple-tv-plus/movie", "apple-tv-plus/tv_show",
-            "hbo-max/movie", "hbo-max/tv_show",
-            "hulu/movie", "hulu/tv_show",
-        ]
-        for k in expected_keys:
-            assert k in results
+                result = client.fetch_all_platforms(date_from="2026-05-10")
+        assert isinstance(result, dict)
+        assert "results" in result
+        assert "planned_calls" in result
+        assert "actual_calls" in result
+        # Default: 4 countries × 6 platforms × 1 TV type = 24
+        assert result["planned_calls"] == 24
+        assert len(result["results"]) == 24
+        # Check country is in keys
+        sample_key = list(result["results"].keys())[0]
+        parts = sample_key.split("/")
+        assert len(parts) == 3  # country/platform/type
+        assert result["tv_calls"] == 24
+        assert result["movie_calls"] == 0
+
+    def test_fetch_all_platforms_with_movies(self, compound_doc_item):
+        """With fetch_movies=True, plan = 4×6×2 = 48."""
+        client = FlixPatrolClient("test_key")
+        with patch("movietrace.sources.flixpatrol_api.get_json") as mock_get:
+            mock_get.return_value = {"data": [compound_doc_item]}
+            with patch("movietrace.sources.flixpatrol_api.time.sleep"):
+                result = client.fetch_all_platforms(date_from="2026-05-10", fetch_movies=True)
+        assert result["planned_calls"] == 48
+        assert result["tv_calls"] == 24
+        assert result["movie_calls"] == 24
 
     def test_fetch_top10_uses_closed_single_day_window_when_date_from_given(self, compound_doc_item):
         """A single-day fetch should not pull later snapshot dates."""
@@ -469,7 +482,7 @@ class TestFlixPatrolClient:
             mock_get.return_value = {"data": [compound_doc_item]}
             client.fetch_top10(
                 company=PLATFORM_COMPANY_IDS["netflix"],
-                country=US_COUNTRY_ID,
+                country=FP_COUNTRIES["united-states"],
                 content_type=2,
                 date_from="2026-05-13",
             )

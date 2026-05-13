@@ -34,11 +34,21 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
     tmdb_token = _load_tmdb_token()
 
     # Step 1: Fetch FlixPatrol data
+    cfg = _load_config()
+    fp_cfg = cfg.get("flixpatrol", {})
+    fetch_movies = args.force_fp_movies or False
+    if not fetch_movies:
+        fetch_movies = fp_cfg.get("movie_fetch_weekly", False)
+    movie_weekly_day = fp_cfg.get("movie_weekly_day", 0)
     print("[1/6] Fetching FlixPatrol...", end=" ", flush=True)
     try:
         from movietrace.pipeline.discovery import _ensure_fp_data
         conn = connect_database("data/movietrace.db")
-        _ensure_fp_data(conn, date_str)
+        _ensure_fp_data(
+            conn, date_str,
+            fetch_movies=fetch_movies,
+            movie_weekly_day=movie_weekly_day,
+        )
         fp_count = conn.execute(
             "select count(*) from flixpatrol_top10 where snapshot_date=?",
             (date_str,),
@@ -85,7 +95,11 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
     print("[4/6] Merging + enriching...", end=" ", flush=True)
     try:
         from movietrace.pipeline.discovery import run_discovery
-        result = run_discovery(date_from=date_str, dry_run=dry_run)
+        result = run_discovery(
+            date_from=date_str, dry_run=dry_run,
+            fetch_movies=fetch_movies,
+            movie_weekly_day=movie_weekly_day,
+        )
         stats = result.get("stats", {})
         merged = stats.get("total_merged", 0)
         omdb_enrich = stats.get("enrich_omdb", {})
@@ -601,6 +615,122 @@ def cmd_fetch_trakt_trending(args: argparse.Namespace) -> int:
         return 1
 
 
+# ── inspect-api-usage ─────────────────────────────────────────────────────
+
+
+def cmd_inspect_api_usage(args: argparse.Namespace) -> int:
+    """Query and display API usage log from local DB."""
+    conn = connect_database("data/movietrace.db")
+
+    conditions: list[str] = []
+    params: list = []
+
+    if args.date:
+        conditions.append("request_date = ?")
+        params.append(args.date)
+    if args.days:
+        from datetime import date as dt_date, timedelta
+        since = (dt_date.today() - timedelta(days=args.days)).isoformat()
+        conditions.append("request_date >= ?")
+        params.append(since)
+    if args.service:
+        conditions.append("service = ?")
+        params.append(args.service)
+
+    where = ""
+    if conditions:
+        where = " WHERE " + " AND ".join(conditions)
+
+    # Summary query
+    total = conn.execute(f"select count(*) from api_usage_log{where}", params).fetchone()[0]
+    success = conn.execute(
+        f"select count(*) from api_usage_log{where} AND status='success'", params
+    ).fetchone()[0]
+    errors = conn.execute(
+        f"select count(*) from api_usage_log{where} AND status IN ('http_error','network_error')",
+        params,
+    ).fetchone()[0]
+    quota = conn.execute(
+        f"select count(*) from api_usage_log{where} AND quota_error=1", params
+    ).fetchone()[0]
+    rate_limited = conn.execute(
+        f"select count(*) from api_usage_log{where} AND rate_limited=1", params
+    ).fetchone()[0]
+
+    fmt = args.format or "table"
+
+    if fmt == "json":
+        by_service = conn.execute(
+            f"""select service, count(*) as cnt,
+            sum(case when status='success' then 1 else 0 end) as success,
+            sum(case when quota_error=1 then 1 else 0 end) as quota,
+            sum(case when rate_limited=1 then 1 else 0 end) as rate_limited
+            from api_usage_log{where} group by service order by cnt desc""",
+            params,
+        ).fetchall()
+        by_endpoint = conn.execute(
+            f"""select endpoint, count(*) as cnt
+            from api_usage_log{where} group by endpoint order by cnt desc""",
+            params,
+        ).fetchall()
+
+        import json
+        output = {
+            "total": total,
+            "success": success,
+            "errors": errors,
+            "quota_errors": quota,
+            "rate_limited": rate_limited,
+            "by_service": [
+                {"service": r[0], "total": r[1], "success": r[2], "quota": r[3], "rate_limited": r[4]}
+                for r in by_service
+            ],
+            "by_endpoint": [
+                {"endpoint": r[0], "count": r[1]} for r in by_endpoint
+            ],
+        }
+        print(json.dumps(output, indent=2, ensure_ascii=False))
+    else:
+        print(f"API Usage Summary")
+        print(f"=================")
+        print(f"  Total requests: {total}")
+        print(f"  Success:        {success}")
+        print(f"  Errors:         {errors}")
+        print(f"  Quota errors:   {quota}")
+        print(f"  Rate limited:   {rate_limited}")
+        print()
+
+        by_service = conn.execute(
+            f"""select service, count(*) as cnt,
+            sum(case when status='success' then 1 else 0 end) as success,
+            sum(case when quota_error=1 then 1 else 0 end) as quota,
+            sum(case when rate_limited=1 then 1 else 0 end) as rate_limited
+            from api_usage_log{where} group by service order by cnt desc""",
+            params,
+        ).fetchall()
+        if by_service:
+            print(f"| Service    | Total | Success | Quota | Rate Limited |")
+            print(f"|------------|-------|---------|-------|--------------|")
+            for r in by_service:
+                print(f"| {r[0]:10} | {r[1]:5} | {r[2]:7} | {r[3]:5} | {r[4]:12} |")
+            print()
+
+        by_endpoint = conn.execute(
+            f"""select endpoint, count(*) as cnt
+            from api_usage_log{where} group by endpoint order by cnt desc limit 20""",
+            params,
+        ).fetchall()
+        if by_endpoint:
+            print(f"| Endpoint                | Count |")
+            print(f"|-------------------------|-------|")
+            for r in by_endpoint:
+                print(f"| {r[0]:23} | {r[1]:5} |")
+            print()
+
+    conn.close()
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="movietrace",
@@ -611,7 +741,8 @@ def main() -> None:
     # daily-discover
     p_discover = sub.add_parser("daily-discover", help="Run full daily discovery pipeline")
     p_discover.add_argument("--date", help="Date in YYYY-MM-DD format")
-    p_discover.add_argument("--dry-run", action="store_true", help="Skip Feishu write")
+    p_discover.add_argument("--dry-run", action="store_true", help="Skip write to DB")
+    p_discover.add_argument("--force-fp-movies", action="store_true", help="Force FP movie fetch regardless of weekly schedule")
 
     # validate-feishu
     sub.add_parser("validate-feishu", help="Validate Feishu API connectivity")
@@ -654,6 +785,13 @@ def main() -> None:
     p_inspect_up.add_argument("--id", help="Show detail for specific content_update_id")
     p_inspect_up.add_argument("--format", choices=["table", "json", "md"], default="table")
 
+    # inspect-api-usage
+    p_api_usage = sub.add_parser("inspect-api-usage", help="Query API usage log")
+    p_api_usage.add_argument("--date", help="Filter: YYYY-MM-DD")
+    p_api_usage.add_argument("--days", type=int, help="Last N days")
+    p_api_usage.add_argument("--service", help="Filter: tmdb, trakt, omdb, flixpatrol")
+    p_api_usage.add_argument("--format", choices=["table", "json"], default="table")
+
     args = parser.parse_args()
 
     handlers = {
@@ -666,6 +804,7 @@ def main() -> None:
         "fetch-tmdb-trending": cmd_fetch_tmdb_trending,
         "fetch-trakt-trending": cmd_fetch_trakt_trending,
         "inspect-updates": cmd_inspect_updates,
+        "inspect-api-usage": cmd_inspect_api_usage,
     }
 
     handler = handlers.get(args.command)

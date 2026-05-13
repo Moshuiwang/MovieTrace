@@ -5,7 +5,7 @@ import logging
 import sqlite3
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from movietrace.db.schema import connect_database
@@ -203,7 +203,7 @@ def run_baseline_tracking(
         if not tmdb_token:
             raise RuntimeError("TMDb token required for baseline tracking")
 
-        client = TmdbDetailClient(tmdb_token)
+        client = TmdbDetailClient(tmdb_token, db_path=db_path, request_date=date.today().isoformat())
         events = detect_new_seasons(conn, plan, client, interval=interval)
         stats["polled"] = len(plan)
         stats["detected"] = len(events)

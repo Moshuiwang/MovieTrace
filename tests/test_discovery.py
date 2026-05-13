@@ -138,32 +138,38 @@ class TestRunDiscovery:
             conn.commit()
 
             class FakeClient:
-                def __init__(self, api_key):
+                def __init__(self, api_key, timeout=60, *, db_path="", request_date=""):
                     self.api_key = api_key
 
-                def fetch_all_platforms(self, date_from=None):
+                def fetch_all_platforms(self, date_from=None, **kwargs):
                     return {
-                        "netflix/movie": [
-                            {
-                                "fp_id": "target1",
-                                "title": "Target Title",
-                                "content_type": "movie",
-                                "platform": "netflix",
-                                "country": "united-states",
-                                "snapshot_date": "2026-05-13",
-                                "ranking": 1,
-                                "ranking_last": 2,
-                                "value": 10,
-                                "days_total": 3,
-                                "tmdb_id": 123,
-                                "imdb_id": 456,
-                            }
-                        ]
+                        "results": {
+                            "united-states/netflix/movie": [
+                                {
+                                    "fp_id": "target1",
+                                    "title": "Target Title",
+                                    "content_type": "movie",
+                                    "platform": "netflix",
+                                    "country": "united-states",
+                                    "snapshot_date": "2026-05-13",
+                                    "ranking": 1,
+                                    "ranking_last": 2,
+                                    "value": 10,
+                                    "days_total": 3,
+                                    "tmdb_id": 123,
+                                    "imdb_id": 456,
+                                }
+                            ]
+                        },
+                        "planned_calls": 1,
+                        "actual_calls": 1,
+                        "tv_calls": 0,
+                        "movie_calls": 1,
                     }
 
             with patch("movietrace.sources.flixpatrol_api.load_api_key", return_value="key"):
                 with patch("movietrace.sources.flixpatrol_api.FlixPatrolClient", FakeClient):
-                    _ensure_fp_data(conn, "2026-05-13")
+                    _ensure_fp_data(conn, "2026-05-13", db_path=db_path)
 
             count = conn.execute(
                 "select count(*) from flixpatrol_top10 where snapshot_date = ?",

@@ -19,7 +19,7 @@ def fetch_and_store_trakt_trending(
     if snapshot_date is None:
         snapshot_date = date.today().isoformat()
 
-    client = TraktTrendingClient(client_id)
+    client = TraktTrendingClient(client_id, db_path=db_path, request_date=snapshot_date)
     conn = connect_database(db_path)
 
     fetched = 0
@@ -52,14 +52,22 @@ def fetch_and_store_trakt_trending(
                         """insert or ignore into trakt_trending
                            (trakt_id, tmdb_id, imdb_id, media_type, title, year,
                             watchers, rating, votes, source_endpoint, snapshot_date,
-                            raw_payload_json)
-                           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            raw_payload_json,
+                            genres_json, trakt_status, country, network, runtime,
+                            overview, first_aired, aired_episodes, certification, updated_at)
+                           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                                   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
                             row["trakt_id"], row["tmdb_id"], row["imdb_id"],
                             row["media_type"], row["title"], row["year"],
                             row["watchers"], row["rating"], row["votes"],
                             row["source_endpoint"], row["snapshot_date"],
                             row["raw_payload_json"],
+                            row.get("genres_json"), row.get("trakt_status"),
+                            row.get("country"), row.get("network"),
+                            row.get("runtime"), row.get("overview"),
+                            row.get("first_aired"), row.get("aired_episodes"),
+                            row.get("certification"), row.get("updated_at"),
                         ),
                     )
                     if cursor.rowcount > 0:

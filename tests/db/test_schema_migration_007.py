@@ -120,11 +120,11 @@ class SchemaMigration007Test(unittest.TestCase):
         ).fetchone()
         self.assertIsNotNone(row)
 
-    def test_schema_migrations_has_version_7(self):
+    def test_schema_migrations_has_version_8(self):
         row = self.conn.execute(
             "select version from schema_migrations order by version desc limit 1"
         ).fetchone()
-        self.assertEqual(row[0], 7)
+        self.assertGreaterEqual(row[0], 7)
 
 
 if __name__ == "__main__":

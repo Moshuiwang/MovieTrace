@@ -26,7 +26,7 @@ def fetch_and_store_tmdb_trending(
     if snapshot_date is None:
         snapshot_date = date.today().isoformat()
 
-    client = TmdbTrendingClient(bearer_token)
+    client = TmdbTrendingClient(bearer_token, db_path=db_path, request_date=snapshot_date)
     conn = connect_database(db_path)
 
     fetched = 0
@@ -56,8 +56,12 @@ def fetch_and_store_tmdb_trending(
                             """insert or ignore into tmdb_trending
                                (tmdb_id, media_type, title, original_title, release_date,
                                 original_language, popularity, vote_average, vote_count,
-                                source_endpoint, source_page, snapshot_date, raw_payload_json)
-                               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                source_endpoint, source_page, snapshot_date, raw_payload_json,
+                                adult, softcore, backdrop_path, poster_path, overview,
+                                genre_ids_json, origin_country_json, first_air_date,
+                                movie_release_date, original_name)
+                               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                                       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                             (
                                 row["tmdb_id"], row["media_type"], row["title"],
                                 row["original_title"], row["release_date"],
@@ -65,6 +69,11 @@ def fetch_and_store_tmdb_trending(
                                 row["vote_average"], row["vote_count"],
                                 row["source_endpoint"], row["source_page"],
                                 row["snapshot_date"], row["raw_payload_json"],
+                                row.get("adult", 0), row.get("softcore", 0),
+                                row.get("backdrop_path"), row.get("poster_path"),
+                                row.get("overview"), row.get("genre_ids_json"),
+                                row.get("origin_country_json"), row.get("first_air_date"),
+                                row.get("movie_release_date"), row.get("original_name"),
                             ),
                         )
                         if cursor.rowcount > 0:

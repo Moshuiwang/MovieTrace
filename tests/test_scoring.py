@@ -129,14 +129,32 @@ class TestTmdbRatingScore:
 
 class TestImdbRatingScore:
     def test_returns_0_when_no_data(self):
-        assert compute_imdb_rating_score(None) == 0.0
+        score, source = compute_imdb_rating_score(None)
+        assert score == 0.0
+        assert source is None
 
     def test_typical_imdb_score(self):
         ext = {"imdb_rating": 8.5, "imdb_votes": 500000}
-        score = compute_imdb_rating_score(ext)
+        score, source = compute_imdb_rating_score(ext)
         # raw = 8.5 * log10(500001) ~ 8.5 * 5.7 = 48.4
         # normalized: 48.4/40 * 100 = ~121 → capped at 100
         assert score > 0
+        assert source == "omdb"
+
+    def test_tmdb_fallback_used_when_imdb_missing(self):
+        ext = {"tmdb_vote_average": 7.5, "tmdb_vote_count": 1000}
+        score, source = compute_imdb_rating_score(ext)
+        assert score > 0
+        assert source == "tmdb_fallback"
+
+    def test_imdb_preferred_over_tmdb_fallback(self):
+        ext = {
+            "imdb_rating": 8.0, "imdb_votes": 5000,
+            "tmdb_vote_average": 9.0, "tmdb_vote_count": 100000,
+        }
+        score, source = compute_imdb_rating_score(ext)
+        assert score > 0
+        assert source == "omdb"
 
 
 # ── Platform weight tests ──────────────────────────────────────────────
@@ -250,7 +268,7 @@ class TestComputeHotScore:
         score2, _ = compute_hot_score(candidate, DEFAULT_WEIGHTS)
         assert score1 == score2
 
-    def test_breakdown_has_all_9_fields(self):
+    def test_breakdown_has_all_10_fields(self):
         candidate = {
             "fp_items": [{"ranking": 1, "days_total": 0, "platform": "netflix"}],
             "content_type": "movie",
@@ -263,6 +281,7 @@ class TestComputeHotScore:
         expected_keys = {
             "flixpatrol_score", "tmdb_popularity_score",
             "trakt_score", "tmdb_rating_score", "imdb_rating_score",
+            "imdb_rating_source",
             "platform_weight_score", "content_type_score",
             "freshness_score", "language_score",
         }

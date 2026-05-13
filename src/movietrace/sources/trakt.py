@@ -3,14 +3,37 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from movietrace.logging.api_usage import fingerprint_key
 from movietrace.pipeline.entity_matching import BaselineItem, ExternalSearchResult
 from movietrace.sources.http import get_json
 
 
 class TraktSearchClient:
-    def __init__(self, client_id: str, *, base_url: str = "https://api.trakt.tv"):
+    def __init__(
+        self,
+        client_id: str,
+        *,
+        base_url: str = "https://api.trakt.tv",
+        db_path: str = "",
+        request_date: str = "",
+    ):
         self.client_id = client_id
         self.base_url = base_url.rstrip("/")
+        self._db_path = db_path
+        self._request_date = request_date
+        self._key_fp = fingerprint_key(client_id)
+
+    def _log_ctx(self, endpoint: str, operation: str) -> dict | None:
+        if not self._db_path or not self._request_date:
+            return None
+        return {
+            "db_path": self._db_path,
+            "service": "trakt",
+            "endpoint": endpoint,
+            "operation": operation,
+            "request_date": self._request_date,
+            "key_fingerprint": self._key_fp,
+        }
 
     def search(
         self, query: str, baseline_item: BaselineItem
@@ -23,6 +46,7 @@ class TraktSearchClient:
                 "trakt-api-version": "2",
                 "Content-Type": "application/json",
             },
+            log_context=self._log_ctx("/search/movie,show", "trakt_search.search"),
         )
         if not isinstance(payload, list):
             return []
@@ -69,9 +93,31 @@ def _int_or_none(value: object) -> int | None:
 class TraktTrendingClient:
     """Trakt trending endpoint client (P1.7-C)."""
 
-    def __init__(self, client_id: str, *, base_url: str = "https://api.trakt.tv"):
+    def __init__(
+        self,
+        client_id: str,
+        *,
+        base_url: str = "https://api.trakt.tv",
+        db_path: str = "",
+        request_date: str = "",
+    ):
         self.client_id = client_id
         self.base_url = base_url.rstrip("/")
+        self._db_path = db_path
+        self._request_date = request_date
+        self._key_fp = fingerprint_key(client_id)
+
+    def _log_ctx(self, endpoint: str, operation: str) -> dict | None:
+        if not self._db_path or not self._request_date:
+            return None
+        return {
+            "db_path": self._db_path,
+            "service": "trakt",
+            "endpoint": endpoint,
+            "operation": operation,
+            "request_date": self._request_date,
+            "key_fingerprint": self._key_fp,
+        }
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -86,6 +132,7 @@ class TraktTrendingClient:
             f"{self.base_url}/shows/trending",
             params={"limit": str(limit), "extended": "full"},
             headers=self._headers(),
+            log_context=self._log_ctx("/shows/trending", "trakt_trending.fetch_shows_trending"),
         )
         if not isinstance(payload, list):
             return []
@@ -97,6 +144,7 @@ class TraktTrendingClient:
             f"{self.base_url}/movies/trending",
             params={"limit": str(limit), "extended": "full"},
             headers=self._headers(),
+            log_context=self._log_ctx("/movies/trending", "trakt_trending.fetch_movies_trending"),
         )
         if not isinstance(payload, list):
             return []
@@ -118,6 +166,17 @@ def _flatten_trakt_trending_item(item: dict, media_type: str) -> dict:
         "votes": int(entity.get("votes")) if entity.get("votes") is not None else None,
         "media_type": media_type,
         "raw_payload": item,
+        # P1.8-E: structured fields
+        "genres": entity.get("genres"),
+        "trakt_status": entity.get("status"),
+        "country": entity.get("country"),
+        "network": entity.get("network"),
+        "runtime": _int_or_none(entity.get("runtime")),
+        "overview": entity.get("overview"),
+        "first_aired": entity.get("first_aired"),
+        "aired_episodes": _int_or_none(entity.get("aired_episodes")),
+        "certification": entity.get("certification"),
+        "updated_at": entity.get("updated_at"),
     }
 
 
@@ -125,6 +184,11 @@ def normalize_trakt_trending_row(item: dict, source_endpoint: str, snapshot_date
     """Normalize a flattened Trakt trending item into a trakt_trending row dict."""
     if not item.get("trakt_id"):
         return None
+    def _or_none_json(obj: object) -> str | None:
+        if obj is None:
+            return None
+        return json.dumps(obj, ensure_ascii=False)
+
     return {
         "trakt_id": int(item["trakt_id"]),
         "tmdb_id": int(item["tmdb_id"]) if item.get("tmdb_id") else None,
@@ -138,4 +202,15 @@ def normalize_trakt_trending_row(item: dict, source_endpoint: str, snapshot_date
         "source_endpoint": source_endpoint,
         "snapshot_date": snapshot_date,
         "raw_payload_json": json.dumps(item.get("raw_payload", item), ensure_ascii=False),
+        # P1.8-E: structured fields
+        "genres_json": _or_none_json(item.get("genres")),
+        "trakt_status": item.get("trakt_status"),
+        "country": item.get("country"),
+        "network": item.get("network"),
+        "runtime": item.get("runtime"),
+        "overview": item.get("overview"),
+        "first_aired": item.get("first_aired"),
+        "aired_episodes": item.get("aired_episodes"),
+        "certification": item.get("certification"),
+        "updated_at": item.get("updated_at"),
     }

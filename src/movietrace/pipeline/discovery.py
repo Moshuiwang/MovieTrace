@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from movietrace.db.schema import connect_database
@@ -17,49 +17,72 @@ from movietrace.pipeline.scoring import (
 logger = logging.getLogger("movietrace.pipeline.discovery")
 
 
-# ── FP data helpers (unchanged from prior version) ──────────────────────
+# ── FP data helpers ──────────────────────────────────────────────────────
 
 
-def _ensure_fp_data(conn: sqlite3.Connection, date_from: str) -> None:
-    """Populate flixpatrol_top10 from API if no data exists for the date."""
+def _ensure_fp_data(
+    conn: sqlite3.Connection,
+    date_from: str,
+    *,
+    db_path: str = "data/movietrace.db",
+    fetch_movies: bool = False,
+    movie_weekly_day: int = 0,
+) -> dict:
+    """Populate flixpatrol_top10 from API if no data exists for the date.
+    Returns FP fetch stats dict."""
+    target_date = datetime.strptime(date_from, "%Y-%m-%d").date()
+    should_fetch_movies = fetch_movies
+    if fetch_movies and movie_weekly_day is not None:
+        should_fetch_movies = target_date.weekday() == movie_weekly_day
+
     existing = conn.execute(
         "select count(*) from flixpatrol_top10 where snapshot_date = ?",
         (date_from,),
     ).fetchone()[0]
     if existing > 0:
-        return
+        movie_existing = conn.execute(
+            "select count(*) from flixpatrol_top10 where snapshot_date = ? and content_type = 'movie'",
+            (date_from,),
+        ).fetchone()[0]
+        tv_existing = conn.execute(
+            "select count(*) from flixpatrol_top10 where snapshot_date = ? and content_type = 'tv_show'",
+            (date_from,),
+        ).fetchone()[0]
+        if tv_existing > 0 and (not should_fetch_movies or movie_existing > 0):
+            logger.info("FP data already exists for %s (%d TV, %d movie)", date_from, tv_existing, movie_existing)
+            return {"planned_calls": 0, "actual_calls": 0}
 
-    logger.info("No FP data for %s, fetching from API...", date_from)
+    logger.info("Fetching FP data for %s (movies=%s)...", date_from, should_fetch_movies)
     try:
         from movietrace.sources.flixpatrol_api import FlixPatrolClient, load_api_key
 
-        client = FlixPatrolClient(load_api_key())
-        results = client.fetch_all_platforms(date_from=date_from)
+        client = FlixPatrolClient(load_api_key(), db_path=db_path, request_date=date_from)
+        fp_result = client.fetch_all_platforms(
+            date_from=date_from, fetch_movies=should_fetch_movies,
+        )
 
+        results = fp_result["results"]
         count = 0
-        for platform_key, items in results.items():
+        for key, items in results.items():
+            parts = key.split("/")
+            country_slug = parts[0] if len(parts) > 0 else "unknown"
             for item in items:
                 if item.get("snapshot_date") != date_from:
-                    logger.debug(
-                        "Skipping FP row outside requested date: requested=%s actual=%s fp_id=%s",
-                        date_from,
-                        item.get("snapshot_date"),
-                        item.get("fp_id"),
-                    )
                     continue
                 try:
                     conn.execute(
                         """insert or ignore into flixpatrol_top10
                            (fp_id, title, content_type, platform, country,
                             snapshot_date, ranking, ranking_last, value,
-                            days_total, tmdb_id, imdb_id, raw_payload_json)
-                           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            days_total, tmdb_id, imdb_id, raw_payload_json,
+                            updated_at, country_id, company_id)
+                           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
                             item.get("fp_id"),
                             item.get("title", ""),
                             item.get("content_type", "movie"),
-                            item.get("platform", platform_key),
-                            item.get("country", "united-states"),
+                            item.get("platform", "unknown"),
+                            item.get("country", country_slug),
                             item.get("snapshot_date", date_from),
                             item.get("ranking"),
                             item.get("ranking_last"),
@@ -68,17 +91,31 @@ def _ensure_fp_data(conn: sqlite3.Connection, date_from: str) -> None:
                             item.get("tmdb_id"),
                             item.get("imdb_id"),
                             json.dumps(item, ensure_ascii=False),
+                            item.get("updated_at"),
+                            item.get("country_id"),
+                            item.get("company_id"),
                         ),
                     )
                     count += 1
                 except Exception as exc:
                     logger.warning("Failed to insert FP row: %s", exc)
         conn.commit()
-        logger.info("Inserted %d rows into flixpatrol_top10", count)
+        logger.info(
+            "FP: inserted=%d planned=%d actual=%d tv=%d movie=%d monthly_est=%d-%d",
+            count,
+            fp_result["planned_calls"],
+            fp_result["actual_calls"],
+            fp_result["tv_calls"],
+            fp_result["movie_calls"],
+            fp_result["monthly_estimate_low"],
+            fp_result["monthly_estimate_high"],
+        )
         if count == 0:
             logger.warning("FlixPatrol API returned no usable rows for %s", date_from)
+        return fp_result
     except Exception as exc:
         logger.error("Failed to fetch FP data from API: %s", exc)
+        return {"planned_calls": 0, "actual_calls": 0, "error": str(exc)}
 
 
 # ── Multi-source discovery ──────────────────────────────────────────────
@@ -89,12 +126,15 @@ def run_discovery(
     dry_run: bool = False,
     weights_path: str = "config/scoring_weights.yaml",
     db_path: str = "data/movietrace.db",
+    *,
+    fetch_movies: bool = False,
+    movie_weekly_day: int = 0,
 ) -> dict:
-    """End-to-end multi-source discovery pipeline (P1.7-D).
+    """End-to-end multi-source discovery pipeline (P1.8).
 
     1. Ensure FP/TMDb/Trakt data for date_from
     2. Merge three sources
-    3. Enrich with OMDb + TMDb detail
+    3. Enrich with IMDb backfill + OMDb + TMDb detail
     4. Score + threshold filter
     5. Write content_updates
     """
@@ -104,7 +144,10 @@ def run_discovery(
 
     try:
         # Step 1: Ensure FP data
-        _ensure_fp_data(conn, snapshot_date)
+        _ensure_fp_data(
+            conn, snapshot_date, db_path=db_path,
+            fetch_movies=fetch_movies, movie_weekly_day=movie_weekly_day,
+        )
 
         # Step 2: Multi-source merge
         from movietrace.pipeline.multi_source_merge import merge_three_sources, MergedCandidate
@@ -118,13 +161,21 @@ def run_discovery(
         tmdb_token = (secrets.get("tmdb") or {}).get("api_read_access_token", "")
 
         enrich_stats = {}
+
+        # P1.8-F/G: Pre-score IMDb ID backfill via TMDb external_ids
+        if tmdb_token:
+            from movietrace.pipeline.omdb_enrichment import backfill_imdb_ids
+            enrich_stats["imdb_backfill"] = backfill_imdb_ids(
+                candidates, tmdb_token, db_path=db_path, request_date=snapshot_date,
+            )
+
         if omdb_key:
             from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
-            enrich_stats["omdb"] = enrich_with_omdb(conn, candidates, omdb_key)
+            enrich_stats["omdb"] = enrich_with_omdb(conn, candidates, omdb_key, db_path=db_path, request_date=snapshot_date)
 
         if tmdb_token:
             from movietrace.pipeline.omdb_enrichment import enrich_with_tmdb_details
-            enrich_stats["tmdb_detail"] = enrich_with_tmdb_details(conn, candidates, tmdb_token)
+            enrich_stats["tmdb_detail"] = enrich_with_tmdb_details(conn, candidates, tmdb_token, db_path=db_path, request_date=snapshot_date)
 
         # Step 4: Score
         scored = []
@@ -190,8 +241,20 @@ def _to_scoring_dict(c) -> dict:
     release_date = None
     language = None
     if c.tmdb_data:
-        release_date = c.tmdb_data.get("release_date")
         language = c.tmdb_data.get("original_language")
+        # P1.8-C: TV freshness uses last_air_date, not first_air_date
+        if content_type == "tv_show":
+            release_date = (
+                c.tmdb_data.get("last_air_date")
+                or c.tmdb_data.get("last_episode_air_date")
+                or c.tmdb_data.get("first_air_date")
+                or c.tmdb_data.get("release_date")
+            )
+        else:
+            release_date = (
+                c.tmdb_data.get("movie_release_date")
+                or c.tmdb_data.get("release_date")
+            )
 
     return {
         "title": c.title,
@@ -334,7 +397,6 @@ def _write_content_updates(
             continue
         content_update_id = f"discovery:{tmdb_id}:{snapshot_date}"
 
-        # Look up canonical_item_id via external_ids
         canonical_id = _lookup_canonical_id(conn, tmdb_id)
         if not canonical_id:
             continue
@@ -391,6 +453,7 @@ def _compute_discovery_stats(
         "P0": p0, "P1": p1, "P2": p2,
         "enrich_omdb": enrich_stats.get("omdb", {}),
         "enrich_tmdb_detail": enrich_stats.get("tmdb_detail", {}),
+        "enrich_imdb_backfill": enrich_stats.get("imdb_backfill", {}),
     }
 
 

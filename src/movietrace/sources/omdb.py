@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from movietrace.logging.api_usage import fingerprint_key
 from movietrace.pipeline.entity_matching import BaselineItem, ExternalSearchResult
 from movietrace.sources.http import get_json
 
@@ -12,9 +13,26 @@ class OmdbSearchClient:
         api_key: str,
         *,
         base_url: str = "https://www.omdbapi.com/",
+        db_path: str = "",
+        request_date: str = "",
     ):
         self.api_key = api_key
         self.base_url = base_url
+        self._db_path = db_path
+        self._request_date = request_date
+        self._key_fp = fingerprint_key(api_key)
+
+    def _log_ctx(self, endpoint: str, operation: str) -> dict | None:
+        if not self._db_path or not self._request_date:
+            return None
+        return {
+            "db_path": self._db_path,
+            "service": "omdb",
+            "endpoint": endpoint,
+            "operation": operation,
+            "request_date": self._request_date,
+            "key_fingerprint": self._key_fp,
+        }
 
     def search(
         self, query: str, baseline_item: BaselineItem
@@ -25,7 +43,11 @@ class OmdbSearchClient:
         }
         if baseline_item.content_granularity == "season":
             params["type"] = "series"
-        payload = get_json(self.base_url, params=params)
+        payload = get_json(
+            self.base_url,
+            params=params,
+            log_context=self._log_ctx("/?s", "omdb_search.search"),
+        )
         if not isinstance(payload, dict):
             return []
         return parse_omdb_search_results(payload)
@@ -116,19 +138,71 @@ def _votes_or_zero(value: object) -> int:
 class OmdbDetailClient:
     """OMDb detail lookup by IMDb ID (P1.7-D)."""
 
-    def __init__(self, api_key: str, *, base_url: str = "https://www.omdbapi.com/"):
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        base_url: str = "https://www.omdbapi.com/",
+        db_path: str = "",
+        request_date: str = "",
+    ):
         self.api_key = api_key
         self.base_url = base_url
+        self._db_path = db_path
+        self._request_date = request_date
+        self._key_fp = fingerprint_key(api_key)
+
+    def _log_ctx(self, endpoint: str, operation: str) -> dict | None:
+        if not self._db_path or not self._request_date:
+            return None
+        return {
+            "db_path": self._db_path,
+            "service": "omdb",
+            "endpoint": endpoint,
+            "operation": operation,
+            "request_date": self._request_date,
+            "key_fingerprint": self._key_fp,
+        }
 
     def get_by_imdb_id(self, imdb_id: str) -> dict | None:
         """GET ?i=<imdb_id>&apikey=... — returns {imdbRating, imdbVotes} or None."""
         payload = get_json(
             self.base_url,
             params={"i": imdb_id, "apikey": self.api_key},
+            log_context=self._log_ctx("/?i", "omdb_detail.get_by_imdb_id"),
         )
         if not isinstance(payload, dict) or payload.get("Response") != "True":
+            # Check for quota error in response
+            error_msg = payload.get("Error", "") if isinstance(payload, dict) else ""
+            if "limit reached" in error_msg.lower():
+                _log_omdb_quota_error(self._db_path, self._request_date, self._key_fp, error_msg)
             return None
         return payload
+
+
+def _log_omdb_quota_error(
+    db_path: str, request_date: str, key_fp: str, error_msg: str
+) -> None:
+    """Log OMDb quota error detected from response body."""
+    if not db_path or not request_date:
+        return
+    try:
+        from movietrace.logging.api_usage import log_api_call
+
+        log_api_call(
+            db_path=db_path,
+            service="omdb",
+            endpoint="/?i",
+            operation="omdb_detail.get_by_imdb_id",
+            request_date=request_date,
+            status="http_error",
+            http_status=401,
+            quota_error=True,
+            error_message=error_msg[:500],
+            key_fingerprint=key_fp,
+        )
+    except Exception:
+        pass
 
 
 def format_imdb_id(raw: str) -> str:
