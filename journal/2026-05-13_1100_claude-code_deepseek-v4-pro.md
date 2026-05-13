@@ -118,4 +118,4 @@ api_cache: 1079 OMDb entries
 | 新增文件 | ~24 个 (12 源码 + 11 测试 + 1 报告) |
 | 修改文件 | ~9 个 |
 | 测试用例 | 366 passed (新增 60) |
-| Token 消耗 | 未记录 |
+| Token 消耗 | 未记录（deepseek-v4-pro 环境不输出 usage 字段，jsonl 中 type/permissionMode/sessionId 无 token 数据） |
