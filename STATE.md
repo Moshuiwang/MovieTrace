@@ -252,6 +252,40 @@ daily-discover 2026-05-13:
 
 ---
 
+| **Phase 1.9：code review hotfix** | 📋 任务包已创建，待用户安排执行 |
+
+---
+
+## Phase 1.9 hotfix 任务包（2026-05-14）
+
+Code review（`reports/code_review_2026-05-14.md`）发现 10 个问题。CR-001 已修复，剩余 5 个 bug + 1 个默认值问题拆为 6 个任务包：
+
+```
+P1.9-hotfix-A（inspect-api-usage SQL 崩溃）         📋 待执行
+    ↓
+P1.9-hotfix-B（TV freshness last_air_date 未落地）  📋 待执行
+    ↓
+P1.9-hotfix-C（baseline 多新季 local_max 回写）     📋 待执行
+    ↓
+P1.9-hotfix-D（API logging 脱敏加固）               📋 待执行
+    ↓
+P1.9-hotfix-E（TMDb movie/tv ID 命名空间隔离）      📋 待执行
+    ↓
+P1.9-hotfix-F（Hulu→Paramount+ 默认值同步）         📋 待执行
+```
+
+**任务包文档：**
+- [P1.9-hotfix-A](docs/tasks/p1.9_hotfix_a_inspect_api_usage_sql_fix.md)
+- [P1.9-hotfix-B](docs/tasks/p1.9_hotfix_b_tv_freshness_last_air_date.md)
+- [P1.9-hotfix-C](docs/tasks/p1.9_hotfix_c_baseline_multi_season_fix.md)
+- [P1.9-hotfix-D](docs/tasks/p1.9_hotfix_d_api_logging_sanitization.md)
+- [P1.9-hotfix-E](docs/tasks/p1.9_hotfix_e_tmdb_id_namespace.md)
+- [P1.9-hotfix-F](docs/tasks/p1.9_hotfix_f_hulu_paramount_defaults.md)
+
+**CR-005（content_updates 唯一键）、CR-007（secrets 路径）、CR-009/010、CC-001~004 暂不纳入实现，需产品决策或另排清理周期。**
+
+---
+
 ## Phase 1.8 执行结果（2026-05-14）
 
 按 D → H → C → F/G → E 顺序全部完成。
@@ -326,35 +360,39 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 
 ## 进行中任务
 
-- 无。Phase 1.8 全部完成，等待用户验收和下一阶段安排。
+- Phase 1.9 hotfix 6 个任务包已创建，等待用户安排执行。建议顺序：A → B → C → D → E → F。
+
+## P1.9 执行结果（2026-05-14）
+
+- **P1.9（auto-register canonical_item）**：✅ 已完成（commit b4f6e99，406 测试）
 
 ---
 
 ## 阻塞项
 
-- 无。OMDb 配额问题已通过 TMDb fallback 降低影响；API usage log 已实现。
+- **FP API 订阅**：402 Payment Required，US/World/Nigeria/Kenya 全部不可用
+- **OMDb API**：401 Unauthorized，key 过期或配额耗尽
 
 ---
 
 ## 待用户决策
 
 - **pyyaml 是否纳入 requirements.txt**（延续）
-- **下一阶段方向**：Phase 1.8 已完成全部前置数据治理，可进入 Phase 1.9（如有）或进行全链路 dry-run 验收
-- **P1.8-B（OMDb key 授权排查）**：纯调研任务，未在本轮执行；如需要可单独安排
+- **P1.8-B（OMDb key 授权排查）**：纯调研任务，未执行
+- **P1.9-hotfix 执行**：6 个任务包待安排
+- **CR-005（content_updates 唯一键设计）**：需产品决策
+- **CR-007（secrets 路径迁移）**：需产品决策
 
 ---
 
 ## 给下一个 Agent 的交接
 
-- **Phase 1.8 全部完成**，402 测试全过
-- **新增 CLI 命令：** `inspect-api-usage`（共 4 个，加上之前的 3 个）
-- **schema version = 10**（migrations 001-010）
-- **FP 覆盖已扩至 4 国 × 6 平台**，TV 每日、Movie 每周一
-- **TV freshness 已修正**：使用 last_air_date 而非 first_air_date
-- **IMDb 评分已支持 TMDb fallback**：`score_breakdown.imdb_rating_source` 标记来源
-- **API usage log 已上线**：所有外部 API 调用记录到 `api_usage_log` 表
+- **P1.9 已完成**：P2+ 候选自动注册 canonical_item（commit b4f6e99，406 测试）
+- **P1.9-hotfix A-F 待执行**：6 个任务包路径见 `docs/tasks/p1.9_hotfix_*.md`
+- **P1.8 全部完成**（commit f264eba，402 测试）
+- **FP 和 OMDb API 均不可用**，无法做真实验证，需先解决配额
+- **Schema version = 10**（migrations 001-010）
 - **TMDb Bearer Token 路径：** `/tmp/movietrace_phase0_secrets.json`
-- **未提交 commit**，等待用户确认后提交
 
 ---
 
