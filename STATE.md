@@ -5,9 +5,9 @@
 
 ---
 
-**最后更新：** 2026-05-14 13:04 +08
-**更新人：** Claude Code（deepseek-v4-pro）+ moshuiwang
-**所在分支：** `main`
+**最后更新：** 2026-05-14 13:25 +08
+**更新人：** Codex（GPT-5）+ moshuiwang
+**所在分支：** `work/codex-20260514-coding`
 
 ---
 
@@ -363,7 +363,7 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 
 ## 进行中任务
 
-- 无。Phase 1.10 已全部完成。
+- [P1.11-hotfix](docs/tasks/p1.11_hotfix_omdb_cache_source.md) OMDb cache source 修复已完成（438 测试通过）。
 - Phase 1.11 待执行：
   - [P1.11-A](docs/tasks/p1.11_a_api_circuit_breaker.md) API 致命错误熔断
   - [P1.11-B](docs/tasks/p1.11_b_omdb_multi_key.md) OMDb 多 Key 轮转
@@ -493,9 +493,9 @@ P1.9-hotfix-F（Hulu→Paramount+ 默认值同步）          ✅
 - **FP 和 OMDb API 均不可用**，dry-run 验证已确认 P1.10 fallback 机制正常
 - **Schema version = 12**（migrations 001-012）
 - **TMDb Bearer Token 路径：** `/tmp/movietrace_phase0_secrets.json`
-- **测试：** 437 passed（1 个已知 OMDb cache bug 失败），耗时 ~58s
-- **测试全部 mock 化**：不会再消耗任何 API 配额
-- **工作区干净**
+- **测试：** 438 passed，耗时 73.88s
+- **测试目标**：默认自动化测试不消耗任何 API 配额
+- **工作区**：隔离 worktree `work/codex-20260514-coding`
 
 ---
 

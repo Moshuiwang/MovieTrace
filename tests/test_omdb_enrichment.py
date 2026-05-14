@@ -40,7 +40,13 @@ class OmdbEnrichmentTest(unittest.TestCase):
 
         c = MergedCandidate(tmdb_id=76479, imdb_id="1190634", title="Test", media_type="tv")
 
-        with patch("movietrace.pipeline.omdb_enrichment.time.sleep", return_value=None):
+        with (
+            patch("movietrace.pipeline.omdb_enrichment.time.sleep", return_value=None),
+            patch(
+                "movietrace.pipeline.omdb_enrichment.OmdbDetailClient.get_by_imdb_id",
+                side_effect=AssertionError("cache hit must not call OMDb API"),
+            ),
+        ):
             result = enrich_with_omdb(self.conn, [c], "fake-key")
 
         self.assertEqual(result["cache_hits"], 1)

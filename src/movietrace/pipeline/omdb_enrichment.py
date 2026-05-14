@@ -78,7 +78,7 @@ def enrich_with_omdb(
             continue
 
         # Check cache
-        cached = _read_cache(conn, f"omdb:{formatted}", cache_ttl_hours)
+        cached = _read_cache(conn, f"omdb:{formatted}", cache_ttl_hours, source="omdb")
         if cached:
             cache_hits += 1
             _apply_omdb_data(c, cached)
@@ -94,7 +94,7 @@ def enrich_with_omdb(
             continue
 
         if data:
-            _write_cache(conn, f"omdb:{formatted}", data)
+            _write_cache(conn, f"omdb:{formatted}", data, source="omdb")
             _apply_omdb_data(c, data)
             enriched += 1
 
@@ -164,11 +164,13 @@ def enrich_with_tmdb_details(
     return {"api_calls": api_calls, "cache_hits": cache_hits, "enriched": enriched}
 
 
-def _read_cache(conn: sqlite3.Connection, key: str, ttl_hours: int) -> dict | None:
+def _read_cache(
+    conn: sqlite3.Connection, key: str, ttl_hours: int, *, source: str = "tmdb"
+) -> dict | None:
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).strftime("%Y-%m-%d %H:%M:%S")
     row = conn.execute(
-        "select response_json from api_cache where source = 'tmdb' and cache_key = ? and fetched_at >= ?",
-        (key, cutoff),
+        "select response_json from api_cache where source = ? and cache_key = ? and fetched_at >= ?",
+        (source, key, cutoff),
     ).fetchone()
     if row:
         try:
@@ -178,11 +180,13 @@ def _read_cache(conn: sqlite3.Connection, key: str, ttl_hours: int) -> dict | No
     return None
 
 
-def _write_cache(conn: sqlite3.Connection, key: str, data: dict) -> None:
+def _write_cache(
+    conn: sqlite3.Connection, key: str, data: dict, *, source: str = "tmdb"
+) -> None:
     try:
         conn.execute(
-            "insert or replace into api_cache (source, cache_key, response_json) values ('tmdb', ?, ?)",
-            (key, json.dumps(data, ensure_ascii=False)),
+            "insert or replace into api_cache (source, cache_key, response_json) values (?, ?, ?)",
+            (source, key, json.dumps(data, ensure_ascii=False)),
         )
         conn.commit()
     except Exception as exc:
