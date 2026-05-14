@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-14 10:34 +08
-**更新人：** Claude Code (deepseek-v4-pro) + moshuiwang
+**最后更新：** 2026-05-14 10:37 +08
+**更新人：** Codex（system prompt 标识：Codex, a coding agent based on GPT-5）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -375,6 +375,12 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 | [P1.10-D](docs/tasks/p1.10_d_source_fallback_runtime.md) | 单 source 抓取失败时回退到最近可用 snapshot | 待审 |
 | [P1.10-E](docs/tasks/p1.10_e_fallback_report_visibility.md) | 报告和导出展示 fresh/fallback/failed 状态 | 待审 |
 | [P1.10 执行顺序](docs/tasks/p1.10_execution_order.md) | 明确依赖、顺序和用户已确认决策 | 待审 |
+
+**用户已确认决策：**
+- `source_fallback.max_staleness_days` 默认值为 30 天。
+- 兜底只覆盖 FP / TMDb / Trakt 三个热源，不覆盖 OMDb / TMDb detail / external_ids 富化。
+- fallback 数据允许进入供应商主列表，但报告和导出必须显著标记。
+- TMDb / Trakt 每接口默认 20 条，保留 config / CLI 覆盖能力。
 
 ## P1.9 执行结果（2026-05-14）
 
