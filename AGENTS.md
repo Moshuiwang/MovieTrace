@@ -31,15 +31,18 @@
 | 框架 | 无；引入任何新依赖前必须有任务包授权 |
 | 数据库 | SQLite（`data/movietrace.db`）；schema 见 `src/movietrace/db/schema.py`；变更须提 migration plan |
 | 目录结构 | `src/movietrace/` 源码 · `tests/` 测试 · `docs/` 文档 · `reports/` 验证报告 · `journal/` 日报 · `scripts/` 验证脚本 |
+| Token 预算 | 启动默认读 STATE + SCOPE + context_map + 当前任务包；历史层先 `rg` 再读片段；禁止每轮刷新同批文档 |
 
 ---
 
 ## 启动顺序（每次会话）
 
-1. [`STATE.md`](STATE.md) — 当前阶段、进行中任务、阻塞项
-2. 本文件 12 条规则
-3. `journal/` 最新 1-2 篇日报 — 上个 Agent 做了什么
-4. 任务相关的 `docs/tasks/<task>.md`（如有）
+1. [`STATE.md`](STATE.md) — 当前阶段、进行中任务、阻塞项、交接
+2. [`SCOPE.md`](SCOPE.md) — V1/V2 边界，防止越界
+3. [`docs/context_map.md`](docs/context_map.md) — 四层加载地图
+4. 本文件规则
+5. 当前任务包（如有）
+6. **不默认整篇读取**：历史日报、已完成任务包、完整 requirements；查历史先 `rg` 搜索关键词，再打开命中片段
 
 ---
 
@@ -107,8 +110,10 @@
 | 完成任务汇报 | [docs/workflow/report-format.md](docs/workflow/report-format.md) |
 | 写新 ADR | [docs/decisions/README.md](docs/decisions/README.md) |
 | 排查故障 | [docs/workflow/troubleshooting.md](docs/workflow/troubleshooting.md) |
-| 新项目/阶段切换/方法论参考 | [docs/workflow/phases.md](docs/workflow/phases.md) |
-| 判断任务是否在 V1 范围内 / 用户请求可能超界 | [SCOPE.md](SCOPE.md) |
+| 日常运行 | [docs/operations/runbook.md](docs/operations/runbook.md) |
+| 运营反馈记录 | [docs/operations/feedback_log_template.md](docs/operations/feedback_log_template.md) |
+| 查历史执行结果 | 先 `rg` 搜索关键词到 `docs/history/phase1_state_archive.md`，再读片段 |
+| 判断任务是否在 V1 范围内 | [SCOPE.md](SCOPE.md) |
 
 ---
 
