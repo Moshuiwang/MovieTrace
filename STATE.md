@@ -5,7 +5,7 @@
 
 ---
 
-**最后更新：** 2026-05-14 19:57 +08
+**最后更新：** 2026-05-14 20:07 +08
 **更新人：** Codex（GPT-5）+ moshuiwang
 **所在分支：** `main`
 
@@ -582,6 +582,8 @@ P1.11-B（OMDb 多 Key 轮转）                           ✅
 - **测试：** 495 passed，65.16s，无 API 消耗
 - **Phase 1 全部任务包（41 个）执行完毕，无待执行任务**
 - **新集更新追踪→V2 backlog**
+- **GitHub Actions CI 已新增**：`.github/workflows/ci.yml` 在 PR 和 `main` push 时运行 Python 3.12 + `pip install -r requirements.txt` + `PYTHONPATH=src python -m pytest tests/ -v`
+- **最新本地验证**：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -v` → 495 passed, 1 warning, 66.30s
 
 ---
 
