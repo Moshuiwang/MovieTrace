@@ -154,6 +154,120 @@ class SchemaMigration014Test(unittest.TestCase):
         ).fetchone()
         self.assertIsNotNone(version)
 
+    def test_schema_12_database_upgrades_to_14_with_realistic_legacy_data(self):
+        import sqlite3
+        from movietrace.db.schema import initialize_database
+
+        legacy_path = Path(self.tmpdir.name) / "legacy_v12.db"
+        conn = sqlite3.connect(legacy_path)
+        conn.executescript(
+            """
+            create table schema_migrations (
+                version integer primary key,
+                applied_at text not null default current_timestamp
+            );
+            insert into schema_migrations(version) values
+                (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12);
+
+            create table canonical_items (
+                id integer primary key autoincrement,
+                canonical_item_key text not null,
+                title text not null,
+                content_type text,
+                content_granularity text not null,
+                parent_canonical_item_id integer,
+                season_number integer,
+                episode_number integer,
+                virtual_series_id integer
+            );
+            create unique index ux_canonical_items_key
+            on canonical_items(canonical_item_key);
+
+            create table external_ids (
+                id integer primary key autoincrement,
+                canonical_item_id integer not null references canonical_items(id) on delete cascade,
+                source text not null,
+                external_id text not null,
+                external_granularity text,
+                created_at text not null default current_timestamp
+            );
+            create unique index ux_external_ids_source_id
+            on external_ids(source, external_id);
+
+            create table content_updates (
+                id integer primary key autoincrement,
+                content_update_id text not null,
+                canonical_item_id integer not null references canonical_items(id),
+                update_type text not null,
+                priority text,
+                hot_score integer,
+                baseline_match_status text,
+                review_status text not null default 'pending',
+                source_summary_json text,
+                created_at text not null default current_timestamp,
+                updated_at text not null default current_timestamp,
+                match_confidence_low integer not null default 0
+            );
+            create unique index ux_content_updates_item_type
+            on content_updates(canonical_item_id, update_type);
+
+            insert into canonical_items
+                (id, canonical_item_key, title, content_type, content_granularity)
+            values
+                (1, 'tmdb:tv:124364', 'FROM', 'tv', 'series'),
+                (2, 'tmdb:movie:100', 'Movie 100', 'movie', 'movie'),
+                (3, 'tmdb:tv:100:season:1', 'Show 100', 'tv', 'season');
+
+            insert into external_ids(canonical_item_id, source, external_id)
+            values
+                (1, 'tmdb', 'tv:124364'),
+                (1, 'tmdb', '124364'),
+                (2, 'tmdb', 'movie:100'),
+                (3, 'tmdb', 'tv:100');
+
+            insert into content_updates(content_update_id, canonical_item_id, update_type)
+            values
+                ('discovery:124364:2026-05-13', 1, 'new_discovery'),
+                ('discovery:100:2026-05-14', 2, 'new_discovery'),
+                ('discovery:100:2026-05-14', 3, 'new_discovery');
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        initialize_database(legacy_path)
+
+        conn = sqlite3.connect(legacy_path)
+        version = conn.execute("select max(version) from schema_migrations").fetchone()[0]
+        bare_tmdb_count = conn.execute(
+            """select count(*) from external_ids
+               where source='tmdb'
+                 and external_id not like 'tv:%'
+                 and external_id not like 'movie:%'
+                 and external_id not like 'unknown:%'"""
+        ).fetchone()[0]
+        indexes = {r[1] for r in conn.execute("pragma index_list(content_updates)")}
+        updates = [
+            r[0]
+            for r in conn.execute(
+                "select content_update_id from content_updates order by canonical_item_id"
+            ).fetchall()
+        ]
+        conn.close()
+
+        self.assertEqual(version, 14)
+        self.assertEqual(bare_tmdb_count, 0)
+        self.assertNotIn("ux_content_updates_item_type", indexes)
+        self.assertIn("ux_content_updates_update_id", indexes)
+        self.assertEqual(
+            updates,
+            [
+                "discovery:tv:124364:2026-05-13",
+                "discovery:movie:100:2026-05-14",
+                "discovery:tv:100:2026-05-14",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

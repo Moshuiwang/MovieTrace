@@ -5,7 +5,7 @@
 
 ---
 
-**最后更新：** 2026-05-14 19:51 +08
+**最后更新：** 2026-05-14 19:57 +08
 **更新人：** Codex（GPT-5）+ moshuiwang
 **所在分支：** `main`
 
@@ -26,7 +26,7 @@
 | **Phase 1.10：源数据预算与抓取兜底** | ✅ 全部完成（437 测试, 2026-05-14） |
 | **Phase 1.11：API 调用韧性增强** | ✅ 全部完成（458 测试, 2026-05-14） |
 | **Phase 1.12：review hotfix** | ✅ 全部完成（478 测试, 2026-05-14） |
-| **Phase 1.13：content_updates 数据模型修正** | ✅ 全部完成（492 测试, 2026-05-14） |
+| **Phase 1.13：content_updates 数据模型修正** | ✅ 全部完成（495 测试, 2026-05-14） |
 
 ---
 
@@ -326,7 +326,9 @@ P1.13（content_updates 事件历史化）                      ✅
 - Review hotfix：migration 013 先删除会与既有 `tv:`/`movie:`/`unknown:` ID 冲突的裸 TMDb ID，再执行 namespace update，避免 `ux_external_ids_source_id` 中断升级
 - Review hotfix：`FlixPatrol load_api_key()` 无显式路径时改走统一 `load_secrets()`，保留 `/tmp/movietrace_phase0_secrets.json` legacy fallback
 - Review hotfix：`entity_matching --secrets` 未显式传入时走 `load_secrets(None)`，保留 legacy fallback；显式传入路径时继续使用指定文件
-- 测试：492 passed（新增 discovery namespace、migration 013 duplicate guard、migration 014 legacy namespace、FlixPatrol/entity_matching legacy fallback 回归）
+- Test hardening：补充 `load_secrets()` 默认新路径坏 JSON 时 fallback legacy 的测试，并修复对应逻辑；显式坏 JSON 仍不 fallback
+- Test hardening：补充 schema 12 风格库升级到 14 的 migration 集成测试；发现并修复 `SCHEMA_SQL` 提前创建 `ux_content_updates_update_id` 导致 legacy 重复 ID 在 migration 014 前失败的问题
+- 测试：495 passed（新增 discovery namespace、migration 013 duplicate guard、migration 014 legacy namespace、secrets fallback、schema 12→14 升级回归）
 - 本地 `data/movietrace.db` 检查：真实库仍为 schema version 12，未落盘升级；仅 1 条 legacy discovery 记录，关联 `content_type=tv`，副本迁移演练通过并转为 `discovery:tv:124364:2026-05-13`
 
 ---
@@ -577,7 +579,7 @@ P1.11-B（OMDb 多 Key 轮转）                           ✅
 - **新增 config 模块：** `src/movietrace/config.py` 统一 secrets 加载入口
 - **content_updates 语义变更：** 事件历史表，`content_update_id` 唯一，跨天可重复；discovery ID 格式为 `discovery:{movie|tv}:{tmdb_id}:{snapshot_date}`
 - **FP API 仍然不可用**（402）；**OMDb 已恢复**
-- **测试：** 492 passed，65.57s，无 API 消耗
+- **测试：** 495 passed，65.16s，无 API 消耗
 - **Phase 1 全部任务包（41 个）执行完毕，无待执行任务**
 - **新集更新追踪→V2 backlog**
 

@@ -107,9 +107,6 @@ create table if not exists content_updates (
     updated_at text not null default current_timestamp
 );
 
-create unique index if not exists ux_content_updates_update_id
-on content_updates(content_update_id);
-
 create table if not exists match_candidates (
     id integer primary key autoincrement,
     baseline_item_id integer not null references baseline_items(id) on delete cascade,

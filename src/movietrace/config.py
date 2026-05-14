@@ -31,7 +31,15 @@ def load_secrets(path: str | Path | None = None) -> dict:
         try:
             return json.loads(resolved.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            logger.warning("Secrets file %s is invalid JSON, trying legacy path", resolved)
+            if path is None and LEGACY_SECRETS_PATH.exists():
+                logger.warning("Secrets file %s is invalid JSON, trying legacy path", resolved)
+                _check_permissions(LEGACY_SECRETS_PATH)
+                try:
+                    return json.loads(LEGACY_SECRETS_PATH.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    logger.warning("Legacy secrets file is invalid JSON")
+                    return {}
+            logger.warning("Secrets file %s is invalid JSON", resolved)
     elif path is None and LEGACY_SECRETS_PATH.exists():
         logger.warning(
             "Secrets at %s not found, falling back to legacy path %s — "
