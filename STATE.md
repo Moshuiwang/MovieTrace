@@ -6,9 +6,9 @@
 
 ---
 
-**最后更新：** 2026-05-14 21:00 +08
+**最后更新：** 2026-05-14 21:15 +08
 **更新人：** Claude Code（deepseek-v4-pro）+ moshuiwang
-**所在分支：** `p1.14-schema14-upgrade`
+**所在分支：** `main`
 
 ---
 
@@ -80,23 +80,11 @@
 
 ## 进行中任务
 
-（无。P1.14-P1.16 全部完成，P1.17 跳过。项目进入 V1 运行观察期。）
+（无。V1 收口任务包已全部完成，PR #1 已合入 main。项目进入 V1 运行观察期。）
 
----
+## V1 收口任务包（P1.14-P1.17）：全部完成
 
-## V1 收口任务包（P1.14-P1.17）
-
-```
-P1.14（真实库 schema 14 升级）✅
-    ↓
-P1.15（V1 收口复盘与运行手册）✅
-    ↓
-P1.16（上下文加载规则与文档瘦身）✅
-    ↓
-V1 运行观察 3-7 天 ← 当前
-    ↓
-P1.17（daily-discover 代码卫生）⏭ 真实运行后再评估
-```
+PR #1 已合入，分支已删除。
 
 ---
 
@@ -120,7 +108,7 @@ P1.17（daily-discover 代码卫生）⏭ 真实运行后再评估
 
 - **真实库 schema version = 14**（migrations 001-014 全部落盘）
 - **备份：** `data/movietrace_backup_20260514_2028.db`
-- **本分支：** `p1.14-schema14-upgrade`（P1.14-P1.16）
+- **分支：** `main`（PR #1 已合入）
 - **Secrets：** `~/.config/movietrace/secrets.json`（fallback `/tmp/movietrace_phase0_secrets.json` + warning）
 - **config 模块：** `src/movietrace/config.py` 统一 secrets 入口
 - **content_updates 语义：** 事件历史表，`content_update_id` 唯一，discovery ID 格式 `discovery:{movie|tv}:{tmdb_id}:{date}`
