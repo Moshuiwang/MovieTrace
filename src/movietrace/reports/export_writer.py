@@ -34,15 +34,27 @@ def export_recommendations(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
+    md_content = format_markdown(updates, days)
+    json_content = format_json(updates)
+
+    # 带时间戳的完整副本（审计追溯用）
     md_path = out / f"recommendations_{ts}.md"
     json_path = out / f"recommendations_{ts}.json"
 
-    md_path.write_text(format_markdown(updates, days), encoding="utf-8")
-    json_path.write_text(format_json(updates), encoding="utf-8")
+    md_path.write_text(md_content, encoding="utf-8")
+    json_path.write_text(json_content, encoding="utf-8")
+
+    # 固定名称的 latest（cron 和人工取用，直接覆盖）
+    latest_md = out / "latest.md"
+    latest_json = out / "latest.json"
+    latest_md.write_text(md_content, encoding="utf-8")
+    latest_json.write_text(json_content, encoding="utf-8")
 
     return {
         "md_path": str(md_path),
         "json_path": str(json_path),
+        "latest_md": str(latest_md),
+        "latest_json": str(latest_json),
         "total_items": len(updates),
     }
 

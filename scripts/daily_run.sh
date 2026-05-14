@@ -19,7 +19,22 @@ START_TIME=$(date '+%Y-%m-%d %H:%M:%S +08')
 
     # dry-run 模式：完整流程但不写业务结果。改为 commit 模式时删除 --dry-run
     PYTHONPATH=src python -m movietrace.cli daily-discover --dry-run 2>&1
-    EXIT_CODE=$?
+    DISCOVER_EXIT=$?
+
+    # 导出最近 1 天结果到 latest.md / latest.json（固定文件名，每日覆盖）
+    if [ "$DISCOVER_EXIT" -eq 0 ]; then
+        PYTHONPATH=src python -m movietrace.cli export-recommendations --days 1 2>&1
+        EXPORT_EXIT=$?
+    else
+        EXPORT_EXIT=0
+    fi
+
+    # 合并退出码：任意一个非零即异常
+    if [ "$DISCOVER_EXIT" -ne 0 ] || [ "$EXPORT_EXIT" -ne 0 ]; then
+        EXIT_CODE=1
+    else
+        EXIT_CODE=0
+    fi
 
     END_TIME=$(date '+%Y-%m-%d %H:%M:%S +08')
     START_EPOCH=$(date -d "$START_TIME" +%s 2>/dev/null || date -j -f '%Y-%m-%d %H:%M:%S %z' "$START_TIME" +%s 2>/dev/null)
@@ -30,9 +45,9 @@ START_TIME=$(date '+%Y-%m-%d %H:%M:%S +08')
     echo "=== 运行摘要 ==="
     echo "结束: $END_TIME"
     echo "耗时: ${DURATION}s"
-    echo "退出码: $EXIT_CODE"
+    echo "退出码: $EXIT_CODE (discover=$DISCOVER_EXIT export=$EXPORT_EXIT)"
     if [ "$EXIT_CODE" -ne 0 ]; then
-        echo "状态: ❌ 异常退出（退出码 $EXIT_CODE）"
+        echo "状态: ❌ 异常退出（discover=$DISCOVER_EXIT, export=$EXPORT_EXIT）"
     else
         echo "状态: ✅ 正常完成"
     fi
