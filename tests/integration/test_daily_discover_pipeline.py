@@ -147,6 +147,8 @@ class TestEndToEndPipeline:
     def test_run_discovery_empty_db_returns_gracefully(self, temp_db):
         """Discovery on an empty DB returns stats without error key."""
         from movietrace.pipeline.discovery import run_discovery
-        result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=temp_db)
+        with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                   return_value={"planned_calls": 0, "actual_calls": 0}):
+            result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=temp_db)
         stats = result.get("stats", {})
         assert isinstance(stats, dict)

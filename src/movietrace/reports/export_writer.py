@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from movietrace.db.schema import connect_database
+from movietrace.reports.inspect_renderer import _parse_source_json, _extract_source_status
 
 
 def export_recommendations(
@@ -183,24 +184,8 @@ def format_json(updates: list[dict]) -> str:
     return json.dumps(export, indent=2, ensure_ascii=False)
 
 
-def _parse_source_json(raw: str) -> dict:
-    if not raw:
-        return {}
-    try:
-        return json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return {}
-
 
 def _esc(text: str) -> str:
     return (text or "").replace("|", "\\|").replace("\n", " ")
 
 
-def _extract_source_status(updates: list[dict]) -> dict | None:
-    """Extract source_data_status from the first update that has it."""
-    for u in updates:
-        source_info = _parse_source_json(u.get("source_summary_json", ""))
-        status = source_info.get("source_data_status")
-        if status:
-            return status
-    return None

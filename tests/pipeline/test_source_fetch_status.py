@@ -172,24 +172,6 @@ class SourceFetchStatusTest(unittest.TestCase):
         # Should skip 05-14 (failed) and return 05-13 (fresh)
         self.assertEqual(snapshot, "2026-05-13")
 
-    def test_build_effective_source_dates(self):
-        from movietrace.pipeline.source_fetch_status import (
-            record_source_fetch_run,
-            build_effective_source_dates,
-        )
-
-        record_source_fetch_run(self.conn, "2026-05-14", "tmdb", "fresh",
-                                source_snapshot_date="2026-05-14")
-        record_source_fetch_run(self.conn, "2026-05-14", "trakt", "fallback",
-                                source_snapshot_date="2026-05-13")
-        record_source_fetch_run(self.conn, "2026-05-14", "flixpatrol", "failed_no_fallback",
-                                error_message="402")
-        self.conn.commit()
-
-        dates = build_effective_source_dates(self.conn, "2026-05-14")
-        self.assertEqual(dates["tmdb"], "2026-05-14")
-        self.assertEqual(dates["trakt"], "2026-05-13")
-        self.assertIsNone(dates["flixpatrol"])
 
 
 if __name__ == "__main__":

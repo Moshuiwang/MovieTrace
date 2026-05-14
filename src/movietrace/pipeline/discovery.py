@@ -14,7 +14,6 @@ from movietrace.pipeline.scoring import (
     map_priority,
 )
 from movietrace.pipeline.source_fetch_status import (
-    build_effective_source_dates,
     record_source_fetch_run,
 )
 
@@ -154,6 +153,9 @@ def _resolve_source_dates_with_fallback(
         "trakt": (trakt_rows, trakt_error),
     }
 
+    import json
+
+    fallback_cfg_json = json.dumps(fallback_cfg, ensure_ascii=False) if fallback_cfg else None
     effective_dates: dict[str, str | None] = {}
 
     for source in ["flixpatrol", "tmdb", "trakt"]:
@@ -169,18 +171,21 @@ def _resolve_source_dates_with_fallback(
                         source_snapshot_date=snapshot,
                         rows_fetched=0, rows_inserted=0,
                         error_message=error,
+                        config_json=fallback_cfg_json,
                     )
                     effective_dates[source] = snapshot
                 else:
                     record_source_fetch_run(
                         conn, target_date, source, "failed_no_fallback",
                         error_message=error,
+                        config_json=fallback_cfg_json,
                     )
                     effective_dates[source] = None
             else:
                 record_source_fetch_run(
                     conn, target_date, source, "failed_no_fallback",
                     error_message=error,
+                    config_json=fallback_cfg_json,
                 )
                 effective_dates[source] = None
         elif rows == 0:
@@ -192,18 +197,21 @@ def _resolve_source_dates_with_fallback(
                         conn, target_date, source, "fallback",
                         source_snapshot_date=snapshot,
                         rows_fetched=0, rows_inserted=0,
+                        config_json=fallback_cfg_json,
                     )
                     effective_dates[source] = snapshot
                 else:
                     record_source_fetch_run(
                         conn, target_date, source, "failed_no_fallback",
                         error_message="No data and no fallback available",
+                        config_json=fallback_cfg_json,
                     )
                     effective_dates[source] = None
             else:
                 record_source_fetch_run(
                     conn, target_date, source, "failed_no_fallback",
                     error_message="No data for date",
+                    config_json=fallback_cfg_json,
                 )
                 effective_dates[source] = None
         else:
@@ -212,6 +220,7 @@ def _resolve_source_dates_with_fallback(
                 conn, target_date, source, "fresh",
                 source_snapshot_date=target_date,
                 rows_fetched=rows, rows_inserted=rows,
+                config_json=fallback_cfg_json,
             )
             effective_dates[source] = target_date
 

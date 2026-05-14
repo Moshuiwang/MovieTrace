@@ -105,31 +105,3 @@ def find_latest_source_snapshot(
 
     return None
 
-
-def build_effective_source_dates(
-    conn: sqlite3.Connection,
-    target_date: str,
-    max_staleness_days: int = 30,
-) -> dict[str, str | None]:
-    result: dict[str, str | None] = {}
-    for source in ["flixpatrol", "tmdb", "trakt"]:
-        row = conn.execute(
-            """select status, source_snapshot_date from source_fetch_runs
-               where target_date = ? and source = ?""",
-            (target_date, source),
-        ).fetchone()
-
-        if row and row[0] in ("fresh", "fallback") and row[1]:
-            result[source] = row[1]
-        elif row and row[0] == "fallback":
-            result[source] = row[1]
-        elif row and row[0] == "failed_no_fallback":
-            result[source] = None
-        else:
-            # No record for today — try to find fallback
-            snapshot = find_latest_source_snapshot(
-                conn, source, target_date, max_staleness_days
-            )
-            result[source] = snapshot
-
-    return result

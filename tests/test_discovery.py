@@ -185,7 +185,9 @@ class TestRunDiscovery:
             db_path = f.name
         try:
             initialize_database(db_path)
-            result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
+            with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                       return_value={"planned_calls": 0, "actual_calls": 0}):
+                result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
             stats = result.get("stats", {})
             # May get "no_data" if merge produces nothing
             assert isinstance(stats, dict)

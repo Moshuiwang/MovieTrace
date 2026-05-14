@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
@@ -43,10 +44,12 @@ class DiscoveryWithBaselineTrackingTest(unittest.TestCase):
         """Discovery should still complete even without baseline tracking config."""
         from movietrace.pipeline.discovery import run_discovery
 
-        result = run_discovery(
-            db_path=str(self.db_path),
-            dry_run=True,
-        )
+        with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                   return_value={"planned_calls": 0, "actual_calls": 0}):
+            result = run_discovery(
+                db_path=str(self.db_path),
+                dry_run=True,
+            )
         # Should still have candidates and stats
         self.assertIn("candidates", result)
         self.assertIn("stats", result)
