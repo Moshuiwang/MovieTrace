@@ -5,7 +5,7 @@
 
 ---
 
-**最后更新：** 2026-05-14 15:47 +08
+**最后更新：** 2026-05-14 15:50 +08
 **更新人：** Codex（GPT-5）+ moshuiwang
 **所在分支：** `main`
 
@@ -287,7 +287,7 @@ P1.9-hotfix-F（Hulu→Paramount+ 默认值同步）         📋 待执行
 - [P1.9-hotfix-E](docs/tasks/p1.9_hotfix_e_tmdb_id_namespace.md)
 - [P1.9-hotfix-F](docs/tasks/p1.9_hotfix_f_hulu_paramount_defaults.md)
 
-**CR-005（content_updates 唯一键）、CR-007（secrets 路径）、CR-009/010、CC-001~004 暂不纳入实现，需产品决策或另排清理周期。**
+**CR-005（content_updates 唯一键）、CR-007（secrets 路径）、CR-009/010、CC-001~004 当时暂不纳入 P1.9；其中 CR-005/CR-007 已于后续决策进入 P1.13 / P1.12-F。**
 
 ---
 
@@ -564,4 +564,4 @@ P1.11-B（OMDb 多 Key 轮转）                           ✅
 - ~~**任务包文档归档治理**~~ ✅ 已完成（2026-05-12）
 - ~~**日报归档**~~ ✅ 已完成
 - **参考文档分类**：`docs/` 根目录文件可考虑按主题分目录
-- **pyyaml 纳入依赖**：确认后更新 `requirements.txt`
+- ~~**pyyaml 纳入依赖**~~ → 已纳入 [P1.12-D](docs/tasks/p1.12_hotfix_d_pyyaml_dependency.md)，任务包授权执行时更新 `requirements.txt`
