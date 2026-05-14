@@ -91,7 +91,7 @@
 ## 4 个易踩坑
 
 - **`PYTHONPATH=src`** — 运行测试/脚本必须带，src layout。
-- **TMDb Bearer Token** — `/tmp/movietrace_phase0_secrets.json` → `tmdb.api_read_access_token`。
+- **TMDb Bearer Token** — `~/.config/movietrace/secrets.json` → `tmdb.api_read_access_token`（旧路径 `/tmp/movietrace_phase0_secrets.json` 仍 fallback 兼容）。
 - **FlixPatrol 合规** — 每 URL 每 24h ≤ 1 次、间隔 ≥ 2 秒、UA = `MovieTraceBot/0.1`、仅内部使用。
 - **飞书失败不静默重试** — 记录时间戳、来源 ID、HTTP 状态，向用户报告（规则 9）。
 
