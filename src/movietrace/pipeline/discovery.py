@@ -144,7 +144,7 @@ def run_discovery(
 
     try:
         # Step 1: Ensure FP data
-        _ensure_fp_data(
+        fp_stats = _ensure_fp_data(
             conn, snapshot_date, db_path=db_path,
             fetch_movies=fetch_movies, movie_weekly_day=movie_weekly_day,
         )
@@ -197,7 +197,7 @@ def run_discovery(
         threshold = (cfg.get("priority_thresholds") or {}).get("P2", 50)
         passed = [s for s in scored if s.get("hot_score", 0) >= threshold]
 
-        stats = _compute_discovery_stats(scored, passed, enrich_stats)
+        stats = _compute_discovery_stats(scored, passed, enrich_stats, fp_stats)
 
         # Step 6: Write to content_updates
         if not dry_run:
@@ -443,6 +443,7 @@ def _compute_discovery_stats(
     all_scored: list[dict],
     passed: list[dict],
     enrich_stats: dict,
+    fp_stats: dict | None = None,
 ) -> dict[str, Any]:
     p0 = sum(1 for c in passed if c.get("priority") == "P0")
     p1 = sum(1 for c in passed if c.get("priority") == "P1")
@@ -454,6 +455,8 @@ def _compute_discovery_stats(
         "enrich_omdb": enrich_stats.get("omdb", {}),
         "enrich_tmdb_detail": enrich_stats.get("tmdb_detail", {}),
         "enrich_imdb_backfill": enrich_stats.get("imdb_backfill", {}),
+        "fp_planned": (fp_stats or {}).get("planned_calls", 0),
+        "fp_actual": (fp_stats or {}).get("actual_calls", 0),
     }
 
 

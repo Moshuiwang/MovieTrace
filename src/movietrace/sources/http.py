@@ -97,6 +97,12 @@ def _log_error(
             http_status = int(m.group(1))
         rate_limited = http_status == 429
 
+        # OMDb 401 is a quota/authorization error (key expired or limit reached)
+        quota_error = (
+            log_context
+            and log_context.get("service") == "omdb"
+            and http_status == 401
+        )
         log_api_call(
             db_path=log_context["db_path"],
             service=log_context["service"],
@@ -105,6 +111,7 @@ def _log_error(
             request_date=log_context["request_date"],
             status="http_error" if http_status else "network_error",
             http_status=http_status,
+            quota_error=quota_error,
             rate_limited=rate_limited,
             duration_ms=duration_ms,
             error_code=str(http_status) if http_status else None,

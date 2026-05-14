@@ -84,7 +84,7 @@ def log_api_call(
         conn.commit()
         conn.close()
     except Exception:
-        logger.warning("Failed to write api_usage_log row", exc_info=True)
+        logger.debug("Failed to write api_usage_log row", exc_info=True)
 
 
 # Fields that must never appear in metadata
