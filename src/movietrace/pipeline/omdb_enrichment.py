@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from movietrace.pipeline.multi_source_merge import MergedCandidate
+from movietrace.sources.http import FatalApiError
 from movietrace.sources.omdb import OmdbDetailClient, format_imdb_id
 from movietrace.sources.tmdb import TmdbDetailClient
 
@@ -54,7 +55,7 @@ def backfill_imdb_ids(
 def enrich_with_omdb(
     conn: sqlite3.Connection,
     candidates: list[MergedCandidate],
-    omdb_api_key: str,
+    omdb_api_keys: list[str],
     cache_ttl_hours: int = 24,
     *,
     db_path: str = "data/movietrace.db",
@@ -62,14 +63,31 @@ def enrich_with_omdb(
 ) -> dict:
     """Enrich candidates with IMDb rating/votes via OMDb, with 24h cache.
 
-    Returns {"api_calls": int, "cache_hits": int, "enriched": int}.
+    Supports multiple API keys: when a key returns 401/403, it is marked dead
+    and the next key is tried for the current candidate. When all keys are
+    exhausted, the circuit breaker stops all further OMDb requests.
+
+    Returns {"api_calls": int, "cache_hits": int, "enriched": int,
+             "keys_used": int, "keys_exhausted": int}.
     """
-    client = OmdbDetailClient(omdb_api_key, db_path=db_path, request_date=request_date)
+    if not omdb_api_keys:
+        return {"api_calls": 0, "cache_hits": 0, "enriched": 0, "keys_used": 0, "keys_exhausted": 0}
+
+    active_keys = list(omdb_api_keys)
+    dead_keys: set[str] = set()
+    tried_keys: set[str] = set()
     api_calls = 0
     cache_hits = 0
     enriched = 0
 
     for c in candidates:
+        if not active_keys:
+            logger.warning(
+                "OMDb circuit breaker: all %d keys exhausted (%d calls made) — stopping",
+                len(dead_keys), api_calls,
+            )
+            break
+
         if not c.imdb_id:
             continue
 
@@ -77,7 +95,7 @@ def enrich_with_omdb(
         if not formatted:
             continue
 
-        # Check cache
+        # Check cache (valid regardless of which key fetched it)
         cached = _read_cache(conn, f"omdb:{formatted}", cache_ttl_hours, source="omdb")
         if cached:
             cache_hits += 1
@@ -85,15 +103,33 @@ def enrich_with_omdb(
             enriched += 1
             continue
 
-        # Call API
-        try:
-            data = client.get_by_imdb_id(formatted)
-            api_calls += 1
-        except Exception as exc:
-            logger.warning("OMDb lookup failed for %s: %s", formatted, exc)
-            continue
+        # Try each active key for this candidate
+        enriched_for_candidate = False
+        for key in active_keys:
+            tried_keys.add(key)
+            client = OmdbDetailClient(key, db_path=db_path, request_date=request_date)
+            try:
+                data = client.get_by_imdb_id(formatted)
+                api_calls += 1
+                enriched_for_candidate = True
+                break
+            except FatalApiError as exc:
+                api_calls += 1
+                dead_keys.add(key)
+                logger.warning(
+                    "OMDb key %s... HTTP %s — marked dead, trying next key",
+                    key[:8], exc.status_code,
+                )
+                continue
+            except Exception as exc:
+                api_calls += 1
+                logger.warning("OMDb lookup failed for %s: %s", formatted, exc)
+                break  # non-fatal error, don't retry with other keys
 
-        if data:
+        # Remove dead keys from active list
+        active_keys = [k for k in active_keys if k not in dead_keys]
+
+        if enriched_for_candidate and data:
             _write_cache(conn, f"omdb:{formatted}", data, source="omdb")
             _apply_omdb_data(c, data)
             enriched += 1
@@ -101,10 +137,17 @@ def enrich_with_omdb(
         time.sleep(1.0)  # polite between OMDb calls
 
     logger.info(
-        "OMDb enrichment: api_calls=%d cache_hits=%d enriched=%d of %d",
+        "OMDb enrichment: api_calls=%d cache_hits=%d enriched=%d of %d keys_used=%d keys_exhausted=%d",
         api_calls, cache_hits, enriched, len(candidates),
+        len(tried_keys), len(dead_keys),
     )
-    return {"api_calls": api_calls, "cache_hits": cache_hits, "enriched": enriched}
+    return {
+        "api_calls": api_calls,
+        "cache_hits": cache_hits,
+        "enriched": enriched,
+        "keys_used": len(tried_keys),
+        "keys_exhausted": len(dead_keys),
+    }
 
 
 def enrich_with_tmdb_details(
@@ -164,9 +207,7 @@ def enrich_with_tmdb_details(
     return {"api_calls": api_calls, "cache_hits": cache_hits, "enriched": enriched}
 
 
-def _read_cache(
-    conn: sqlite3.Connection, key: str, ttl_hours: int, *, source: str = "tmdb"
-) -> dict | None:
+def _read_cache(conn: sqlite3.Connection, key: str, ttl_hours: int, source: str = "tmdb") -> dict | None:
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).strftime("%Y-%m-%d %H:%M:%S")
     row = conn.execute(
         "select response_json from api_cache where source = ? and cache_key = ? and fetched_at >= ?",
@@ -180,9 +221,7 @@ def _read_cache(
     return None
 
 
-def _write_cache(
-    conn: sqlite3.Connection, key: str, data: dict, *, source: str = "tmdb"
-) -> None:
+def _write_cache(conn: sqlite3.Connection, key: str, data: dict, source: str = "tmdb") -> None:
     try:
         conn.execute(
             "insert or replace into api_cache (source, cache_key, response_json) values (?, ?, ?)",

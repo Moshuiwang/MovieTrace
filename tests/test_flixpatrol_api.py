@@ -20,6 +20,7 @@ from movietrace.sources.flixpatrol_api import (
     unwrap_item,
     _extract_http_status,
 )
+from movietrace.sources.http import FatalApiError
 
 # ── compound document fixture ───────────────────────────────────────────
 
@@ -362,28 +363,30 @@ class TestFlixPatrolClient:
         assert header.startswith("Basic ")
 
     def test_fetch_top10_auth_error_401(self):
-        """401 should raise RuntimeError immediately."""
+        """401 should raise FatalApiError immediately (circuit breaker)."""
         client = FlixPatrolClient("bad_key")
         with patch("movietrace.sources.flixpatrol_api.get_json") as mock_get:
-            mock_get.side_effect = Exception("HTTP Error 401: Unauthorized")
-            with pytest.raises(RuntimeError, match="authentication failed"):
+            mock_get.side_effect = FatalApiError(401, "HTTP Error 401: Unauthorized")
+            with pytest.raises(FatalApiError) as ctx:
                 client.fetch_top10(
                     company="cmp_IA6TdMqwf6kuyQvxo9bJ4nKX",
                     country=FP_COUNTRIES["united-states"],
                     content_type=2,
                 )
+            assert ctx.value.status_code == 401
 
     def test_fetch_top10_auth_error_403(self):
-        """403 should raise RuntimeError immediately."""
+        """403 should raise FatalApiError immediately (circuit breaker)."""
         client = FlixPatrolClient("bad_key")
         with patch("movietrace.sources.flixpatrol_api.get_json") as mock_get:
-            mock_get.side_effect = Exception("HTTP Error 403: Forbidden")
-            with pytest.raises(RuntimeError, match="authentication failed"):
+            mock_get.side_effect = FatalApiError(403, "HTTP Error 403: Forbidden")
+            with pytest.raises(FatalApiError) as ctx:
                 client.fetch_top10(
                     company="cmp_IA6TdMqwf6kuyQvxo9bJ4nKX",
                     country=FP_COUNTRIES["united-states"],
                     content_type=2,
                 )
+            assert ctx.value.status_code == 403
 
     def test_fetch_top10_rate_limit_429_retry_ok(self, compound_doc_item):
         """429 should retry once and succeed."""
@@ -474,6 +477,21 @@ class TestFlixPatrolClient:
         assert result["planned_calls"] == 48
         assert result["tv_calls"] == 24
         assert result["movie_calls"] == 24
+
+    def test_fetch_all_platforms_circuit_breaker_stops_after_first_fatal(self):
+        """First 401 should stop all remaining FP requests (circuit breaker)."""
+        client = FlixPatrolClient("bad_key")
+        with patch("movietrace.sources.flixpatrol_api.get_json") as mock_get:
+            mock_get.side_effect = FatalApiError(402, "HTTP Error 402: Payment Required")
+            with patch("movietrace.sources.flixpatrol_api.time.sleep"):
+                result = client.fetch_all_platforms(date_from="2026-05-14")
+        # Should have stopped after first call, not 24
+        assert result["actual_calls"] == 0
+        assert result["planned_calls"] == 24
+        assert result.get("circuit_breaker") is True
+        assert "402" in result.get("error", "")
+        # get_json should have been called only once
+        assert mock_get.call_count == 1
 
     def test_fetch_top10_uses_closed_single_day_window_when_date_from_given(self, compound_doc_item):
         """A single-day fetch should not pull later snapshot dates."""

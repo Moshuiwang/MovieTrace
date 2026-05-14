@@ -5,9 +5,9 @@
 
 ---
 
-**最后更新：** 2026-05-14 13:25 +08
-**更新人：** Codex（GPT-5）+ moshuiwang
-**所在分支：** `work/codex-20260514-coding`
+**最后更新：** 2026-05-14 13:32 +08
+**更新人：** Claude Code（deepseek-v4-pro）+ moshuiwang
+**所在分支：** `main`
 
 ---
 
@@ -24,7 +24,7 @@
 | **Phase 1.8：条件性调优前置数据治理** | ✅ 全部完成（402 测试, 2026-05-14） |
 | **Phase 1.9：code review hotfix + 候选自动注册** | ✅ 全部完成（405 测试, 2026-05-14） |
 | **Phase 1.10：源数据预算与抓取兜底** | ✅ 全部完成（437 测试, 2026-05-14） |
-| **Phase 1.11：API 调用韧性增强** | 📝 P1.11-A/B 任务包已创建，待执行 |
+| **Phase 1.11：API 调用韧性增强** | ✅ 全部完成（458 测试, 2026-05-14） |
 
 ---
 
@@ -363,10 +363,7 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 
 ## 进行中任务
 
-- [P1.11-hotfix](docs/tasks/p1.11_hotfix_omdb_cache_source.md) OMDb cache source 修复已完成（438 测试通过）。
-- Phase 1.11 待执行：
-  - [P1.11-A](docs/tasks/p1.11_a_api_circuit_breaker.md) API 致命错误熔断
-  - [P1.11-B](docs/tasks/p1.11_b_omdb_multi_key.md) OMDb 多 Key 轮转
+- 无。Phase 1.11 已全部完成（含 P1.11-hotfix OMDb cache source）。下一阶段待用户决定。
 
 ---
 
@@ -470,6 +467,47 @@ P1.9-hotfix-F（Hulu→Paramount+ 默认值同步）          ✅
 
 ---
 
+## Phase 1.11 执行结果（2026-05-14）
+
+```
+P1.11-A（API 致命错误熔断）                           ✅
+    ↓
+P1.11-B（OMDb 多 Key 轮转）                           ✅
+```
+
+### P1.11-A：API 致命错误熔断
+
+- `http.py` 新增 `FatalApiError` 异常类（401/402/403 时抛出）
+- `get_json()` → `HTTPError` 拦截 → 致命状态码抛 `FatalApiError`，非致命状态码（429/5xx）继续原异常
+- `FlixPatrolClient.fetch_all_platforms()` → 首次 `FatalApiError` 立即停止遍历，返回部分 stats（含 `circuit_breaker: True`）
+- `enrich_with_omdb()` → `FatalApiError` 触发 key 轮转，所有 key 耗尽后熔断停止
+- dry-run 验证：FP 402 只报 1 次就熔断（原来 24 次），输出 "flixpatrol circuit breaker: HTTP 402 — stopping all FP requests"
+
+### P1.11-B：OMDb 多 Key 轮转
+
+- secrets 格式变更：`api_key` → `api_keys: ["c9c22b79", "e19de8a0"]`，向后兼容旧格式
+- `enrich_with_omdb()` 签名：`omdb_api_key: str` → `omdb_api_keys: list[str]`
+- Key 轮转逻辑：401/403 → 标记该 key 失效 → 用下一个 key 重试当前 candidate
+- 所有 key 耗尽 → 熔断（停止后续 OMDb 请求）
+- 非致命错误（429/5xx）不触发 key 切换
+- `_resolve_omdb_keys()` 兼容新旧 secrets 格式
+- `_read_cache`/`_write_cache` 修复 source 参数（原硬编码 `'tmdb'` 导致 OMDb 缓存命中率 0%）
+
+**新增文件：**
+- `tests/test_http.py` — FatalApiError 8 个测试
+
+**修改文件：**
+- `src/movietrace/sources/http.py` — FatalApiError + get_json 拦截
+- `src/movietrace/sources/flixpatrol_api.py` — 熔断捕获 + _log_circuit_breaker
+- `src/movietrace/pipeline/omdb_enrichment.py` — 熔断 + 多 key 轮转 + cache source 修复
+- `src/movietrace/pipeline/discovery.py` — _resolve_omdb_keys + enrich 传参
+- `src/movietrace/cli.py` — secrets 读取兼容
+- `tests/test_flixpatrol_api.py` — FatalApiError 适配 + circuit breaker 测试
+- `tests/test_omdb_enrichment.py` — 多 key/熔断 14 测试
+- `/tmp/movietrace_phase0_secrets.json` — api_keys 格式
+
+---
+
 ## 阻塞项
 
 - **FP API 订阅**：402 Payment Required，US/World/Nigeria/Kenya 全部不可用
@@ -488,14 +526,16 @@ P1.9-hotfix-F（Hulu→Paramount+ 默认值同步）          ✅
 
 ## 给下一个 Agent 的交接
 
-- **Phase 1.10 全部完成**（commit fbf551e）：源精简 + fallback + 报告可感知 + code review 修复 + 测试 mock 加速
-- **Phase 1.11 就绪**：P1.11-A（熔断）/ P1.11-B（OMDb 多 key）任务包已创建，直接执行即可
-- **FP 和 OMDb API 均不可用**，dry-run 验证已确认 P1.10 fallback 机制正常
+- **Phase 1.11 全部完成**：API 致命错误熔断 + OMDb 多 Key 轮转
+- **FP 熔断已验证**：dry-run 显示首次 402 即停止（1 次而非 24 次）
+- **OMDb 多 key 已配置**：`c9c22b79`（新 key）+ `e19de8a0`（旧 key）
+- **修复预存 bug**：`_read_cache`/`_write_cache` 硬编码 `source='tmdb'` 导致 OMDb 缓存命中率 0%
+- **FP 和 OMDb API 仍然不可用**（旧 key），新 OMDb key `c9c22b79` 待验证
 - **Schema version = 12**（migrations 001-012）
 - **TMDb Bearer Token 路径：** `/tmp/movietrace_phase0_secrets.json`
-- **测试：** 438 passed，耗时 73.88s
-- **测试目标**：默认自动化测试不消耗任何 API 配额
-- **工作区**：隔离 worktree `work/codex-20260514-coding`
+- **测试：** 458 passed，~59s，无 API 消耗
+- **测试全部 mock 化**：不会再消耗任何 API 配额
+- **工作区有未提交变更**（P1.11 修改 + docs/decisions/0010 来自上一会话）
 
 ---
 

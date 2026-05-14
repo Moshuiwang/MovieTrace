@@ -30,7 +30,8 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
     print()
 
     secrets = _load_secrets()
-    omdb_key = (secrets.get("omdb") or {}).get("api_key", "")
+    omdb_cfg = secrets.get("omdb") or {}
+    omdb_keys = omdb_cfg.get("api_keys") or ([omdb_cfg.get("api_key")] if omdb_cfg.get("api_key") else [])
     tmdb_token = _load_tmdb_token()
 
     # Read FP config for movie scheduling

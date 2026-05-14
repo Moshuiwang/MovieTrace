@@ -3,12 +3,20 @@ from __future__ import annotations
 import json
 import re
 import time
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0"
 )
+
+
+class FatalApiError(RuntimeError):
+    """Raised when API returns 401/402/403 — triggers circuit breaker."""
+    def __init__(self, status_code: int, message: str = ""):
+        self.status_code = status_code
+        super().__init__(message or f"Fatal API error: HTTP {status_code}")
 
 
 def get_json(
@@ -35,6 +43,12 @@ def get_json(
         elapsed_ms = int((time.monotonic() - start) * 1000)
         _log_success(log_context, http_status, elapsed_ms, result)
         return result
+    except HTTPError as exc:
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        _log_error(log_context, exc, elapsed_ms)
+        if exc.code in (401, 402, 403):
+            raise FatalApiError(exc.code, str(exc)) from exc
+        raise
     except Exception as exc:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         _log_error(log_context, exc, elapsed_ms)

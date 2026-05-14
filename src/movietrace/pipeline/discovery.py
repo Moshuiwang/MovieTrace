@@ -348,7 +348,7 @@ def run_discovery(
 
         # Step 3: Enrichment
         secrets = _load_secrets()
-        omdb_key = (secrets.get("omdb") or {}).get("api_key", "")
+        omdb_keys = _resolve_omdb_keys(secrets)
         tmdb_token = (secrets.get("tmdb") or {}).get("api_read_access_token", "")
 
         enrich_stats = {}
@@ -360,9 +360,9 @@ def run_discovery(
                 candidates, tmdb_token, db_path=db_path, request_date=snapshot_date,
             )
 
-        if omdb_key:
+        if omdb_keys:
             from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
-            enrich_stats["omdb"] = enrich_with_omdb(conn, candidates, omdb_key, db_path=db_path, request_date=snapshot_date)
+            enrich_stats["omdb"] = enrich_with_omdb(conn, candidates, omdb_keys, db_path=db_path, request_date=snapshot_date)
 
         if tmdb_token:
             from movietrace.pipeline.omdb_enrichment import enrich_with_tmdb_details
@@ -743,6 +743,21 @@ def _compute_discovery_stats(
         "fp_planned": (fp_stats or {}).get("planned_calls", 0),
         "fp_actual": (fp_stats or {}).get("actual_calls", 0),
     }
+
+
+def _resolve_omdb_keys(secrets: dict) -> list[str]:
+    """Resolve OMDb API keys from secrets, with backward compat for old format.
+
+    New format: {"omdb": {"api_keys": ["key1", "key2"]}}
+    Old format: {"omdb": {"api_key": "xxx"}} -> ["xxx"]
+    """
+    omdb_cfg = secrets.get("omdb") or {}
+    api_keys = omdb_cfg.get("api_keys")
+    if api_keys:
+        return [k for k in api_keys if k]
+    # Backward compat: single api_key string
+    api_key = omdb_cfg.get("api_key", "")
+    return [api_key] if api_key else []
 
 
 def _load_secrets(path: str = "/tmp/movietrace_phase0_secrets.json") -> dict:

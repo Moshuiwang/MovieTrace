@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from movietrace.logging.api_usage import fingerprint_key
-from movietrace.sources.http import get_json
+from movietrace.sources.http import FatalApiError, get_json
 
 logger = logging.getLogger("movietrace.sources.flixpatrol_api")
 
@@ -188,6 +188,8 @@ class FlixPatrolClient:
                 company, ct_str, len(unwrapped), elapsed, self._masked_key,
             )
             return unwrapped
+        except FatalApiError:
+            raise
         except Exception as exc:
             elapsed = time.monotonic() - start
             status_code = _extract_http_status(str(exc))
@@ -285,12 +287,37 @@ class FlixPatrolClient:
                     continue
                 for content_type, type_name in content_types:
                     key = f"{country_slug}/{platform_key}/{type_name}"
-                    items = self.fetch_top10(
-                        company=company_id,
-                        country=country_id,
-                        content_type=content_type,
-                        date_from=date_from,
-                    )
+                    try:
+                        items = self.fetch_top10(
+                            company=company_id,
+                            country=country_id,
+                            content_type=content_type,
+                            date_from=date_from,
+                        )
+                    except FatalApiError as exc:
+                        logger.warning(
+                            "flixpatrol circuit breaker: HTTP %s — stopping all FP requests "
+                            "(completed %d/%d calls)",
+                            exc.status_code, actual, planned,
+                        )
+                        _log_circuit_breaker(
+                            self._db_path, self._request_date, self._key_fp,
+                            "flixpatrol", exc.status_code, actual, planned,
+                        )
+                        stats = {
+                            "results": results,
+                            "planned_calls": planned,
+                            "actual_calls": actual,
+                            "tv_calls": tv_actual,
+                            "movie_calls": movie_actual,
+                            "country_count": country_count,
+                            "platform_count": platform_count,
+                            "monthly_estimate_low": 0,
+                            "monthly_estimate_high": 0,
+                            "error": str(exc),
+                            "circuit_breaker": True,
+                        }
+                        return stats
                     results[key] = items
                     actual += 1
                     if content_type == 3:
@@ -317,6 +344,33 @@ class FlixPatrolClient:
             "monthly_estimate_high": planned * 31 + (movie_planned * 5 if fetch_movies else 0),
         }
         return stats
+
+
+def _log_circuit_breaker(
+    db_path: str, request_date: str, key_fp: str,
+    service: str, http_status: int, calls_made: int, calls_planned: int,
+) -> None:
+    if not db_path or not request_date:
+        return
+    try:
+        from movietrace.logging.api_usage import log_api_call
+
+        log_api_call(
+            db_path=db_path,
+            service=service,
+            endpoint="/top10s",
+            operation="circuit_breaker",
+            request_date=request_date,
+            status="circuit_breaker",
+            http_status=http_status,
+            error_message=(
+                f"Circuit breaker triggered after HTTP {http_status}. "
+                f"Stopped at {calls_made}/{calls_planned} calls."
+            ),
+            key_fingerprint=key_fp,
+        )
+    except Exception:
+        pass
 
 
 def _extract_http_status(error_msg: str) -> int | None:

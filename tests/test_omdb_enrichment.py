@@ -30,7 +30,6 @@ class OmdbEnrichmentTest(unittest.TestCase):
         from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
         from movietrace.pipeline.multi_source_merge import MergedCandidate
 
-        # Pre-populate cache
         import json
         self.conn.execute(
             "insert into api_cache (source, cache_key, response_json) values (?, ?, ?)",
@@ -40,17 +39,14 @@ class OmdbEnrichmentTest(unittest.TestCase):
 
         c = MergedCandidate(tmdb_id=76479, imdb_id="1190634", title="Test", media_type="tv")
 
-        with (
-            patch("movietrace.pipeline.omdb_enrichment.time.sleep", return_value=None),
-            patch(
-                "movietrace.pipeline.omdb_enrichment.OmdbDetailClient.get_by_imdb_id",
-                side_effect=AssertionError("cache hit must not call OMDb API"),
-            ),
-        ):
-            result = enrich_with_omdb(self.conn, [c], "fake-key")
+        with patch("movietrace.pipeline.omdb_enrichment.time.sleep", return_value=None):
+            result = enrich_with_omdb(self.conn, [c], ["fake-key"])
 
         self.assertEqual(result["cache_hits"], 1)
         self.assertEqual(result["api_calls"], 0)
+        self.assertEqual(result["enriched"], 1)
+        self.assertEqual(result["keys_used"], 0)
+        self.assertEqual(result["keys_exhausted"], 0)
         self.assertEqual(c.imdb_rating, 8.6)
         self.assertEqual(c.imdb_votes, 853757)
 
@@ -61,13 +57,147 @@ class OmdbEnrichmentTest(unittest.TestCase):
         c = MergedCandidate(tmdb_id=100, imdb_id=None, title="No IMDb", media_type="movie")
 
         with patch("movietrace.pipeline.omdb_enrichment.time.sleep", return_value=None):
-            result = enrich_with_omdb(self.conn, [c], "fake-key")
+            result = enrich_with_omdb(self.conn, [c], ["fake-key"])
 
         self.assertEqual(result["enriched"], 0)
 
     def test_format_imdb_id_handles_tt_prefix(self):
         from movietrace.sources.omdb import format_imdb_id
         self.assertEqual(format_imdb_id("tt1234567"), "tt1234567")
+
+    def test_multi_key_first_fails_second_succeeds(self):
+        """First key 401 → switch to second key and succeed."""
+        from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+        from movietrace.sources.http import FatalApiError
+
+        c = MergedCandidate(tmdb_id=76479, imdb_id="1190634", title="Test", media_type="tv")
+
+        call_count = [0]
+
+        def mock_get_json(url, params=None, headers=None, timeout=20, log_context=None):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise FatalApiError(401, "Unauthorized")
+            return {"Response": "True", "imdbRating": "7.5", "imdbVotes": "10,000"}
+
+        with patch("movietrace.sources.omdb.get_json", side_effect=mock_get_json):
+            with patch("movietrace.pipeline.omdb_enrichment.time.sleep", return_value=None):
+                result = enrich_with_omdb(self.conn, [c], ["bad-key", "good-key"])
+
+        self.assertEqual(result["api_calls"], 2)  # 1 fatal + 1 success
+        self.assertEqual(result["enriched"], 1)
+        self.assertEqual(result["keys_used"], 2)
+        self.assertEqual(result["keys_exhausted"], 1)
+        self.assertEqual(c.imdb_rating, 7.5)
+        self.assertEqual(c.imdb_votes, 10000)
+
+    def test_all_keys_fatal_circuit_breaker(self):
+        """All keys 401 → circuit breaker stops enrichment."""
+        from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+        from movietrace.sources.http import FatalApiError
+
+        c1 = MergedCandidate(tmdb_id=76479, imdb_id="1190634", title="Test1", media_type="tv")
+        c2 = MergedCandidate(tmdb_id=76480, imdb_id="1190635", title="Test2", media_type="tv")
+
+        call_count = [0]
+
+        def mock_get_json(url, params=None, headers=None, timeout=20, log_context=None):
+            call_count[0] += 1
+            raise FatalApiError(401, "Unauthorized")
+
+        with patch("movietrace.sources.omdb.get_json", side_effect=mock_get_json):
+            with patch("movietrace.pipeline.omdb_enrichment.time.sleep", return_value=None):
+                result = enrich_with_omdb(self.conn, [c1, c2], ["key1", "key2"])
+
+        # Both keys tried for first candidate = 2 calls, then circuit breaker
+        self.assertEqual(result["api_calls"], 2)
+        self.assertEqual(result["enriched"], 0)
+        self.assertEqual(result["keys_used"], 2)
+        self.assertEqual(result["keys_exhausted"], 2)
+        # Only 2 calls (both keys for first candidate), not 4 (both keys for both candidates)
+        self.assertEqual(call_count[0], 2)
+
+    def test_multi_key_single_key_works_normally(self):
+        """Single key that works → normal flow."""
+        from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+
+        c = MergedCandidate(tmdb_id=76479, imdb_id="1190634", title="Test", media_type="tv")
+
+        def mock_get_json(url, params=None, headers=None, timeout=20, log_context=None):
+            return {"Response": "True", "imdbRating": "8.0", "imdbVotes": "5,000"}
+
+        with patch("movietrace.sources.omdb.get_json", side_effect=mock_get_json):
+            with patch("movietrace.pipeline.omdb_enrichment.time.sleep", return_value=None):
+                result = enrich_with_omdb(self.conn, [c], ["only-key"])
+
+        self.assertEqual(result["api_calls"], 1)
+        self.assertEqual(result["enriched"], 1)
+        self.assertEqual(result["keys_used"], 1)
+        self.assertEqual(result["keys_exhausted"], 0)
+        self.assertEqual(c.imdb_rating, 8.0)
+
+    def test_empty_keys_list_returns_early(self):
+        from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+
+        c = MergedCandidate(tmdb_id=76479, imdb_id="1190634", title="Test", media_type="tv")
+        result = enrich_with_omdb(self.conn, [c], [])
+        self.assertEqual(result["api_calls"], 0)
+        self.assertEqual(result["keys_used"], 0)
+
+    def test_non_fatal_error_does_not_switch_key(self):
+        """5xx errors should not trigger key switch (only FatalApiError does)."""
+        from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+
+        c = MergedCandidate(tmdb_id=76479, imdb_id="1190634", title="Test", media_type="tv")
+
+        def mock_get_json(url, params=None, headers=None, timeout=20, log_context=None):
+            raise Exception("HTTP Error 502: Bad Gateway")
+
+        with patch("movietrace.sources.omdb.get_json", side_effect=mock_get_json):
+            with patch("movietrace.pipeline.omdb_enrichment.time.sleep", return_value=None):
+                result = enrich_with_omdb(self.conn, [c], ["key1", "key2"])
+
+        # Non-fatal error: should not exhaust keys, just skip candidate
+        self.assertEqual(result["keys_exhausted"], 0)
+        self.assertEqual(result["keys_used"], 1)  # only key1 was tried
+        self.assertEqual(result["enriched"], 0)
+
+
+class OmdbResolveKeysTest(unittest.TestCase):
+    def test_new_format_api_keys_list(self):
+        from movietrace.pipeline.discovery import _resolve_omdb_keys
+        keys = _resolve_omdb_keys({"omdb": {"api_keys": ["k1", "k2"]}})
+        self.assertEqual(keys, ["k1", "k2"])
+
+    def test_old_format_api_key_string(self):
+        from movietrace.pipeline.discovery import _resolve_omdb_keys
+        keys = _resolve_omdb_keys({"omdb": {"api_key": "oldkey"}})
+        self.assertEqual(keys, ["oldkey"])
+
+    def test_old_format_empty_string(self):
+        from movietrace.pipeline.discovery import _resolve_omdb_keys
+        keys = _resolve_omdb_keys({"omdb": {"api_key": ""}})
+        self.assertEqual(keys, [])
+
+    def test_no_omdb_section(self):
+        from movietrace.pipeline.discovery import _resolve_omdb_keys
+        keys = _resolve_omdb_keys({})
+        self.assertEqual(keys, [])
+
+    def test_new_format_filters_empty_strings(self):
+        from movietrace.pipeline.discovery import _resolve_omdb_keys
+        keys = _resolve_omdb_keys({"omdb": {"api_keys": ["k1", "", "k2"]}})
+        self.assertEqual(keys, ["k1", "k2"])
+
+    def test_new_format_takes_priority_over_old(self):
+        from movietrace.pipeline.discovery import _resolve_omdb_keys
+        keys = _resolve_omdb_keys({"omdb": {"api_keys": ["k1", "k2"], "api_key": "old"}})
+        self.assertEqual(keys, ["k1", "k2"])
 
 
 if __name__ == "__main__":
