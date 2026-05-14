@@ -5,7 +5,7 @@
 
 ---
 
-**最后更新：** 2026-05-14 20:07 +08
+**最后更新：** 2026-05-14 20:22 +08
 **更新人：** Codex（GPT-5）+ moshuiwang
 **所在分支：** `main`
 
@@ -408,6 +408,31 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 ## 进行中任务
 
 无。Phase 1.13 review hotfix 已完成，所有 Phase 1 任务包全部执行完毕。
+
+## V1 收口建议任务包（待执行）
+
+> 2026-05-14 20:18 +08 根据用户关于“下一步、复盘、代码重构、工作方法升级”的讨论新增。当前为待执行任务包，不代表已完成。
+
+建议执行顺序：
+
+```
+P1.14（真实库 schema 14 升级与 smoke 验收）
+    ↓
+P1.15（V1 收口复盘与运行手册）
+    ↓
+P1.16（上下文加载规则与文档瘦身）
+    ↓
+V1 运行观察 3-7 天
+    ↓
+P1.17（daily-discover 窄范围代码卫生，可选）
+```
+
+任务包：
+- [P1.14：真实库 schema 14 升级与 smoke 验收](docs/tasks/p1.14_true_db_schema14_smoke.md) — 优先级最高；先备份真实库，再落盘 migration 013/014 并跑 smoke。
+- [P1.15：V1 收口复盘与运行手册](docs/tasks/p1.15_v1_closeout_operations_docs.md) — 沉淀 V1 closeout、runbook、反馈模板，并修正文档漂移。
+- [P1.16：上下文加载规则与文档瘦身](docs/tasks/p1.16_context_loading_slimdown.md) — 建立 `docs/context_map.md`，精简 `STATE.md`，降低后续 Agent token 成本。
+- [P1.17：daily-discover 窄范围代码卫生](docs/tasks/p1.17_daily_discover_code_hygiene.md) — 可选；建议真实运行 3-7 天且有维护痛点后再执行。
+- [P1.14-P1.17 执行顺序](docs/tasks/p1.14_to_p1.17_execution_order.md) — 记录依赖关系和范围边界。
 
 ---
 
