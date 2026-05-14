@@ -19,7 +19,7 @@
 - 每天 `daily-discover` 命中的内容，允许生成当天的 `content_update` 事件。
 - 去重只限制“同一个业务事件被同一天/同一次流程重复写入”，不阻止跨天再次出现。
 - 使用 `content_update_id` 作为事件级唯一键。
-- discovery 类事件的 `content_update_id` 必须包含日期，例如 `discovery:{tmdb_id}:{snapshot_date}`。
+- discovery 类事件的 `content_update_id` 必须包含 TMDb 媒体命名空间和日期，例如 `discovery:{movie|tv}:{tmdb_id}:{snapshot_date}`，避免 movie/tv 共享数字 ID 时发生事件冲突。
 - `new_season` 事件的 `content_update_id` 必须包含 season，例如 `new_season:vs_{id}:s{season}`。
 - 暂不新增冷却期、物化当前建议表或 observation 明细表。
 - 当前建议清单由查询窗口承担：`export-recommendations --days N` / `inspect-updates --days N`。

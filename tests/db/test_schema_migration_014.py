@@ -84,6 +84,68 @@ class SchemaMigration014Test(unittest.TestCase):
         ).fetchone()[0]
         self.assertEqual(count, 2)
 
+    def test_migration_namespaces_legacy_discovery_ids_before_unique_index(self):
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.executescript(
+            """
+            create table schema_migrations (
+                version integer primary key,
+                applied_at text not null default current_timestamp
+            );
+            create table canonical_items (
+                id integer primary key autoincrement,
+                canonical_item_key text not null,
+                title text not null,
+                content_type text,
+                content_granularity text not null
+            );
+            create table content_updates (
+                id integer primary key autoincrement,
+                content_update_id text not null,
+                canonical_item_id integer not null references canonical_items(id),
+                update_type text not null
+            );
+            create unique index ux_content_updates_item_type
+            on content_updates(canonical_item_id, update_type);
+            insert into canonical_items
+                (id, canonical_item_key, title, content_type, content_granularity)
+            values
+                (1, 'tmdb:movie:100', 'Movie 100', 'movie', 'movie'),
+                (2, 'tmdb:tv:100:season:1', 'Show 100', 'tv', 'season');
+            insert into content_updates
+                (content_update_id, canonical_item_id, update_type)
+            values
+                ('discovery:100:2026-05-14', 1, 'new_discovery'),
+                ('discovery:100:2026-05-14', 2, 'new_discovery');
+            """
+        )
+
+        migration_sql = (
+            Path(__file__).resolve().parents[2]
+            / "src"
+            / "movietrace"
+            / "db"
+            / "migrations"
+            / "014_content_updates_event_history.sql"
+        ).read_text()
+        conn.executescript(migration_sql)
+
+        rows = conn.execute(
+            "select content_update_id from content_updates order by canonical_item_id"
+        ).fetchall()
+        self.assertEqual(
+            rows,
+            [
+                ("discovery:movie:100:2026-05-14",),
+                ("discovery:tv:100:2026-05-14",),
+            ],
+        )
+        indexes = {r[1] for r in conn.execute("pragma index_list(content_updates)")}
+        self.assertIn("ux_content_updates_update_id", indexes)
+        conn.close()
+
     def test_migration_014_idempotent(self):
         from movietrace.db.schema import initialize_database
         initialize_database(self.db_path)

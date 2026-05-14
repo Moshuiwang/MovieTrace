@@ -679,9 +679,10 @@ def _write_content_updates(
         tmdb_id = c.get("tmdb_id")
         if not tmdb_id:
             continue
-        content_update_id = f"discovery:{tmdb_id}:{snapshot_date}"
+        media_type = "tv" if c.get("media_type") in ("tv", "show") else "movie"
+        content_update_id = f"discovery:{media_type}:{tmdb_id}:{snapshot_date}"
 
-        canonical_id = _lookup_canonical_id(conn, tmdb_id, c.get("media_type", "movie"))
+        canonical_id = _lookup_canonical_id(conn, tmdb_id, media_type)
         if not canonical_id:
             continue
 

@@ -16,6 +16,7 @@ from movietrace.pipeline.discovery import (
     _compute_discovery_stats,
     _ensure_fp_data,
     _lookup_canonical_id,
+    _write_content_updates,
     run_discovery,
 )
 from movietrace.pipeline.multi_source_merge import MergedCandidate
@@ -152,6 +153,91 @@ class TestLookupCanonicalId:
         db_conn.commit()
         assert _lookup_canonical_id(db_conn, 200, media_type="tv") == 2
         assert _lookup_canonical_id(db_conn, 200, media_type="show") == 2
+
+
+# ── _write_content_updates tests ────────────────────────────────────────
+
+
+class TestWriteContentUpdates:
+    def test_discovery_content_update_id_includes_media_namespace(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """insert into canonical_items
+                   (id, canonical_item_key, title, content_type, content_granularity)
+                   values (1, 'tmdb:movie:100', 'Movie 100', 'movie', 'movie')"""
+            )
+            conn.execute(
+                """insert into canonical_items
+                   (id, canonical_item_key, title, content_type, content_granularity)
+                   values (2, 'tmdb:tv:100:season:1', 'Show 100', 'tv', 'season')"""
+            )
+            conn.execute(
+                """insert into external_ids (canonical_item_id, source, external_id)
+                   values (1, 'tmdb', 'movie:100')"""
+            )
+            conn.execute(
+                """insert into external_ids (canonical_item_id, source, external_id)
+                   values (2, 'tmdb', 'tv:100')"""
+            )
+            conn.commit()
+
+            written = _write_content_updates(
+                conn,
+                [
+                    {"tmdb_id": 100, "title": "Movie 100", "media_type": "movie"},
+                    {"tmdb_id": 100, "title": "Show 100", "media_type": "tv"},
+                ],
+                "2026-05-14",
+            )
+
+            assert written == 2
+            rows = conn.execute(
+                "select content_update_id, canonical_item_id from content_updates order by canonical_item_id"
+            ).fetchall()
+            assert rows == [
+                ("discovery:movie:100:2026-05-14", 1),
+                ("discovery:tv:100:2026-05-14", 2),
+            ]
+            conn.close()
+        finally:
+            os.unlink(db_path)
+
+    def test_discovery_content_update_id_remains_idempotent_per_media_namespace(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """insert into canonical_items
+                   (id, canonical_item_key, title, content_type, content_granularity)
+                   values (1, 'tmdb:movie:100', 'Movie 100', 'movie', 'movie')"""
+            )
+            conn.execute(
+                """insert into external_ids (canonical_item_id, source, external_id)
+                   values (1, 'tmdb', 'movie:100')"""
+            )
+            conn.commit()
+
+            candidate = {"tmdb_id": 100, "title": "Movie 100", "media_type": "movie"}
+            assert _write_content_updates(conn, [candidate], "2026-05-14") == 1
+            assert _write_content_updates(conn, [candidate], "2026-05-14") == 0
+            assert _write_content_updates(conn, [candidate], "2026-05-15") == 1
+
+            rows = conn.execute(
+                "select content_update_id from content_updates order by content_update_id"
+            ).fetchall()
+            assert rows == [
+                ("discovery:movie:100:2026-05-14",),
+                ("discovery:movie:100:2026-05-15",),
+            ]
+            conn.close()
+        finally:
+            os.unlink(db_path)
 
 
 # ── run_discovery integration tests ────────────────────────────────────

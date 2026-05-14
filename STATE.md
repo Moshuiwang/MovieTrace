@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-14 18:00 +08
-**更新人：** Claude Code（deepseek-v4-pro）+ moshuiwang
+**最后更新：** 2026-05-14 19:36 +08
+**更新人：** Codex（GPT-5）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -26,7 +26,7 @@
 | **Phase 1.10：源数据预算与抓取兜底** | ✅ 全部完成（437 测试, 2026-05-14） |
 | **Phase 1.11：API 调用韧性增强** | ✅ 全部完成（458 测试, 2026-05-14） |
 | **Phase 1.12：review hotfix** | ✅ 全部完成（478 测试, 2026-05-14） |
-| **Phase 1.13：content_updates 数据模型修正** | ✅ 全部完成（484 测试, 2026-05-14） |
+| **Phase 1.13：content_updates 数据模型修正** | ✅ 全部完成（487 测试, 2026-05-14） |
 
 ---
 
@@ -317,11 +317,14 @@ P1.13（content_updates 事件历史化）                      ✅
 ```
 
 - Migration 014：drop `ux_content_updates_item_type` → create `ux_content_updates_update_id`
+- Discovery `content_update_id` 加入 TMDb media namespace：`discovery:{movie|tv}:{tmdb_id}:{snapshot_date}`
+- Migration 014 会在建唯一索引前把 legacy `discovery:{tmdb_id}:{snapshot_date}` 迁移为带 `movie|tv` 的新格式
 - 同内容同类型跨天 → 不同 `content_update_id` → 多条事件（允许重新变热内容重现）
 - 同一天同一 `content_update_id` → `insert or ignore` 幂等
 - `_write_content_updates()` 统计修正：`conn.total_changes` 替代无条件 `count += 1`
 - Schema version：13 → 14
-- 测试：484 passed（+6 migration 014 tests）
+- 测试：487 passed（新增 discovery namespace + migration legacy namespace 回归）
+- 本地 `data/movietrace.db` 检查：真实库仍为 schema version 12，未落盘升级；仅 1 条 legacy discovery 记录，关联 `content_type=tv`，副本迁移演练通过并转为 `discovery:tv:124364:2026-05-13`
 
 ---
 
@@ -399,7 +402,7 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 
 ## 进行中任务
 
-无。Phase 1.13 已完成，所有 Phase 1 任务包全部执行完毕。
+无。Phase 1.13 review hotfix 已完成，所有 Phase 1 任务包全部执行完毕。
 
 ---
 
@@ -566,11 +569,12 @@ P1.11-B（OMDb 多 Key 轮转）                           ✅
 
 - **Phase 1.12 + 1.13 全部完成**
 - **Schema version = 14**（migrations 001-014）
+- **本地真实库 `data/movietrace.db` 当前仍是 schema version 12**；migration 014 已在副本演练通过，尚未对真实库落盘执行。
 - **Secrets 新路径：** `~/.config/movietrace/secrets.json`（fallback 旧 `/tmp` 路径 + warning）
 - **新增 config 模块：** `src/movietrace/config.py` 统一 secrets 加载入口
-- **content_updates 语义变更：** 事件历史表，`content_update_id` 唯一，跨天可重复
+- **content_updates 语义变更：** 事件历史表，`content_update_id` 唯一，跨天可重复；discovery ID 格式为 `discovery:{movie|tv}:{tmdb_id}:{snapshot_date}`
 - **FP API 仍然不可用**（402）；**OMDb 已恢复**
-- **测试：** 484 passed，~66s，无 API 消耗
+- **测试：** 487 passed，65.83s，无 API 消耗
 - **Phase 1 全部任务包（41 个）执行完毕，无待执行任务**
 - **新集更新追踪→V2 backlog**
 

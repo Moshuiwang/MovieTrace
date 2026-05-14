@@ -6,8 +6,8 @@
 
 ---
 
-**当前阶段：** Phase 1.12（review hotfix；V1 维护）+ Phase 1.13 queued（content_updates 数据模型修正）
-**最后更新：** 2026-05-14 by Codex (GPT-5)
+**当前阶段：** Phase 1 全部任务包已完成；当前为 V1 维护/收尾
+**最后更新：** 2026-05-14 19:36 +08 by Codex (GPT-5)
 
 ---
 
@@ -29,7 +29,7 @@
 - 每日 Markdown 日报（运行可观察性）
 - 中间表写入（当前实现：飞书多维表格"建议更新表"；未来可替换 Notion/Excel，接口抽象等 V2）
 - 检测与导出解耦：`daily-discover`（检测，写 B 库）+ `export-recommendations`（导出到中间表）
-- `content_updates` 作为事件历史表：跨天重新命中的内容允许再次进入最近 N 天导出（ADR-0012）
+- `content_updates` 作为事件历史表：跨天重新命中的内容允许再次进入最近 N 天导出；discovery 事件 ID 必须包含 TMDb 媒体命名空间（ADR-0012）
 - 手动 dry-run 和 commit 模式
 - bootstrap（180 天追赶）和 daily 两种运行模式
 
@@ -150,3 +150,4 @@ V2 启动需**全部满足**：
 | 2026-05-11 | 系统定位翻转：从"推荐+人工审核"到"更新追踪+中间表"；新增功能 2（基线主动追踪）；确立 A库/B库/中间表三层架构 | ADR-0007 |
 | 2026-05-14 | 明确 TV 新集更新追踪放入 V2；V1/P1.12 只修复新季链路，不新增 episode-level update_type | 用户决策；ADR-0007 修正 |
 | 2026-05-14 | 明确 `content_updates` 从全局去重建议池改为事件历史表；跨天重复命中可再次写入 | ADR-0012 |
+| 2026-05-14 | 明确 discovery `content_update_id` 使用 `discovery:{movie|tv}:{tmdb_id}:{date}`，避免 TMDb movie/tv 数字 ID 撞车 | P1.13 review hotfix |

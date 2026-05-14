@@ -376,23 +376,26 @@ source + parent_series_id + season_number + episode_number
 
 ### 8.2 内容更新主键
 
-内容更新主键用于标识一次需要业务处理的影视更新。对当前业务来说，同一电影、同一集或同一季在不同平台上线，不需要生成多条待审核推荐；平台只作为来源证据、热度信号和推荐理由保留。
+内容更新主键用于标识一次需要业务处理的影视更新。V1.13 起，`content_updates` 是事件历史表，不再是 `(canonical_item_id, update_type)` 全局去重池；同一内容跨天重新命中允许再次进入最近 N 天导出。同一天/同一业务事件仍保持幂等，平台只作为来源证据、热度信号和推荐理由保留。
 
 ```text
-content_update_id = canonical_item_id + update_type
+discovery content_update_id = discovery:{movie|tv}:{tmdb_id}:{snapshot_date}
+new_season content_update_id = new_season:vs_{virtual_series_id}:s{season}
 ```
 
 示例：
 
 同一集在 Netflix 和 Prime Video 上线，只生成一条 content_update。  
 同一电影同时出现在 Global 和 US 来源中，只生成一条 content_update。  
+同一 TMDb 数字 ID 的电影和剧集是不同媒体命名空间，应分别生成 `discovery:movie:{tmdb_id}:{date}` 和 `discovery:tv:{tmdb_id}:{date}`。  
+同一电影隔天重新进入热门源时，可以生成新的 content_update。  
 同一内容在不同平台或地区的上线信息，应合并到 `platform_sources`、`regions`、`release_dates` 和 `heat_signals` 中。
 
 只有当内容本身不同或业务更新类型不同，才生成新的内容更新记录。例如：
 
 - 同一剧集的新一集上线，应按 episode 生成新的 content_update。
 - 同一剧集的新季发布，应按 season 生成新的 content_update。
-- 同一电影已上架后又被其他平台采集到，不应再次生成待审核推荐。
+- 同一电影同一天已被 discovery 写入后，又被其他平台采集到，不应再次生成重复事件；跨天重新命中则允许生成新事件。
 
 ## 9. 实体标准化策略
 
