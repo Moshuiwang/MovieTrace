@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-14 13:58 +08
-**更新人：** Codex（GPT-5）+ moshuiwang
+**最后更新：** 2026-05-14 14:14 +08
+**更新人：** Claude Code（deepseek-v4-pro）+ moshuiwang
 **所在分支：** `main`
 
 ---
