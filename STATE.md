@@ -5,7 +5,7 @@
 
 ---
 
-**最后更新：** 2026-05-14 19:36 +08
+**最后更新：** 2026-05-14 19:45 +08
 **更新人：** Codex（GPT-5）+ moshuiwang
 **所在分支：** `main`
 
@@ -26,7 +26,7 @@
 | **Phase 1.10：源数据预算与抓取兜底** | ✅ 全部完成（437 测试, 2026-05-14） |
 | **Phase 1.11：API 调用韧性增强** | ✅ 全部完成（458 测试, 2026-05-14） |
 | **Phase 1.12：review hotfix** | ✅ 全部完成（478 测试, 2026-05-14） |
-| **Phase 1.13：content_updates 数据模型修正** | ✅ 全部完成（487 测试, 2026-05-14） |
+| **Phase 1.13：content_updates 数据模型修正** | ✅ 全部完成（490 测试, 2026-05-14） |
 
 ---
 
@@ -323,7 +323,9 @@ P1.13（content_updates 事件历史化）                      ✅
 - 同一天同一 `content_update_id` → `insert or ignore` 幂等
 - `_write_content_updates()` 统计修正：`conn.total_changes` 替代无条件 `count += 1`
 - Schema version：13 → 14
-- 测试：487 passed（新增 discovery namespace + migration legacy namespace 回归）
+- Review hotfix：migration 013 先删除会与既有 `tv:`/`movie:`/`unknown:` ID 冲突的裸 TMDb ID，再执行 namespace update，避免 `ux_external_ids_source_id` 中断升级
+- Review hotfix：`FlixPatrol load_api_key()` 无显式路径时改走统一 `load_secrets()`，保留 `/tmp/movietrace_phase0_secrets.json` legacy fallback
+- 测试：490 passed（新增 discovery namespace、migration 013 duplicate guard、migration 014 legacy namespace、FlixPatrol legacy fallback 回归）
 - 本地 `data/movietrace.db` 检查：真实库仍为 schema version 12，未落盘升级；仅 1 条 legacy discovery 记录，关联 `content_type=tv`，副本迁移演练通过并转为 `discovery:tv:124364:2026-05-13`
 
 ---
@@ -569,12 +571,12 @@ P1.11-B（OMDb 多 Key 轮转）                           ✅
 
 - **Phase 1.12 + 1.13 全部完成**
 - **Schema version = 14**（migrations 001-014）
-- **本地真实库 `data/movietrace.db` 当前仍是 schema version 12**；migration 014 已在副本演练通过，尚未对真实库落盘执行。
+- **本地真实库 `data/movietrace.db` 当前仍是 schema version 12**；migration 013/014 已在副本演练通过，尚未对真实库落盘执行。
 - **Secrets 新路径：** `~/.config/movietrace/secrets.json`（fallback 旧 `/tmp` 路径 + warning）
 - **新增 config 模块：** `src/movietrace/config.py` 统一 secrets 加载入口
 - **content_updates 语义变更：** 事件历史表，`content_update_id` 唯一，跨天可重复；discovery ID 格式为 `discovery:{movie|tv}:{tmdb_id}:{snapshot_date}`
 - **FP API 仍然不可用**（402）；**OMDb 已恢复**
-- **测试：** 487 passed，65.83s，无 API 消耗
+- **测试：** 490 passed，65.62s，无 API 消耗
 - **Phase 1 全部任务包（41 个）执行完毕，无待执行任务**
 - **新集更新追踪→V2 backlog**
 

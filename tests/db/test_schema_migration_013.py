@@ -77,6 +77,50 @@ class SchemaMigration013Test(unittest.TestCase):
         ).fetchone()
         self.assertEqual(row[0], "movie:100")
 
+    def test_duplicate_bare_tv_id_removed_before_update(self):
+        """Bare TV IDs that would collide with prefixed IDs do not abort migration."""
+        self.conn.execute(
+            "insert into canonical_items(id, canonical_item_key, title, content_type, content_granularity) values (101, 'tmdb:tv:123:season:1', 'Show 123', 'tv', 'season')"
+        )
+        self.conn.execute(
+            "insert into external_ids(canonical_item_id, source, external_id) values (101, 'tmdb', 'tv:123')"
+        )
+        self.conn.execute(
+            "insert into external_ids(canonical_item_id, source, external_id) values (101, 'tmdb', '123')"
+        )
+        self.conn.commit()
+
+        migration_sql = (Path(__file__).resolve().parents[2] / "src" / "movietrace" / "db" / "migrations" / "013_tmdb_namespace_cleanup.sql").read_text()
+        self.conn.executescript(migration_sql)
+        self.conn.commit()
+
+        rows = self.conn.execute(
+            "select external_id from external_ids where source='tmdb' and external_id like '%123' order by external_id"
+        ).fetchall()
+        self.assertEqual([r[0] for r in rows], ["tv:123"])
+
+    def test_duplicate_bare_movie_id_removed_before_update(self):
+        """Bare movie IDs that would collide with prefixed IDs do not abort migration."""
+        self.conn.execute(
+            "insert into canonical_items(id, canonical_item_key, title, content_type, content_granularity) values (102, 'tmdb:movie:456', 'Movie 456', 'movie', 'movie')"
+        )
+        self.conn.execute(
+            "insert into external_ids(canonical_item_id, source, external_id) values (102, 'tmdb', 'movie:456')"
+        )
+        self.conn.execute(
+            "insert into external_ids(canonical_item_id, source, external_id) values (102, 'tmdb', '456')"
+        )
+        self.conn.commit()
+
+        migration_sql = (Path(__file__).resolve().parents[2] / "src" / "movietrace" / "db" / "migrations" / "013_tmdb_namespace_cleanup.sql").read_text()
+        self.conn.executescript(migration_sql)
+        self.conn.commit()
+
+        rows = self.conn.execute(
+            "select external_id from external_ids where source='tmdb' and external_id like '%456' order by external_id"
+        ).fetchall()
+        self.assertEqual([r[0] for r in rows], ["movie:456"])
+
 
 if __name__ == "__main__":
     unittest.main()
