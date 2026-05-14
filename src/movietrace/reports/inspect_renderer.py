@@ -102,6 +102,22 @@ def format_detail(update: dict) -> str:
         if source.get("language"):
             lines.append(f"- Language: {source['language']}")
 
+    # Source data status (P1.10-E)
+    source_status = source.get("source_data_status")
+    if source_status:
+        lines.extend(["", "数据源状态:"])
+        source_names = {"flixpatrol": "FlixPatrol", "tmdb": "TMDb", "trakt": "Trakt"}
+        for src_key, src_label in source_names.items():
+            ss = source_status.get(src_key, {})
+            status = ss.get("status", "unknown")
+            sdate = ss.get("snapshot_date")
+            if status == "fresh":
+                lines.append(f"  {src_label}: fresh ({sdate})")
+            elif status == "fallback":
+                lines.append(f"  {src_label}: fallback from {sdate}")
+            elif status == "failed_no_fallback":
+                lines.append(f"  {src_label}: failed_no_fallback")
+
     if not source:
         lines.append("- (暂无详细热度数据)")
 
@@ -118,9 +134,32 @@ def format_markdown_enhanced(updates: list[dict], days: int) -> str:
         f"**覆盖范围：** 最近 {days} 天",
         f"**总条数：** {len(updates)}",
         "",
+    ]
+
+    # Source data status (P1.10-E)
+    source_status = _extract_source_status(updates)
+    if source_status:
+        lines.extend([
+            "## 数据源状态",
+            "",
+        ])
+        source_names = {"flixpatrol": "FlixPatrol", "tmdb": "TMDb", "trakt": "Trakt"}
+        for src_key, src_label in source_names.items():
+            ss = source_status.get(src_key, {})
+            status = ss.get("status", "unknown")
+            sdate = ss.get("snapshot_date")
+            if status == "fresh":
+                lines.append(f"- **{src_label}**: fresh ({sdate})")
+            elif status == "fallback":
+                lines.append(f"- **{src_label}**: ⚠️ fallback from {sdate}")
+            elif status == "failed_no_fallback":
+                lines.append(f"- **{src_label}**: ❌ failed_no_fallback")
+        lines.append("")
+
+    lines.extend([
         "---",
         "",
-    ]
+    ])
 
     new_seasons = [u for u in updates if u.get("update_type") == "new_season"]
     new_disc = [u for u in updates if u.get("update_type") == "new_discovery"]
@@ -194,7 +233,7 @@ def format_json_enhanced(updates: list[dict]) -> str:
     export = []
     for u in updates:
         source = _parse_source_json(u.get("source_summary_json", ""))
-        export.append({
+        entry = {
             "content_update_id": u.get("content_update_id"),
             "update_type": u.get("update_type"),
             "priority": u.get("priority"),
@@ -202,7 +241,11 @@ def format_json_enhanced(updates: list[dict]) -> str:
             "title": u.get("title"),
             "sources": source,
             "created_at": u.get("created_at"),
-        })
+        }
+        # Include source_data_status at top level for visibility (P1.10-E)
+        if source.get("source_data_status"):
+            entry["source_data_status"] = source["source_data_status"]
+        export.append(entry)
     return json.dumps(export, indent=2, ensure_ascii=False)
 
 
@@ -330,3 +373,13 @@ def _fmt_imdb_cell(imdb: dict | None) -> str:
 
 def _esc(text: str) -> str:
     return (text or "").replace("|", "\\|").replace("\n", " ")
+
+
+def _extract_source_status(updates: list[dict]) -> dict | None:
+    """Extract source_data_status from the first update that has it."""
+    for u in updates:
+        source = _parse_source_json(u.get("source_summary_json", ""))
+        status = source.get("source_data_status")
+        if status:
+            return status
+    return None

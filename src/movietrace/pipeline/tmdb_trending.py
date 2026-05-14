@@ -21,7 +21,7 @@ def fetch_and_store_tmdb_trending(
     db_path: str,
     bearer_token: str,
     snapshot_date: str | None = None,
-    pages_per_endpoint: int = 3,
+    pages_per_endpoint: int = 1,
 ) -> dict:
     if snapshot_date is None:
         snapshot_date = date.today().isoformat()

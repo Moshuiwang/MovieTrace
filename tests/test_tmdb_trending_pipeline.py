@@ -84,6 +84,35 @@ class TmdbTrendingPipelineTest(unittest.TestCase):
         names = [r[0] for r in endpoints]
         self.assertIn("trending/day", names)
 
+    def test_default_pages_per_endpoint_is_one(self):
+        mock = self._mock_client()
+        with patch("movietrace.pipeline.tmdb_trending.TmdbTrendingClient", return_value=mock):
+            with patch("movietrace.pipeline.tmdb_trending.time.sleep", return_value=None):
+                from movietrace.pipeline.tmdb_trending import fetch_and_store_tmdb_trending
+                fetch_and_store_tmdb_trending(
+                    db_path=str(self.db_path),
+                    bearer_token="fake-token",
+                    snapshot_date="2026-05-13",
+                )
+        self.assertEqual(mock.fetch_trending_all_day.call_count, 1)
+        self.assertEqual(mock.fetch_tv_popular.call_count, 1)
+        self.assertEqual(mock.fetch_movie_popular.call_count, 1)
+
+    def test_explicit_pages_three_calls_three_pages(self):
+        mock = self._mock_client()
+        with patch("movietrace.pipeline.tmdb_trending.TmdbTrendingClient", return_value=mock):
+            with patch("movietrace.pipeline.tmdb_trending.time.sleep", return_value=None):
+                from movietrace.pipeline.tmdb_trending import fetch_and_store_tmdb_trending
+                fetch_and_store_tmdb_trending(
+                    db_path=str(self.db_path),
+                    bearer_token="fake-token",
+                    snapshot_date="2026-05-13",
+                    pages_per_endpoint=3,
+                )
+        self.assertEqual(mock.fetch_trending_all_day.call_count, 3)
+        self.assertEqual(mock.fetch_tv_popular.call_count, 3)
+        self.assertEqual(mock.fetch_movie_popular.call_count, 3)
+
     def test_single_page_failure_does_not_block_others(self):
         mock = self._mock_client()
         mock.fetch_tv_popular.side_effect = Exception("API error")

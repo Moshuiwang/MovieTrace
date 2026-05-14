@@ -43,49 +43,64 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
 
     # Step 1: Fetch TMDb trending
     print("[1/6] Fetching TMDb trending...", end=" ", flush=True)
+    tmdb_result = {}
     try:
         from movietrace.pipeline.tmdb_trending import fetch_and_store_tmdb_trending
+        tmdb_pages = (cfg.get("source_fetch_limits") or {}).get("tmdb", {}).get("pages_per_endpoint", 1)
         tmdb_result = fetch_and_store_tmdb_trending(
             db_path="data/movietrace.db",
             bearer_token=tmdb_token,
             snapshot_date=date_str,
+            pages_per_endpoint=tmdb_pages,
         )
-        print(f"OK ({tmdb_result.get('inserted', 0)} items)")
+        print(f"OK ({tmdb_result.get('inserted', 0)} items, {tmdb_pages}p)")
     except Exception as exc:
         print(f"FAILED: {exc}")
-        return 1
+        tmdb_result = {"error": str(exc)}
 
     # Step 3: Fetch Trakt trending
     print("[2/5] Fetching Trakt trending...", end=" ", flush=True)
+    trakt_result = {}
     try:
         trakt_client_id = (secrets.get("trakt") or {}).get("client_id", "")
         if trakt_client_id:
             from movietrace.pipeline.trakt_trending import fetch_and_store_trakt_trending
+            trakt_limit_cfg = (cfg.get("source_fetch_limits") or {}).get("trakt", {})
+            trakt_shows = trakt_limit_cfg.get("shows_limit", 20)
+            trakt_movies = trakt_limit_cfg.get("movies_limit", 20)
             trakt_result = fetch_and_store_trakt_trending(
                 db_path="data/movietrace.db",
                 client_id=trakt_client_id,
                 snapshot_date=date_str,
+                shows_limit=trakt_shows,
+                movies_limit=trakt_movies,
             )
-            print(f"OK ({trakt_result.get('inserted', 0)} items)")
+            print(f"OK ({trakt_result.get('inserted', 0)} items, shows={trakt_shows} movies={trakt_movies})")
         else:
             print("SKIPPED (no Trakt client_id)")
     except Exception as exc:
         print(f"FAILED: {exc}")
-        return 1
+        trakt_result = {"error": str(exc)}
 
     # Step 4: Merge + Enrich + Score + Write
     print("[3/5] Merging + enriching...", end=" ", flush=True)
+    fallback_cfg = cfg.get("source_fallback")
     try:
         from movietrace.pipeline.discovery import run_discovery
         result = run_discovery(
             date_from=date_str, dry_run=dry_run,
             fetch_movies=fetch_movies,
             movie_weekly_day=movie_weekly_day,
+            tmdb_fetch_result=tmdb_result,
+            trakt_fetch_result=trakt_result,
+            fallback_cfg=fallback_cfg,
         )
         stats = result.get("stats", {})
         merged = stats.get("total_merged", 0)
         omdb_enrich = stats.get("enrich_omdb", {})
-        print(f"OK (merged={merged} omdb_hit={omdb_enrich.get('enriched', 0)})")
+        fallback_used = stats.get("source_fallback_used", False)
+        fallback_note = " [FALLBACK]" if fallback_used else ""
+        print(f"OK (merged={merged} omdb_hit={omdb_enrich.get('enriched', 0)}{fallback_note})")
     except Exception as exc:
         print(f"FAILED: {exc}")
         return 1
@@ -122,6 +137,24 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
     else:
         print(f"[5/5] Writing content_updates... OK (written={written}, baseline skipped)")
 
+    print()
+    # Source data status (P1.10-D)
+    source_status = stats.get("source_status", {})
+    if source_status:
+        print("Source data:")
+        source_names = {"flixpatrol": "FlixPatrol", "tmdb": "TMDb", "trakt": "Trakt"}
+        for src_key, src_label in source_names.items():
+            ss = source_status.get(src_key, {})
+            status = ss.get("status", "unknown")
+            sdate = ss.get("snapshot_date")
+            if status == "fresh":
+                print(f"  {src_label}: fresh {sdate}")
+            elif status == "fallback":
+                print(f"  {src_label}: fallback from {sdate}")
+            elif status == "failed_no_fallback":
+                print(f"  {src_label}: failed_no_fallback")
+            else:
+                print(f"  {src_label}: {status}")
     print()
     print(f"✓ Daily discovery complete (P0={stats.get('P0',0)} P1={stats.get('P1',0)} P2={stats.get('P2',0)})")
     return 0
@@ -528,8 +561,12 @@ def cmd_fetch_tmdb_trending(args: argparse.Namespace) -> int:
     report_date = _parse_date_arg(args.date) or date.today()
     date_str = report_date.isoformat()
 
+    cfg = _load_config()
+    tmdb_limit_cfg = (cfg.get("source_fetch_limits") or {}).get("tmdb", {})
+    pages = args.pages if args.pages is not None else tmdb_limit_cfg.get("pages_per_endpoint", 1)
+
     print(f"MovieTrace fetch-tmdb-trending for {date_str}")
-    print(f"Pages per endpoint: {args.pages}")
+    print(f"Pages per endpoint: {pages}")
     print()
 
     try:
@@ -540,7 +577,7 @@ def cmd_fetch_tmdb_trending(args: argparse.Namespace) -> int:
             db_path="data/movietrace.db",
             bearer_token=tmdb_token,
             snapshot_date=date_str,
-            pages_per_endpoint=args.pages,
+            pages_per_endpoint=pages,
         )
 
         print(f"Fetched:  {result.get('fetched', 0)}")
@@ -562,7 +599,13 @@ def cmd_fetch_trakt_trending(args: argparse.Namespace) -> int:
     report_date = _parse_date_arg(args.date) or date.today()
     date_str = report_date.isoformat()
 
+    cfg = _load_config()
+    trakt_limit_cfg = (cfg.get("source_fetch_limits") or {}).get("trakt", {})
+    shows_limit = args.shows_limit if args.shows_limit is not None else trakt_limit_cfg.get("shows_limit", 20)
+    movies_limit = args.movies_limit if args.movies_limit is not None else trakt_limit_cfg.get("movies_limit", 20)
+
     print(f"MovieTrace fetch-trakt-trending for {date_str}")
+    print(f"Shows limit: {shows_limit}, Movies limit: {movies_limit}")
     print()
 
     secrets_path = "/tmp/movietrace_phase0_secrets.json"
@@ -584,6 +627,8 @@ def cmd_fetch_trakt_trending(args: argparse.Namespace) -> int:
             db_path="data/movietrace.db",
             client_id=client_id,
             snapshot_date=date_str,
+            shows_limit=shows_limit,
+            movies_limit=movies_limit,
         )
 
         print(f"Fetched:  {result.get('fetched', 0)}")
@@ -755,11 +800,13 @@ def main() -> None:
     # fetch-tmdb-trending
     p_tmdb = sub.add_parser("fetch-tmdb-trending", help="Fetch TMDb trending/popular data")
     p_tmdb.add_argument("--date", help="Date in YYYY-MM-DD format")
-    p_tmdb.add_argument("--pages", type=int, default=3, help="Pages per endpoint (default: 3)")
+    p_tmdb.add_argument("--pages", type=int, default=None, help="Pages per endpoint (default: from config or 1)")
 
     # fetch-trakt-trending
     p_trakt = sub.add_parser("fetch-trakt-trending", help="Fetch Trakt trending data")
     p_trakt.add_argument("--date", help="Date in YYYY-MM-DD format")
+    p_trakt.add_argument("--shows-limit", type=int, default=None, help="Shows trending limit (default: from config or 20)")
+    p_trakt.add_argument("--movies-limit", type=int, default=None, help="Movies trending limit (default: from config or 20)")
 
     # inspect-updates
     p_inspect_up = sub.add_parser("inspect-updates", help="Query and display content_updates")

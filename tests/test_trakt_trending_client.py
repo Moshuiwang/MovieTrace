@@ -95,6 +95,28 @@ class TraktTrendingClientTest(unittest.TestCase):
         row = normalize_trakt_trending_row({"title": "No ID"}, "shows/trending", "2026-05-13")
         self.assertIsNone(row)
 
+    def test_fetch_shows_trending_default_limit_is_20(self):
+        with patch("movietrace.sources.trakt.get_json") as mock_get:
+            mock_get.return_value = []
+            self.client.fetch_shows_trending()
+            call_kwargs = mock_get.call_args[1]
+            self.assertIn("limit", call_kwargs["params"])
+            self.assertEqual(call_kwargs["params"]["limit"], "20")
+
+    def test_fetch_movies_trending_default_limit_is_20(self):
+        with patch("movietrace.sources.trakt.get_json") as mock_get:
+            mock_get.return_value = []
+            self.client.fetch_movies_trending()
+            call_kwargs = mock_get.call_args[1]
+            self.assertIn("limit", call_kwargs["params"])
+            self.assertEqual(call_kwargs["params"]["limit"], "20")
+
+    def test_fetch_shows_trending_custom_limit(self):
+        with patch("movietrace.sources.trakt.get_json") as mock_get:
+            mock_get.return_value = []
+            self.client.fetch_shows_trending(limit=50)
+            self.assertEqual(mock_get.call_args[1]["params"]["limit"], "50")
+
 
 if __name__ == "__main__":
     unittest.main()

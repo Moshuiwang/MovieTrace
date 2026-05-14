@@ -23,11 +23,19 @@ class MergedCandidate:
 def merge_three_sources(
     conn: sqlite3.Connection,
     snapshot_date: str,
+    source_dates: dict[str, str] | None = None,
 ) -> list[MergedCandidate]:
-    """Merge FP / TMDb / Trakt data for snapshot_date into deduplicated candidates."""
-    fp_rows = _read_fp(conn, snapshot_date)
-    tmdb_rows = _read_tmdb(conn, snapshot_date)
-    trakt_rows = _read_trakt(conn, snapshot_date)
+    """Merge FP / TMDb / Trakt data for snapshot_date into deduplicated candidates.
+    source_dates allows per-source effective snapshot dates for fallback scenarios."""
+    if source_dates is None:
+        source_dates = {}
+    fp_date = source_dates.get("flixpatrol", snapshot_date)
+    tmdb_date = source_dates.get("tmdb", snapshot_date)
+    trakt_date = source_dates.get("trakt", snapshot_date)
+
+    fp_rows = _read_fp(conn, fp_date) if fp_date else []
+    tmdb_rows = _read_tmdb(conn, tmdb_date) if tmdb_date else []
+    trakt_rows = _read_trakt(conn, trakt_date) if trakt_date else []
 
     merged: dict[str, MergedCandidate] = {}
 

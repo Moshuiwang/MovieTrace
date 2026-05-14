@@ -15,6 +15,8 @@ def fetch_and_store_trakt_trending(
     db_path: str,
     client_id: str,
     snapshot_date: str | None = None,
+    shows_limit: int = 20,
+    movies_limit: int = 20,
 ) -> dict:
     if snapshot_date is None:
         snapshot_date = date.today().isoformat()
@@ -27,14 +29,14 @@ def fetch_and_store_trakt_trending(
     errors = 0
 
     endpoints = [
-        ("fetch_shows_trending", "shows/trending"),
-        ("fetch_movies_trending", "movies/trending"),
+        ("fetch_shows_trending", "shows/trending", shows_limit),
+        ("fetch_movies_trending", "movies/trending", movies_limit),
     ]
 
     try:
-        for method_name, endpoint_name in endpoints:
+        for method_name, endpoint_name, limit in endpoints:
             try:
-                items = getattr(client, method_name)()
+                items = getattr(client, method_name)(limit=limit)
             except Exception as exc:
                 logger.error("%s failed: %s", endpoint_name, exc)
                 errors += 1

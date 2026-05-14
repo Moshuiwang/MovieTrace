@@ -126,7 +126,7 @@ class TraktTrendingClient:
             "Content-Type": "application/json",
         }
 
-    def fetch_shows_trending(self, limit: int = 500) -> list[dict]:
+    def fetch_shows_trending(self, limit: int = 20) -> list[dict]:
         """GET /shows/trending?limit=N&extended=full — returns flattened items."""
         payload = get_json(
             f"{self.base_url}/shows/trending",
@@ -138,7 +138,7 @@ class TraktTrendingClient:
             return []
         return [_flatten_trakt_trending_item(item, "show") for item in payload]
 
-    def fetch_movies_trending(self, limit: int = 500) -> list[dict]:
+    def fetch_movies_trending(self, limit: int = 20) -> list[dict]:
         """GET /movies/trending?limit=N&extended=full — returns flattened items."""
         payload = get_json(
             f"{self.base_url}/movies/trending",

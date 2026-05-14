@@ -78,6 +78,34 @@ class TraktTrendingPipelineTest(unittest.TestCase):
         self.assertEqual(row[0], 200)
         self.assertIsNone(row[1])
 
+    def test_default_limits_passed_to_client(self):
+        mock = self._mock_client()
+        with patch("movietrace.pipeline.trakt_trending.TraktTrendingClient", return_value=mock):
+            with patch("movietrace.pipeline.trakt_trending.time.sleep", return_value=None):
+                from movietrace.pipeline.trakt_trending import fetch_and_store_trakt_trending
+                fetch_and_store_trakt_trending(
+                    db_path=str(self.db_path),
+                    client_id="fake-id",
+                    snapshot_date="2026-05-13",
+                )
+        mock.fetch_shows_trending.assert_called_with(limit=20)
+        mock.fetch_movies_trending.assert_called_with(limit=20)
+
+    def test_custom_limits_passed_to_client(self):
+        mock = self._mock_client()
+        with patch("movietrace.pipeline.trakt_trending.TraktTrendingClient", return_value=mock):
+            with patch("movietrace.pipeline.trakt_trending.time.sleep", return_value=None):
+                from movietrace.pipeline.trakt_trending import fetch_and_store_trakt_trending
+                fetch_and_store_trakt_trending(
+                    db_path=str(self.db_path),
+                    client_id="fake-id",
+                    snapshot_date="2026-05-13",
+                    shows_limit=50,
+                    movies_limit=30,
+                )
+        mock.fetch_shows_trending.assert_called_with(limit=50)
+        mock.fetch_movies_trending.assert_called_with(limit=30)
+
 
 if __name__ == "__main__":
     unittest.main()

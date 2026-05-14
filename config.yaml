@@ -9,6 +9,21 @@ baseline_tracking:
   daily_max_calls: 50
   api_interval_seconds: 1
 
+source_fetch_limits:
+  tmdb:
+    pages_per_endpoint: 1
+  trakt:
+    shows_limit: 20
+    movies_limit: 20
+
+source_fallback:
+  enabled: true
+  max_staleness_days: 30
+  sources:
+    flixpatrol: true
+    tmdb: true
+    trakt: true
+
 flixpatrol:
   countries:
     - world

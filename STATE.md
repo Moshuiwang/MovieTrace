@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-14 10:37 +08
-**更新人：** Codex（system prompt 标识：Codex, a coding agent based on GPT-5）+ moshuiwang
+**最后更新：** 2026-05-14 11:43 +08
+**更新人：** Claude Code（system prompt 标识：Claude Code, powered by deepseek-v4-pro）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -23,7 +23,7 @@
 | **Phase 1.7：多热门源扩充** | ✅ 全部完成（366 测试, 2026-05-13） |
 | **Phase 1.8：条件性调优前置数据治理** | ✅ 全部完成（402 测试, 2026-05-14） |
 | **Phase 1.9：code review hotfix + 候选自动注册** | ✅ 全部完成（405 测试, 2026-05-14） |
-| **Phase 1.10：源数据预算与抓取兜底** | 📝 任务包草案已创建，待用户审阅 |
+| **Phase 1.10：源数据预算与抓取兜底** | ✅ 全部完成（438 测试, 2026-05-14） |
 
 ---
 
@@ -362,25 +362,86 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 
 ## 进行中任务
 
-- 无。Phase 1.9 全部完成（auto-register + 6 hotfix）。
-- Phase 1.10 任务包草案已创建，待用户审阅。
+- 无。Phase 1.10 已全部完成。
 
-### Phase 1.10 任务包草案（2026-05-14）
+---
 
-| 任务包 | 目标 | 状态 |
-|--------|------|------|
-| [P1.10-A](docs/tasks/p1.10_a_tmdb_source_limit.md) | TMDb 每个抓取接口限制为 20 条 | 待审 |
-| [P1.10-B](docs/tasks/p1.10_b_trakt_source_limit.md) | Trakt shows/movies trending 各限制为 20 条 | 待审 |
-| [P1.10-C](docs/tasks/p1.10_c_source_fetch_status_schema.md) | 新增 source fetch 状态表与 helper | 待审 |
-| [P1.10-D](docs/tasks/p1.10_d_source_fallback_runtime.md) | 单 source 抓取失败时回退到最近可用 snapshot | 待审 |
-| [P1.10-E](docs/tasks/p1.10_e_fallback_report_visibility.md) | 报告和导出展示 fresh/fallback/failed 状态 | 待审 |
-| [P1.10 执行顺序](docs/tasks/p1.10_execution_order.md) | 明确依赖、顺序和用户已确认决策 | 待审 |
+## Phase 1.10 执行结果（2026-05-14）
 
-**用户已确认决策：**
-- `source_fallback.max_staleness_days` 默认值为 30 天。
-- 兜底只覆盖 FP / TMDb / Trakt 三个热源，不覆盖 OMDb / TMDb detail / external_ids 富化。
-- fallback 数据允许进入供应商主列表，但报告和导出必须显著标记。
-- TMDb / Trakt 每接口默认 20 条，保留 config / CLI 覆盖能力。
+```
+P1.10-A（TMDb 每接口默认 20 条）                       ✅
+    ↓
+P1.10-B（Trakt shows/movies 各 20 条）                 ✅
+    ↓
+P1.10-C（migration 012 source_fetch_runs 表 + helper）  ✅
+    ↓
+P1.10-D（source-level fallback 运行机制）                ✅
+    ↓
+P1.10-E（fresh/fallback/failed 报告可感知）              ✅
+```
+
+### P1.10-A：TMDb 热源抓取精简
+
+- `config.yaml` 新增 `source_fetch_limits.tmdb.pages_per_endpoint: 1`
+- `tmdb_trending.py` 默认 `pages_per_endpoint=1`（原 3）
+- `cli.py` daily-discover 和 fetch-tmdb-trending 读取配置，`--pages` 可覆盖
+- TMDb 每日理论条数：180 → 60（3 endpoint × 1 page × 20）
+
+### P1.10-B：Trakt 热源抓取精简
+
+- `config.yaml` 新增 `source_fetch_limits.trakt.shows_limit: 20` / `movies_limit: 20`
+- `trakt.py` client 默认 limit 20（原 500）
+- `trakt_trending.py` pipeline 新增 `shows_limit`/`movies_limit` 参数
+- `cli.py` daily-discover 和 fetch-trakt-trending 读取配置，`--shows-limit`/`--movies-limit` 可覆盖
+- Trakt 每日理论条数：~625 → ~40
+
+### P1.10-C：抓取状态表与状态记录
+
+- Migration 012：`source_fetch_runs` 表（14 字段 + 3 索引 + unique 约束）
+- 新增 `src/movietrace/pipeline/source_fetch_status.py`
+  - `record_source_fetch_run()` — upsert 状态记录
+  - `get_source_fetch_runs()` — 按日期/source 查询
+  - `find_latest_source_snapshot()` — 查找最近可用 snapshot
+  - `build_effective_source_dates()` — 批量构建有效日期
+- 状态枚举：fresh / fallback / failed_no_fallback / skipped
+- Schema version：11 → 12
+
+### P1.10-D：每日抓取失败兜底
+
+- `config.yaml` 新增 `source_fallback` 配置节（enabled, max_staleness_days: 30, sources）
+- `discovery.py` 新增 `_resolve_source_dates_with_fallback()` + `_find_fallback_snapshot()`
+- `multi_source_merge.py::merge_three_sources()` 支持 per-source `source_dates` 参数
+- `run_discovery()` 接受 `tmdb_fetch_result`/`trakt_fetch_result`/`fallback_cfg`
+- `cli.py` daily-discover：单源失败不中断，fallback 时输出标记
+- 控制台显示：`Source data:` 区块列出每个 source 状态
+
+### P1.10-E：兜底来源报告可感知
+
+- `_build_source_summary()` 写入 `source_data_status` 到 `content_updates.source_summary_json`
+- `export_writer.py`：Markdown 头部展示"数据源状态"；JSON 包含 `source_data_status`
+- `inspect_renderer.py`：detail 视图展示 source 状态；format_json_enhanced 包含 status
+- 无 source_status 的旧数据兼容不崩溃
+
+**新增文件：**
+- `src/movietrace/db/migrations/012_source_fetch_runs.sql`
+- `src/movietrace/pipeline/source_fetch_status.py`
+- `tests/db/test_schema_migration_012.py`
+- `tests/pipeline/test_source_fetch_status.py`
+
+**修改文件：**
+- `config.yaml`、`config/config.example.yaml`
+- `src/movietrace/pipeline/tmdb_trending.py`、`trakt_trending.py`
+- `src/movietrace/sources/trakt.py`
+- `src/movietrace/pipeline/discovery.py`、`multi_source_merge.py`
+- `src/movietrace/reports/export_writer.py`、`inspect_renderer.py`
+- `src/movietrace/db/schema.py`
+- `src/movietrace/cli.py`
+- `tests/test_tmdb_trending_pipeline.py`、`tests/test_tmdb_trending_client.py`
+- `tests/test_trakt_trending_pipeline.py`、`tests/test_trakt_trending_client.py`
+- `tests/test_discovery.py`、`tests/test_multi_source_merge.py`
+- `tests/reports/test_export_writer.py`
+
+---
 
 ## P1.9 执行结果（2026-05-14）
 
@@ -418,19 +479,19 @@ P1.9-hotfix-F（Hulu→Paramount+ 默认值同步）          ✅
 - **P1.8-B（OMDb key 授权排查）**：纯调研任务，未执行
 - **CR-005（content_updates 唯一键设计）**：需产品决策
 - **CR-007（secrets 路径迁移）**：需产品决策
-- **P1.10 任务包**：草案已创建，待审阅
 
 ---
 
 ## 给下一个 Agent 的交接
 
-- **Phase 1.9 全部完成**：auto-register canonical_item + 6 hotfix（commit 359198c，405 测试）
+- **Phase 1.10 全部完成**：TMDb/Trakt 源精简 + source_fetch_runs 表 + fallback 机制 + 报告可感知
+- **Phase 1.9 全部完成**（commit 359198c，405 测试）
 - **Phase 1.8 全部完成**（commit f264eba）
-- **Phase 1.10 草案已创建**：源数据精简 + 抓取失败兜底，路径见 `docs/tasks/p1.10_*.md`
 - **FP 和 OMDb API 均不可用**，无法做真实验证，需先解决配额
-- **Schema version = 11**（migrations 001-011）
+- **Schema version = 12**（migrations 001-012）
 - **TMDb Bearer Token 路径：** `/tmp/movietrace_phase0_secrets.json`
-- 日报：`journal/2026-05-14_0000_claude-code_deepseek-v4-pro.md`
+- **测试：** 438 passed（1 个已知 OMDb 401 失败）
+- **工作区干净**，待 commit
 
 ---
 

@@ -317,3 +317,120 @@ class TestEnsureCanonicalItem:
             conn.close()
         finally:
             os.unlink(db_path)
+
+
+# ── P1.10-D Fallback tests ────────────────────────────────────────────────
+
+
+class TestSourceFallback:
+    def test_find_fallback_snapshot_returns_previous_date(self):
+        from movietrace.pipeline.discovery import _find_fallback_snapshot
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                "insert into tmdb_trending (tmdb_id, media_type, title, popularity, source_endpoint, source_page, snapshot_date, raw_payload_json) values (?, ?, ?, ?, ?, ?, ?, ?)",
+                (100, "movie", "Test", 100.0, "trending/day", 1, "2026-05-13", "{}"),
+            )
+            conn.commit()
+            result = _find_fallback_snapshot(conn, "tmdb", "2026-05-14", 30)
+            assert result == "2026-05-13"
+            conn.close()
+        finally:
+            os.unlink(db_path)
+
+    def test_find_fallback_snapshot_respects_max_staleness(self):
+        from movietrace.pipeline.discovery import _find_fallback_snapshot
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                "insert into tmdb_trending (tmdb_id, media_type, title, popularity, source_endpoint, source_page, snapshot_date, raw_payload_json) values (?, ?, ?, ?, ?, ?, ?, ?)",
+                (100, "movie", "Test", 100.0, "trending/day", 1, "2026-04-01", "{}"),
+            )
+            conn.commit()
+            result = _find_fallback_snapshot(conn, "tmdb", "2026-05-14", 30)
+            assert result is None
+            conn.close()
+        finally:
+            os.unlink(db_path)
+
+    def test_resolve_source_dates_fresh_all(self):
+        from movietrace.pipeline.discovery import _resolve_source_dates_with_fallback
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            conn = sqlite3.connect(db_path)
+            dates = _resolve_source_dates_with_fallback(
+                conn, "2026-05-14",
+                flixpatrol_rows=120, tmdb_rows=60, trakt_rows=40,
+            )
+            assert dates["flixpatrol"] == "2026-05-14"
+            assert dates["tmdb"] == "2026-05-14"
+            assert dates["trakt"] == "2026-05-14"
+            conn.close()
+        finally:
+            os.unlink(db_path)
+
+    def test_resolve_source_dates_fallback_on_error(self):
+        from movietrace.pipeline.discovery import _resolve_source_dates_with_fallback
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            conn = sqlite3.connect(db_path)
+            # Seed previous TMDb data for fallback
+            conn.execute(
+                "insert into tmdb_trending (tmdb_id, media_type, title, popularity, source_endpoint, source_page, snapshot_date, raw_payload_json) values (?, ?, ?, ?, ?, ?, ?, ?)",
+                (100, "movie", "Old", 100.0, "trending/day", 1, "2026-05-13", "{}"),
+            )
+            conn.commit()
+            dates = _resolve_source_dates_with_fallback(
+                conn, "2026-05-14",
+                flixpatrol_rows=120,
+                tmdb_rows=0, tmdb_error="API timeout",
+                trakt_rows=40,
+                fallback_cfg={"enabled": True, "max_staleness_days": 30, "sources": {"flixpatrol": True, "tmdb": True, "trakt": True}},
+            )
+            assert dates["flixpatrol"] == "2026-05-14"
+            assert dates["tmdb"] == "2026-05-13"  # fallback
+            assert dates["trakt"] == "2026-05-14"
+            conn.close()
+        finally:
+            os.unlink(db_path)
+
+    def test_resolve_source_dates_failed_no_fallback(self):
+        from movietrace.pipeline.discovery import _resolve_source_dates_with_fallback
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            conn = sqlite3.connect(db_path)
+            dates = _resolve_source_dates_with_fallback(
+                conn, "2026-05-14",
+                flixpatrol_rows=120,
+                tmdb_rows=0, tmdb_error="API unreachable",
+                trakt_rows=40,
+                fallback_cfg={"enabled": True, "max_staleness_days": 30, "sources": {"tmdb": True}},
+            )
+            assert dates["flixpatrol"] == "2026-05-14"
+            assert dates["tmdb"] is None  # failed, no prior data
+            assert dates["trakt"] == "2026-05-14"
+            conn.close()
+        finally:
+            os.unlink(db_path)

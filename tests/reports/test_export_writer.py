@@ -114,6 +114,97 @@ class ExportWriterTest(unittest.TestCase):
         )
         self.assertGreaterEqual(result_zero["total_items"], 1)
 
+    def test_source_data_status_in_markdown(self):
+        from movietrace.reports.export_writer import export_recommendations
+        import json
+
+        # Ensure canonical_item exists
+        self.conn.execute(
+            "insert into canonical_items(id, canonical_item_key, title, content_type, content_granularity) values (1, 'k1', 'T1', 'movie', 'movie')"
+        )
+        # Seed content update with source_data_status
+        self.conn.execute(
+            """insert into content_updates(
+                content_update_id, canonical_item_id, update_type,
+                priority, hot_score, match_confidence_low, source_summary_json
+            ) values ('discovery:100:2026-05-14', 1, 'new_discovery', 'P2', 75, 0, ?)""",
+            (json.dumps({
+                "fp": {"platform": "netflix", "ranking": 3},
+                "source_data_status": {
+                    "flixpatrol": {"status": "fresh", "snapshot_date": "2026-05-14"},
+                    "tmdb": {"status": "fallback", "snapshot_date": "2026-05-13"},
+                    "trakt": {"status": "failed_no_fallback", "snapshot_date": None},
+                },
+            }),),
+        )
+        self.conn.commit()
+
+        out_dir = Path(self.tmpdir.name) / "exports"
+        result = export_recommendations(
+            db_path=str(self.db_path), output_dir=str(out_dir), days=30
+        )
+
+        md_content = Path(result["md_path"]).read_text()
+        self.assertIn("数据源状态", md_content)
+        self.assertIn("fresh", md_content)
+        self.assertIn("fallback from 2026-05-13", md_content)
+        self.assertIn("failed_no_fallback", md_content)
+
+        json_content = Path(result["json_path"]).read_text()
+        parsed = json.loads(json_content)
+        self.assertTrue(any("source_data_status" in item for item in parsed))
+
+    def test_source_data_status_in_json_export(self):
+        from movietrace.reports.export_writer import export_recommendations
+        import json
+
+        self.conn.execute(
+            "insert into canonical_items(id, canonical_item_key, title, content_type, content_granularity) values (2, 'k2', 'T2', 'movie', 'movie')"
+        )
+        self.conn.execute(
+            """insert into content_updates(
+                content_update_id, canonical_item_id, update_type,
+                priority, hot_score, match_confidence_low, source_summary_json
+            ) values ('discovery:200:2026-05-14', 2, 'new_discovery', 'P2', 80, 0, ?)""",
+            (json.dumps({
+                "tmdb": {"popularity": 500},
+                "source_data_status": {
+                    "flixpatrol": {"status": "fallback", "snapshot_date": "2026-05-12"},
+                    "tmdb": {"status": "fresh", "snapshot_date": "2026-05-14"},
+                    "trakt": {"status": "fresh", "snapshot_date": "2026-05-14"},
+                },
+            }),),
+        )
+        self.conn.commit()
+
+        out_dir = Path(self.tmpdir.name) / "exports"
+        result = export_recommendations(
+            db_path=str(self.db_path), output_dir=str(out_dir), days=30
+        )
+
+        json_content = Path(result["json_path"]).read_text()
+        parsed = json.loads(json_content)
+        items_with_status = [i for i in parsed if i.get("source_data_status")]
+        self.assertEqual(len(items_with_status), 1)
+        self.assertEqual(
+            items_with_status[0]["source_data_status"]["flixpatrol"]["status"],
+            "fallback",
+        )
+
+    def test_no_source_status_does_not_crash_markdown(self):
+        from movietrace.reports.export_writer import export_recommendations
+
+        self._seed_content_update()
+
+        out_dir = Path(self.tmpdir.name) / "exports"
+        result = export_recommendations(
+            db_path=str(self.db_path), output_dir=str(out_dir), days=30
+        )
+
+        # Should not crash — just won't have 数据源状态 section
+        md_content = Path(result["md_path"]).read_text()
+        self.assertIn("# MovieTrace", md_content)
+
 
 if __name__ == "__main__":
     unittest.main()

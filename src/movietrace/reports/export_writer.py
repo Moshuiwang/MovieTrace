@@ -90,9 +90,34 @@ def format_markdown(updates: list[dict], days: int) -> str:
         f"**覆盖范围：** 最近 {days} 天",
         f"**总条数：** {len(updates)}",
         "",
+    ]
+
+    # Source data status summary (P1.10-E)
+    source_status = _extract_source_status(updates)
+    if source_status:
+        lines.extend([
+            "## 数据源状态",
+            "",
+        ])
+        source_names = {"flixpatrol": "FlixPatrol", "tmdb": "TMDb", "trakt": "Trakt"}
+        for src_key, src_label in source_names.items():
+            ss = source_status.get(src_key, {})
+            status = ss.get("status", "unknown")
+            sdate = ss.get("snapshot_date")
+            if status == "fresh":
+                lines.append(f"- **{src_label}**: fresh ({sdate})")
+            elif status == "fallback":
+                lines.append(f"- **{src_label}**: ⚠️ fallback from {sdate}")
+            elif status == "failed_no_fallback":
+                lines.append(f"- **{src_label}**: ❌ failed_no_fallback")
+            else:
+                lines.append(f"- **{src_label}**: {status}")
+        lines.append("")
+
+    lines.extend([
         "---",
         "",
-    ]
+    ])
 
     new_seasons = [u for u in updates if u["update_type"] == "new_season"]
     other = [u for u in updates if u["update_type"] != "new_season"]
@@ -152,6 +177,7 @@ def format_json(updates: list[dict]) -> str:
             "series_name": u.get("series_name"),
             "tmdb_tv_id": u.get("tmdb_tv_id"),
             "season": source_info.get("season"),
+            "source_data_status": source_info.get("source_data_status"),
             "created_at": u.get("created_at"),
         })
     return json.dumps(export, indent=2, ensure_ascii=False)
@@ -168,3 +194,13 @@ def _parse_source_json(raw: str) -> dict:
 
 def _esc(text: str) -> str:
     return (text or "").replace("|", "\\|").replace("\n", " ")
+
+
+def _extract_source_status(updates: list[dict]) -> dict | None:
+    """Extract source_data_status from the first update that has it."""
+    for u in updates:
+        source_info = _parse_source_json(u.get("source_summary_json", ""))
+        status = source_info.get("source_data_status")
+        if status:
+            return status
+    return None

@@ -13,6 +13,10 @@ from movietrace.pipeline.scoring import (
     load_weights_config,
     map_priority,
 )
+from movietrace.pipeline.source_fetch_status import (
+    build_effective_source_dates,
+    record_source_fetch_run,
+)
 
 logger = logging.getLogger("movietrace.pipeline.discovery")
 
@@ -118,6 +122,135 @@ def _ensure_fp_data(
         return {"planned_calls": 0, "actual_calls": 0, "error": str(exc)}
 
 
+# ── Source fallback resolution ───────────────────────────────────────────
+
+
+def _resolve_source_dates_with_fallback(
+    conn: sqlite3.Connection,
+    target_date: str,
+    fallback_cfg: dict | None = None,
+    *,
+    flixpatrol_rows: int = 0,
+    flixpatrol_error: str | None = None,
+    tmdb_rows: int = 0,
+    tmdb_error: str | None = None,
+    trakt_rows: int = 0,
+    trakt_error: str | None = None,
+) -> dict:
+    """Resolve effective source dates with fallback, record status in source_fetch_runs.
+
+    Returns: {source: effective_date | None} — None means source unavailable.
+    """
+    if fallback_cfg is None:
+        fallback_cfg = {}
+    enabled = fallback_cfg.get("enabled", True)
+    max_staleness = fallback_cfg.get("max_staleness_days", 30)
+    sources_cfg = fallback_cfg.get("sources", {})
+    fallback_sources = {k for k, v in sources_cfg.items() if v} if sources_cfg else {"flixpatrol", "tmdb", "trakt"}
+
+    source_info = {
+        "flixpatrol": (flixpatrol_rows, flixpatrol_error),
+        "tmdb": (tmdb_rows, tmdb_error),
+        "trakt": (trakt_rows, trakt_error),
+    }
+
+    effective_dates: dict[str, str | None] = {}
+
+    for source in ["flixpatrol", "tmdb", "trakt"]:
+        rows, error = source_info.get(source, (0, None))
+
+        if error:
+            # Fetch failed — attempt fallback if enabled
+            if enabled and source in fallback_sources:
+                snapshot = _find_fallback_snapshot(conn, source, target_date, max_staleness)
+                if snapshot:
+                    record_source_fetch_run(
+                        conn, target_date, source, "fallback",
+                        source_snapshot_date=snapshot,
+                        rows_fetched=0, rows_inserted=0,
+                        error_message=error,
+                    )
+                    effective_dates[source] = snapshot
+                else:
+                    record_source_fetch_run(
+                        conn, target_date, source, "failed_no_fallback",
+                        error_message=error,
+                    )
+                    effective_dates[source] = None
+            else:
+                record_source_fetch_run(
+                    conn, target_date, source, "failed_no_fallback",
+                    error_message=error,
+                )
+                effective_dates[source] = None
+        elif rows == 0:
+            # No data — attempt fallback if enabled
+            if enabled and source in fallback_sources:
+                snapshot = _find_fallback_snapshot(conn, source, target_date, max_staleness)
+                if snapshot:
+                    record_source_fetch_run(
+                        conn, target_date, source, "fallback",
+                        source_snapshot_date=snapshot,
+                        rows_fetched=0, rows_inserted=0,
+                    )
+                    effective_dates[source] = snapshot
+                else:
+                    record_source_fetch_run(
+                        conn, target_date, source, "failed_no_fallback",
+                        error_message="No data and no fallback available",
+                    )
+                    effective_dates[source] = None
+            else:
+                record_source_fetch_run(
+                    conn, target_date, source, "failed_no_fallback",
+                    error_message="No data for date",
+                )
+                effective_dates[source] = None
+        else:
+            # Success — record fresh
+            record_source_fetch_run(
+                conn, target_date, source, "fresh",
+                source_snapshot_date=target_date,
+                rows_fetched=rows, rows_inserted=rows,
+            )
+            effective_dates[source] = target_date
+
+    conn.commit()
+    return effective_dates
+
+
+def _find_fallback_snapshot(
+    conn: sqlite3.Connection,
+    source: str,
+    target_date: str,
+    max_staleness_days: int,
+) -> str | None:
+    """Find the most recent available snapshot for a source within staleness window."""
+    from datetime import datetime, timedelta
+
+    table_map = {
+        "flixpatrol": "flixpatrol_top10",
+        "tmdb": "tmdb_trending",
+        "trakt": "trakt_trending",
+    }
+    date_col = "snapshot_date"
+    table = table_map.get(source)
+    if not table:
+        return None
+
+    cutoff = (
+        datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=max_staleness_days)
+    ).strftime("%Y-%m-%d")
+
+    row = conn.execute(
+        f"""select {date_col} from {table}
+            where {date_col} < ? and {date_col} >= ?
+            order by {date_col} desc limit 1""",
+        (target_date, cutoff),
+    ).fetchone()
+    return row[0] if row else None
+
+
 # ── Multi-source discovery ──────────────────────────────────────────────
 
 
@@ -129,14 +262,18 @@ def run_discovery(
     *,
     fetch_movies: bool = False,
     movie_weekly_day: int = 0,
+    tmdb_fetch_result: dict | None = None,
+    trakt_fetch_result: dict | None = None,
+    fallback_cfg: dict | None = None,
 ) -> dict:
-    """End-to-end multi-source discovery pipeline (P1.8).
+    """End-to-end multi-source discovery pipeline (P1.8/P1.10).
 
     1. Ensure FP/TMDb/Trakt data for date_from
-    2. Merge three sources
-    3. Enrich with IMDb backfill + OMDb + TMDb detail
-    4. Score + threshold filter
-    5. Write content_updates
+    2. Resolve source dates with fallback (P1.10-D)
+    3. Merge three sources
+    4. Enrich with IMDb backfill + OMDb + TMDb detail
+    5. Score + threshold filter
+    6. Write content_updates
     """
     cfg = load_weights_config(weights_path)
     conn = connect_database(db_path)
@@ -148,12 +285,57 @@ def run_discovery(
             conn, snapshot_date, db_path=db_path,
             fetch_movies=fetch_movies, movie_weekly_day=movie_weekly_day,
         )
+        fp_error = fp_stats.get("error") if isinstance(fp_stats, dict) else None
+
+        # Step 1.5: Resolve source dates with fallback (P1.10-D)
+        fp_rows_count = conn.execute(
+            "select count(*) from flixpatrol_top10 where snapshot_date = ?",
+            (snapshot_date,),
+        ).fetchone()[0]
+        tmdb_rows_count = conn.execute(
+            "select count(*) from tmdb_trending where snapshot_date = ?",
+            (snapshot_date,),
+        ).fetchone()[0]
+        trakt_rows_count = conn.execute(
+            "select count(*) from trakt_trending where snapshot_date = ?",
+            (snapshot_date,),
+        ).fetchone()[0]
+
+        source_dates = _resolve_source_dates_with_fallback(
+            conn, snapshot_date, fallback_cfg,
+            flixpatrol_rows=fp_rows_count,
+            flixpatrol_error=fp_error,
+            tmdb_rows=tmdb_rows_count,
+            tmdb_error=(tmdb_fetch_result or {}).get("error"),
+            trakt_rows=trakt_rows_count,
+            trakt_error=(trakt_fetch_result or {}).get("error"),
+        )
+
+        fallback_used = any(
+            d and d != snapshot_date
+            for d in source_dates.values()
+        )
+        source_status = {
+            source: {
+                "status": "fresh" if (d == snapshot_date) else ("fallback" if d else "failed_no_fallback"),
+                "snapshot_date": d,
+            }
+            for source, d in source_dates.items()
+        }
 
         # Step 2: Multi-source merge
         from movietrace.pipeline.multi_source_merge import merge_three_sources, MergedCandidate
-        candidates = merge_three_sources(conn, snapshot_date)
+        candidates = merge_three_sources(conn, snapshot_date, source_dates)
         if not candidates:
-            return {"candidates": [], "stats": {"error": "no_data"}}
+            return {
+                "candidates": [],
+                "stats": {
+                    "error": "no_data",
+                    "source_status": source_status,
+                    "source_effective_dates": source_dates,
+                    "source_fallback_used": fallback_used,
+                },
+            }
 
         # Step 3: Enrichment
         secrets = _load_secrets()
@@ -198,6 +380,9 @@ def run_discovery(
         passed = [s for s in scored if s.get("hot_score", 0) >= threshold]
 
         stats = _compute_discovery_stats(scored, passed, enrich_stats, fp_stats)
+        stats["source_status"] = source_status
+        stats["source_effective_dates"] = source_dates
+        stats["source_fallback_used"] = fallback_used
 
         # P1.9: Auto-register candidates without canonical_item
         auto_registered = 0
@@ -214,7 +399,7 @@ def run_discovery(
 
         # Step 6: Write to content_updates
         if not dry_run:
-            written = _write_content_updates(conn, passed, snapshot_date)
+            written = _write_content_updates(conn, passed, snapshot_date, source_status)
             stats["written"] = written
         stats["auto_registered"] = auto_registered
 
@@ -304,8 +489,9 @@ def _candidate_to_dict(c) -> dict:
 # ── Source summary / reason text ────────────────────────────────────────
 
 
-def _build_source_summary(c_dict: dict) -> dict:
-    """Build source_summary_json from candidate data."""
+def _build_source_summary(c_dict: dict, source_status: dict | None = None) -> dict:
+    """Build source_summary_json from candidate data.
+    Optionally includes source_data_status for P1.10-E fallback visibility."""
     summary: dict[str, Any] = {}
 
     fp_items = c_dict.get("fp_items", [])
@@ -344,6 +530,9 @@ def _build_source_summary(c_dict: dict) -> dict:
     if tmdb_data:
         summary["release_date"] = tmdb_data.get("release_date")
         summary["language"] = tmdb_data.get("original_language")
+
+    if source_status:
+        summary["source_data_status"] = source_status
 
     return summary
 
@@ -467,6 +656,7 @@ def _write_content_updates(
     conn: sqlite3.Connection,
     candidates: list[dict],
     snapshot_date: str,
+    source_status: dict | None = None,
 ) -> int:
     """Write scored candidates to content_updates table. Returns count."""
     count = 0
@@ -480,7 +670,7 @@ def _write_content_updates(
         if not canonical_id:
             continue
 
-        source_summary = _build_source_summary(c)
+        source_summary = _build_source_summary(c, source_status)
 
         try:
             conn.execute(
