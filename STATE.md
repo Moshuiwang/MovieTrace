@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-14 11:43 +08
-**更新人：** Claude Code（system prompt 标识：Claude Code, powered by deepseek-v4-pro）+ moshuiwang
+**最后更新：** 2026-05-14 13:04 +08
+**更新人：** Claude Code（deepseek-v4-pro）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -23,7 +23,8 @@
 | **Phase 1.7：多热门源扩充** | ✅ 全部完成（366 测试, 2026-05-13） |
 | **Phase 1.8：条件性调优前置数据治理** | ✅ 全部完成（402 测试, 2026-05-14） |
 | **Phase 1.9：code review hotfix + 候选自动注册** | ✅ 全部完成（405 测试, 2026-05-14） |
-| **Phase 1.10：源数据预算与抓取兜底** | ✅ 全部完成（438 测试, 2026-05-14） |
+| **Phase 1.10：源数据预算与抓取兜底** | ✅ 全部完成（437 测试, 2026-05-14） |
+| **Phase 1.11：API 调用韧性增强** | 📝 P1.11-A/B 任务包已创建，待执行 |
 
 ---
 
@@ -363,6 +364,9 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 ## 进行中任务
 
 - 无。Phase 1.10 已全部完成。
+- Phase 1.11 待执行：
+  - [P1.11-A](docs/tasks/p1.11_a_api_circuit_breaker.md) API 致命错误熔断
+  - [P1.11-B](docs/tasks/p1.11_b_omdb_multi_key.md) OMDb 多 Key 轮转
 
 ---
 
@@ -484,14 +488,14 @@ P1.9-hotfix-F（Hulu→Paramount+ 默认值同步）          ✅
 
 ## 给下一个 Agent 的交接
 
-- **Phase 1.10 全部完成**：TMDb/Trakt 源精简 + source_fetch_runs 表 + fallback 机制 + 报告可感知
-- **Phase 1.9 全部完成**（commit 359198c，405 测试）
-- **Phase 1.8 全部完成**（commit f264eba）
-- **FP 和 OMDb API 均不可用**，无法做真实验证，需先解决配额
+- **Phase 1.10 全部完成**（commit fbf551e）：源精简 + fallback + 报告可感知 + code review 修复 + 测试 mock 加速
+- **Phase 1.11 就绪**：P1.11-A（熔断）/ P1.11-B（OMDb 多 key）任务包已创建，直接执行即可
+- **FP 和 OMDb API 均不可用**，dry-run 验证已确认 P1.10 fallback 机制正常
 - **Schema version = 12**（migrations 001-012）
 - **TMDb Bearer Token 路径：** `/tmp/movietrace_phase0_secrets.json`
-- **测试：** 438 passed（1 个已知 OMDb 401 失败）
-- **工作区干净**，待 commit
+- **测试：** 437 passed（1 个已知 OMDb cache bug 失败），耗时 ~58s
+- **测试全部 mock 化**：不会再消耗任何 API 配额
+- **工作区干净**
 
 ---
 
