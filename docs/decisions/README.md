@@ -22,6 +22,8 @@
 | [0008](0008-multi-source-union-discovery.md) | 多热门源独立采集与并集发现架构 | ✅ Accepted | 2026-05-13 |
 | [0009](0009-p1-8-api-budget-and-rating-fallback.md) | P1.8 API 预算与评分兜底策略 | ✅ Accepted | 2026-05-13 |
 | [0010](0010-no-real-api-calls-in-automated-tests.md) | 自动化测试不消耗真实外部 API | ✅ Accepted | 2026-05-14 |
+| [0011](0011-secrets-path-migration.md) | Secrets 路径从 /tmp 迁移到 ~/.config/movietrace/ | ✅ Accepted | 2026-05-14 |
+| [0012](0012-content-updates-event-history.md) | content_updates 改为事件历史表 | ✅ Accepted | 2026-05-14 |
 
 ---
 

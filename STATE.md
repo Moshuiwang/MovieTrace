@@ -5,7 +5,7 @@
 
 ---
 
-**最后更新：** 2026-05-14 15:14 +08
+**最后更新：** 2026-05-14 15:47 +08
 **更新人：** Codex（GPT-5）+ moshuiwang
 **所在分支：** `main`
 
@@ -26,6 +26,7 @@
 | **Phase 1.10：源数据预算与抓取兜底** | ✅ 全部完成（437 测试, 2026-05-14） |
 | **Phase 1.11：API 调用韧性增强** | ✅ 全部完成（458 测试, 2026-05-14） |
 | **Phase 1.12：review hotfix** | 📝 任务包已创建，待执行 |
+| **Phase 1.13：content_updates 数据模型修正** | 📝 任务包已创建，待 P1.12-A/B 后执行 |
 
 ---
 
@@ -371,7 +372,15 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
   - [P1.12-C：OMDb key 日志脱敏](docs/tasks/p1.12_hotfix_c_omdb_key_log_masking.md)
   - [P1.12-D：PyYAML 依赖声明补齐](docs/tasks/p1.12_hotfix_d_pyyaml_dependency.md)
   - [P1.12-E：多新季 content_update 汇总修复](docs/tasks/p1.12_hotfix_e_baseline_multi_season_update_summary.md)
+  - [P1.12-F：Secrets 路径迁移](docs/tasks/p1.12_hotfix_f_secrets_path_migration.md)（CR-007 + ADR-0011）
 - 用户确认：**新集更新追踪放入 V2 backlog**，不进入 P1.12。
+- 用户确认：**Secrets 迁移到 `~/.config/movietrace/secrets.json`**（ADR-0011）。
+
+- **Phase 1.13：content_updates 事件历史化（待执行）**
+  - [P1.13：content_updates 事件历史化](docs/tasks/p1.13_content_updates_event_history.md)
+  - 决策：[ADR-0012：content_updates 改为事件历史表](docs/decisions/0012-content-updates-event-history.md)
+  - 执行顺序建议：先完成 P1.12-A（TMDb namespace）和 P1.12-B（dry-run 不写业务结果），再执行 P1.13。
+  - 用户确认：允许运营在最近 N 天导出里看到跨天重复内容；重复展示代价低于重新变热内容被系统吞掉。
 
 ---
 
@@ -526,8 +535,8 @@ P1.11-B（OMDb 多 Key 轮转）                           ✅
 ## 待用户决策
 
 - **P1.8-B（OMDb key 授权排查）**：纯调研任务，未执行
-- **CR-005（content_updates 唯一键设计）**：暂不进入 P1.12；P1.12-E 只做无 schema 的多新季 summary 修复
-- **CR-007（secrets 路径迁移）**：需产品决策
+- ~~CR-005（content_updates 唯一键设计）~~ → 已决策，ADR-0012 + P1.13
+- ~~CR-007（secrets 路径迁移）~~ → 已决策，ADR-0011 + P1.12-F
 
 ## V2 backlog
 
