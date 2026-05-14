@@ -5,6 +5,8 @@
 原始日期：2026-05-07
 仓库：https://github.com/Moshuiwang/MovieTrace
 
+> 2026-05-14 补充：V1 运行观察期新增“飞书运营同步”需求草案，用于将本地 MD/JSON 导出结果同步到飞书多维表格并发送运行总结/失败告警。该需求不改变当前发现核心链路，详见 [`docs/notes/feishu_ops_sync_requirements.md`](notes/feishu_ops_sync_requirements.md)。
+
 ## 1. 项目背景
 
 MovieTrace 面向视频网站运营场景，主要有如下三个功能：

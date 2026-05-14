@@ -37,6 +37,7 @@
 | V1/V2 边界争议 | `SCOPE.md` + `docs/product_roadmap.md` | 定位和路线图 |
 | 架构判断 | `docs/decisions/` 下相关 ADR | 历史决策 |
 | 需求变更 | `docs/requirements.md` + `SCOPE.md` | 当前需求基线 |
+| 飞书运营同步 | `docs/notes/feishu_ops_sync_requirements.md` | 运行观察期新增需求草案，记录 lark-cli 调研和产品边界 |
 | V1 复盘 | `docs/reviews/v1_closeout_review.md` | 能力和边界总结 |
 
 **ADR 索引：** `docs/decisions/README.md`

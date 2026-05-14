@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-14 22:23 +08
-**更新人：** Claude Code（deepseek-v4-pro）+ moshuiwang
+**最后更新：** 2026-05-14 22:49 +08
+**更新人：** Codex（GPT-5；API / bash workspace）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -46,6 +46,11 @@
 ### P1.15（收口文档）
 - 新建 `docs/reviews/v1_closeout_review.md`、`docs/operations/runbook.md`、`docs/operations/feedback_log_template.md`
 - `SCOPE.md` 飞书描述修正为当前 MD/JSON 导出
+
+### 运行观察期需求沉淀（飞书运营同步）
+- 新增 `docs/notes/feishu_ops_sync_requirements.md`，沉淀飞书运营同步需求草案
+- 明确定位：读取 `reports/latest.json` / `latest.md` 后同步飞书多维表格并发送总结/告警，不改变发现、评分、匹配或 B 库事实源
+- 调研并记录 `lark-cli` 方案：本机 `node v20.20.2`、`npm 10.8.2`、`lark-cli 1.0.23`；第一阶段优先使用 `--as bot`
 
 > Phase 1.5-1.13 完整历史见 [docs/history/phase1_state_archive.md](docs/history/phase1_state_archive.md)
 
@@ -106,7 +111,7 @@ PR #1 已合入，分支已删除。
 
 ## 待用户决策
 
-（无）
+- **飞书运营同步需求继续打磨**：是否从 cron dry-run 切 commit、飞书表使用事件池还是每日快照、通知对象、同步字段范围、是否锁定 `lark-cli` 版本
 
 ## V2 backlog
 
@@ -128,3 +133,4 @@ PR #1 已合入，分支已删除。
 - **CI：** `.github/workflows/ci.yml`（PR + main push）
 - **Phase 1 全部 43 个任务包执行完毕**
 - **P1.17 跳过**（不满足真实运行 3-7 天前置条件）
+- **飞书运营同步**：需求草案已落在 `docs/notes/feishu_ops_sync_requirements.md`；尚未建任务包、尚未实现代码；明天优先继续产品打磨

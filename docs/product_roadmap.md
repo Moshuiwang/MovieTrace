@@ -64,6 +64,8 @@ TMDb/Trakt 候选 → 与飞书基线去重 → 建议"基线没有"的
 
 **预算约束：** 不引入付费API、不做高复杂度爬虫、不引入LLM API。
 
+**运行观察期补充（2026-05-14）：** V1 已完成后，运营消费侧出现新需求：将 `export-recommendations` 生成的 MD/JSON 结果自动同步到飞书多维表格，并在成功/失败时发送简要飞书通知。该需求定位为“飞书运营同步层”，不改变影视发现、评分、匹配或 B 库事实源。需求草案见 [`docs/notes/feishu_ops_sync_requirements.md`](notes/feishu_ops_sync_requirements.md)。
+
 ### 2.1 V1 信号源组合
 
 ```
