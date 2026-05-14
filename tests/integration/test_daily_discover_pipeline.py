@@ -104,7 +104,8 @@ class TestEndToEndPipeline:
     def test_discovery_merges_with_synthetic_data(self, seeded_db):
         """Discovery pipeline merges FP data into candidates."""
         from movietrace.pipeline.discovery import run_discovery
-        result = run_discovery(date_from="2026-05-11", dry_run=True, db_path=seeded_db)
+        with patch("movietrace.pipeline.discovery._load_secrets", return_value={}):
+            result = run_discovery(date_from="2026-05-11", dry_run=True, db_path=seeded_db)
         stats = result.get("stats", {})
         assert "error" not in stats, f"Discovery failed: {stats}"
         # Merged candidates from 3 FP items
@@ -113,7 +114,8 @@ class TestEndToEndPipeline:
     def test_discovery_scoring_with_synthetic_data(self, seeded_db):
         """Discovery pipeline scores without errors."""
         from movietrace.pipeline.discovery import run_discovery
-        result = run_discovery(date_from="2026-05-11", dry_run=True, db_path=seeded_db)
+        with patch("movietrace.pipeline.discovery._load_secrets", return_value={}):
+            result = run_discovery(date_from="2026-05-11", dry_run=True, db_path=seeded_db)
         stats = result.get("stats", {})
         assert "error" not in stats, f"Discovery failed: {stats}"
         passed = result.get("candidates", [])
