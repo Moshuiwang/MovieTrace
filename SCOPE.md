@@ -6,8 +6,8 @@
 
 ---
 
-**当前阶段：** Phase 1 全部任务包已完成；当前为 V1 维护/收尾
-**最后更新：** 2026-05-14 19:36 +08 by Codex (GPT-5)
+**当前阶段：** Phase 1 全部任务包已完成；当前为 V1 维护/收尾（P1.15 文档收口进行中）
+**最后更新：** 2026-05-14 20:52 +08 by Claude Code (deepseek-v4-pro)
 
 ---
 
@@ -27,8 +27,8 @@
   - ♻️ 已有可补充：当前库中已有但热度/新季可更新
   - ⚠️ 待人工确认：实体匹配低置信度，需运营在中间表中判断对应关系
 - 每日 Markdown 日报（运行可观察性）
-- 中间表写入（当前实现：飞书多维表格"建议更新表"；未来可替换 Notion/Excel，接口抽象等 V2）
-- 检测与导出解耦：`daily-discover`（检测，写 B 库）+ `export-recommendations`（导出到中间表）
+- 本地 MD + JSON 报告导出（`export-recommendations`）；未来如需中间表协作界面（Notion/Excel），接口抽象等 V2 或后续决策
+- 检测与导出解耦：`daily-discover`（检测，写 B 库）+ `export-recommendations`（导出 MD + JSON 到 `reports/`）
 - `content_updates` 作为事件历史表：跨天重新命中的内容允许再次进入最近 N 天导出；discovery 事件 ID 必须包含 TMDb 媒体命名空间（ADR-0012）
 - 手动 dry-run 和 commit 模式
 - bootstrap（180 天追赶）和 daily 两种运行模式
@@ -42,7 +42,7 @@
 **技术约束（V1 限定）：**
 - Python 3.12 + 现有依赖
 - SQLite 本地数据库（不引入 PostgreSQL/MySQL）
-- 飞书多维表格作为人工协作界面
+- 本地 SQLite（B 库）+ MD/JSON 导出作为人工协作输出
 - 配置：`.env` + `config.yaml`
 
 ---
@@ -151,3 +151,4 @@ V2 启动需**全部满足**：
 | 2026-05-14 | 明确 TV 新集更新追踪放入 V2；V1/P1.12 只修复新季链路，不新增 episode-level update_type | 用户决策；ADR-0007 修正 |
 | 2026-05-14 | 明确 `content_updates` 从全局去重建议池改为事件历史表；跨天重复命中可再次写入 | ADR-0012 |
 | 2026-05-14 | 明确 discovery `content_update_id` 使用 `discovery:{movie|tv}:{tmdb_id}:{date}`，避免 TMDb movie/tv 数字 ID 撞车 | P1.13 review hotfix |
+| 2026-05-14 | SCOPE.md 修正：飞书写入从"当前实现"改为历史，当前输出链路为 B 库 + MD/JSON 导出 | P1.15 V1 收口 |
