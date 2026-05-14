@@ -863,7 +863,7 @@ def _source_difference(
     return ",".join(differences)
 
 
-def _build_searcher_from_secrets(secrets_path: Path) -> MultiSourceSearcher:
+def _build_searcher_from_secrets(secrets_path: Path | None = None) -> MultiSourceSearcher:
     from movietrace.sources.omdb import OmdbSearchClient
     from movietrace.sources.tmdb import TmdbSearchClient
     from movietrace.sources.trakt import TraktSearchClient
@@ -889,15 +889,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run Phase 0 full entity matching")
     parser.add_argument("--db", default="data/movietrace.db")
     parser.add_argument("--report", default="reports/full_entity_matching_report.md")
-    parser.add_argument(
-        "--secrets", default=str(Path.home() / ".config" / "movietrace" / "secrets.json")
-    )
+    parser.add_argument("--secrets")
     parser.add_argument("--limit", type=int)
     args = parser.parse_args()
 
     result = match_baseline_items(
         args.db,
-        _build_searcher_from_secrets(Path(args.secrets)),
+        _build_searcher_from_secrets(Path(args.secrets) if args.secrets else None),
         args.report,
         limit=args.limit,
     )

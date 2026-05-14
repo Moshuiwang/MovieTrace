@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -9,6 +10,33 @@ sys.path.insert(0, str(ROOT / "src"))
 
 
 class EntityMatchingTest(unittest.TestCase):
+    def test_build_searcher_uses_load_secrets_default_fallback(self):
+        from movietrace.pipeline.entity_matching import _build_searcher_from_secrets
+
+        with patch(
+            "movietrace.config.load_secrets",
+            return_value={"tmdb": {"api_read_access_token": "token"}},
+        ) as load_mock:
+            with patch("movietrace.sources.tmdb.TmdbSearchClient") as tmdb_mock:
+                searcher = _build_searcher_from_secrets()
+
+        load_mock.assert_called_once_with(None)
+        tmdb_mock.assert_called_once_with("token")
+        self.assertEqual(len(searcher.searchers), 1)
+
+    def test_build_searcher_uses_explicit_secrets_path(self):
+        from movietrace.pipeline.entity_matching import _build_searcher_from_secrets
+
+        explicit = Path("/tmp/custom_secrets.json")
+        with patch(
+            "movietrace.config.load_secrets",
+            return_value={"tmdb": {"api_read_access_token": "token"}},
+        ) as load_mock:
+            with patch("movietrace.sources.tmdb.TmdbSearchClient"):
+                _build_searcher_from_secrets(explicit)
+
+        load_mock.assert_called_once_with(explicit)
+
     def test_choose_best_match_uses_tmdb_original_name(self):
         from movietrace.pipeline.entity_matching import (
             BaselineItem,
