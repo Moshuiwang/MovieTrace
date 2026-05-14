@@ -5,7 +5,7 @@
 
 ---
 
-**最后更新：** 2026-05-14 17:30 +08
+**最后更新：** 2026-05-14 18:00 +08
 **更新人：** Claude Code（deepseek-v4-pro）+ moshuiwang
 **所在分支：** `main`
 
@@ -26,7 +26,7 @@
 | **Phase 1.10：源数据预算与抓取兜底** | ✅ 全部完成（437 测试, 2026-05-14） |
 | **Phase 1.11：API 调用韧性增强** | ✅ 全部完成（458 测试, 2026-05-14） |
 | **Phase 1.12：review hotfix** | ✅ 全部完成（478 测试, 2026-05-14） |
-| **Phase 1.13：content_updates 数据模型修正** | 📝 任务包已创建，待执行 |
+| **Phase 1.13：content_updates 数据模型修正** | ✅ 全部完成（484 测试, 2026-05-14） |
 
 ---
 
@@ -310,6 +310,21 @@ P1.12-F（Secrets 路径迁移）                            ✅
 
 ---
 
+## Phase 1.13 执行结果（2026-05-14）
+
+```
+P1.13（content_updates 事件历史化）                      ✅
+```
+
+- Migration 014：drop `ux_content_updates_item_type` → create `ux_content_updates_update_id`
+- 同内容同类型跨天 → 不同 `content_update_id` → 多条事件（允许重新变热内容重现）
+- 同一天同一 `content_update_id` → `insert or ignore` 幂等
+- `_write_content_updates()` 统计修正：`conn.total_changes` 替代无条件 `count += 1`
+- Schema version：13 → 14
+- 测试：484 passed（+6 migration 014 tests）
+
+---
+
 ## Phase 1.8 执行结果（2026-05-14）
 
 按 D → H → C → F/G → E 顺序全部完成。
@@ -384,10 +399,7 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 
 ## 进行中任务
 
-- **Phase 1.13：content_updates 事件历史化（待执行）**
-  - [P1.13：content_updates 事件历史化](docs/tasks/p1.13_content_updates_event_history.md)
-  - 决策：[ADR-0012：content_updates 改为事件历史表](docs/decisions/0012-content-updates-event-history.md)
-  - 用户确认：允许运营在最近 N 天导出里看到跨天重复内容；重复展示代价低于重新变热内容被系统吞掉。
+无。Phase 1.13 已完成，所有 Phase 1 任务包全部执行完毕。
 
 ---
 
@@ -552,15 +564,15 @@ P1.11-B（OMDb 多 Key 轮转）                           ✅
 
 ## 给下一个 Agent 的交接
 
-- **Phase 1.12 全部完成**：TMDb namespace 闭环 + dry-run 写入修复 + OMDb key 脱敏 + PyYAML 依赖 + 多新季汇总 + Secrets 迁移
-- **Schema version = 13**（migrations 001-013）
+- **Phase 1.12 + 1.13 全部完成**
+- **Schema version = 14**（migrations 001-014）
 - **Secrets 新路径：** `~/.config/movietrace/secrets.json`（fallback 旧 `/tmp` 路径 + warning）
 - **新增 config 模块：** `src/movietrace/config.py` 统一 secrets 加载入口
-- **TMDb Bearer Token 路径：** 通过 `config.load_secrets()` 加载
+- **content_updates 语义变更：** 事件历史表，`content_update_id` 唯一，跨天可重复
 - **FP API 仍然不可用**（402）；**OMDb 已恢复**
-- **测试：** 478 passed，~65s，无 API 消耗
+- **测试：** 484 passed，~66s，无 API 消耗
+- **Phase 1 全部任务包（41 个）执行完毕，无待执行任务**
 - **新集更新追踪→V2 backlog**
-- **Phase 1.13（content_updates 事件历史化）待执行**
 
 ---
 

@@ -687,6 +687,7 @@ def _write_content_updates(
 
         source_summary = _build_source_summary(c, source_status)
 
+        before = conn.total_changes
         try:
             conn.execute(
                 """insert or ignore into content_updates
@@ -702,7 +703,8 @@ def _write_content_updates(
                     json.dumps(source_summary, ensure_ascii=False),
                 ),
             )
-            count += 1
+            if conn.total_changes > before:
+                count += 1
         except Exception as exc:
             logger.warning("Failed to write content_update for %s: %s", content_update_id, exc)
 

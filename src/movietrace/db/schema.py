@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 
 SCHEMA_SQL = """
@@ -107,8 +107,8 @@ create table if not exists content_updates (
     updated_at text not null default current_timestamp
 );
 
-create unique index if not exists ux_content_updates_item_type
-on content_updates(canonical_item_id, update_type);
+create unique index if not exists ux_content_updates_update_id
+on content_updates(content_update_id);
 
 create table if not exists match_candidates (
     id integer primary key autoincrement,
@@ -181,4 +181,5 @@ def initialize_database(path: str | Path) -> None:
         _apply_migration(conn, 11, _load_migration_sql("011_external_id_namespace.sql"))
         _apply_migration(conn, 12, _load_migration_sql("012_source_fetch_runs.sql"))
         _apply_migration(conn, 13, _load_migration_sql("013_tmdb_namespace_cleanup.sql"))
+        _apply_migration(conn, 14, _load_migration_sql("014_content_updates_event_history.sql"))
         conn.commit()
