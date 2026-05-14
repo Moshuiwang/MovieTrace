@@ -199,10 +199,23 @@ def run_discovery(
 
         stats = _compute_discovery_stats(scored, passed, enrich_stats, fp_stats)
 
+        # P1.9: Auto-register candidates without canonical_item
+        auto_registered = 0
+        for c in passed:
+            tmdb_id = c.get("tmdb_id")
+            if tmdb_id and not _lookup_canonical_id(conn, tmdb_id):
+                cid = _ensure_canonical_item(conn, c)
+                if cid:
+                    auto_registered += 1
+        if auto_registered:
+            logger.info("Auto-registered %d new canonical_items", auto_registered)
+            conn.commit()
+
         # Step 6: Write to content_updates
         if not dry_run:
             written = _write_content_updates(conn, passed, snapshot_date)
             stats["written"] = written
+        stats["auto_registered"] = auto_registered
 
         return {"candidates": passed, "all_scored": scored, "stats": stats}
     finally:
@@ -379,6 +392,70 @@ def _build_reason_text(c, breakdown: dict) -> str:
         parts.insert(1, f"priority: {priority}")
 
     return " — ".join(parts) + "。"
+
+
+# ── Canonical item auto-registration ─────────────────────────────────────
+
+
+def _ensure_canonical_item(
+    conn: sqlite3.Connection, candidate: dict
+) -> int | None:
+    """Auto-register a canonical_item + external_ids for a P2+ candidate.
+
+    Used when daily-discover finds hot content that isn't already in A库.
+    Returns canonical_item_id, or None on failure.
+    """
+    tmdb_id = candidate.get("tmdb_id")
+    if not tmdb_id:
+        return None
+
+    media_type = candidate.get("media_type", "movie")
+    title = candidate.get("title", "Unknown")
+
+    # Build canonical_item_key following entity_matching.py convention
+    if media_type in ("tv", "show"):
+        key = f"tmdb:tv:{tmdb_id}:season:1"
+        content_type = "tv"
+        granularity = "season"
+        season_number = 1
+    else:
+        key = f"tmdb:movie:{tmdb_id}"
+        content_type = "movie"
+        granularity = "movie"
+        season_number = None
+
+    # Idempotent: skip if key already exists
+    existing = conn.execute(
+        "select id from canonical_items where canonical_item_key = ?", (key,)
+    ).fetchone()
+    if existing:
+        canonical_id = existing[0]
+    else:
+        cursor = conn.execute(
+            """insert into canonical_items
+               (canonical_item_key, title, content_type, content_granularity,
+                season_number, year)
+               values (?, ?, ?, ?, ?, ?)""",
+            (
+                key, title, content_type, granularity,
+                season_number,
+                candidate.get("year"),
+            ),
+        )
+        canonical_id = cursor.lastrowid
+
+    # Register tmdb → canonical mapping in external_ids
+    conn.execute(
+        """insert or ignore into external_ids
+           (canonical_item_id, source, external_id) values (?, ?, ?)""",
+        (canonical_id, "tmdb", str(tmdb_id)),
+    )
+
+    logger.info(
+        "Auto-registered canonical_item: %s (id=%s) for tmdb_id=%s",
+        key, canonical_id, tmdb_id,
+    )
+    return canonical_id
 
 
 # ── Content updates write ───────────────────────────────────────────────

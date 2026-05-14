@@ -213,3 +213,107 @@ class TestComputeDiscoveryStats:
         assert stats["P0"] == 1
         assert stats["P1"] == 2
         assert stats["P2"] == 1
+
+
+# ── Auto-register canonical_item tests (P1.9) ───────────────────────────
+
+
+class TestEnsureCanonicalItem:
+    def test_registers_movie_candidate(self):
+        from movietrace.pipeline.discovery import _ensure_canonical_item, _lookup_canonical_id
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            conn = sqlite3.connect(db_path)
+            candidate = {
+                "tmdb_id": 99999, "title": "Test Movie",
+                "media_type": "movie", "year": 2026,
+            }
+            cid = _ensure_canonical_item(conn, candidate)
+            assert cid is not None
+            # Verify canonical_item
+            row = conn.execute(
+                "select canonical_item_key, title, content_type, content_granularity from canonical_items where id=?",
+                (cid,),
+            ).fetchone()
+            assert row[0] == "tmdb:movie:99999"
+            assert row[1] == "Test Movie"
+            assert row[2] == "movie"
+            assert row[3] == "movie"
+            # Verify external_ids
+            found = _lookup_canonical_id(conn, 99999)
+            assert found == cid
+            conn.close()
+        finally:
+            os.unlink(db_path)
+
+    def test_registers_tv_candidate(self):
+        from movietrace.pipeline.discovery import _ensure_canonical_item
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            conn = sqlite3.connect(db_path)
+            candidate = {
+                "tmdb_id": 88888, "title": "Test Show",
+                "media_type": "tv", "year": 2025,
+            }
+            cid = _ensure_canonical_item(conn, candidate)
+            row = conn.execute(
+                "select canonical_item_key, content_type, content_granularity, season_number from canonical_items where id=?",
+                (cid,),
+            ).fetchone()
+            assert row[0] == "tmdb:tv:88888:season:1"
+            assert row[1] == "tv"
+            assert row[2] == "season"
+            assert row[3] == 1
+            conn.close()
+        finally:
+            os.unlink(db_path)
+
+    def test_idempotent(self):
+        from movietrace.pipeline.discovery import _ensure_canonical_item
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            conn = sqlite3.connect(db_path)
+            candidate = {"tmdb_id": 77777, "title": "Idempotent Test", "media_type": "movie"}
+            cid1 = _ensure_canonical_item(conn, candidate)
+            cid2 = _ensure_canonical_item(conn, candidate)
+            assert cid1 == cid2
+            # Only one row
+            count = conn.execute(
+                "select count(*) from canonical_items where canonical_item_key='tmdb:movie:77777'"
+            ).fetchone()[0]
+            assert count == 1
+            # Only one external_ids row
+            ext_count = conn.execute(
+                "select count(*) from external_ids where source='tmdb' and external_id='77777'"
+            ).fetchone()[0]
+            assert ext_count == 1
+            conn.close()
+        finally:
+            os.unlink(db_path)
+
+    def test_returns_none_when_no_tmdb_id(self):
+        from movietrace.pipeline.discovery import _ensure_canonical_item
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            conn = sqlite3.connect(db_path)
+            cid = _ensure_canonical_item(conn, {"title": "No ID", "media_type": "movie"})
+            assert cid is None
+            conn.close()
+        finally:
+            os.unlink(db_path)
