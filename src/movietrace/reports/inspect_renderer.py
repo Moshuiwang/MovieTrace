@@ -126,9 +126,9 @@ def format_detail(update: dict) -> str:
 
 def format_markdown_enhanced(updates: list[dict], days: int) -> str:
     """Render updates as enhanced markdown (P1.7-E multi-source version)."""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S +08")
     lines = [
-        "# MovieTrace 推荐导出",
+        "# MovieTrace 更新事件导出",
         "",
         f"**导出时间：** {now}",
         f"**覆盖范围：** 最近 {days} 天",
@@ -155,6 +155,11 @@ def format_markdown_enhanced(updates: list[dict], days: int) -> str:
             elif status == "failed_no_fallback":
                 lines.append(f"- **{src_label}**: ❌ failed_no_fallback")
         lines.append("")
+    else:
+        lines.extend([
+            "> ⚠️ 未检测到数据源状态（旧记录或 dry-run 模式下不会记录）。",
+            "",
+        ])
 
     lines.extend([
         "---",
@@ -185,7 +190,7 @@ def format_markdown_enhanced(updates: list[dict], days: int) -> str:
                 f"| {u.get('priority', 'N/A')} "
                 f"| {u.get('hot_score', 0):.1f} "
                 f"| {fp_str} | {tmdb_str} | {trakt_str} | {imdb_str} "
-                f"| {str(u.get('created_at', 'N/A'))[:16]} |"
+                f"| {str(u.get('created_at', 'N/A'))[:16]} +08 |"
             )
 
     if new_seasons:
@@ -195,14 +200,16 @@ def format_markdown_enhanced(updates: list[dict], days: int) -> str:
             "",
             f"**数量：** {len(new_seasons)}",
             "",
-            "| 剧集 | 优先级 | 检测时间 |",
-            "|------|--------|----------|",
+            "| 剧集 | 优先级 | hot_score | 检测时间 |",
+            "|------|--------|-----------|----------|",
         ])
         for u in new_seasons:
+            hs = u.get("hot_score") or 0
             lines.append(
                 f"| {_esc(u.get('title', 'N/A'))} "
                 f"| {u.get('priority', 'N/A')} "
-                f"| {str(u.get('created_at', 'N/A'))[:16]} |"
+                f"| {hs:.0f} "
+                f"| {str(u.get('created_at', 'N/A'))[:16]} +08 |"
             )
 
     if re_promo:
@@ -220,11 +227,11 @@ def format_markdown_enhanced(updates: list[dict], days: int) -> str:
                 f"| {_esc(u.get('title', 'N/A'))} "
                 f"| {u.get('priority', 'N/A')} "
                 f"| {u.get('hot_score', 0):.1f} "
-                f"| {str(u.get('created_at', 'N/A'))[:16]} |"
+                f"| {str(u.get('created_at', 'N/A'))[:16]} +08 |"
             )
 
     if not updates:
-        lines.append("*暂无推荐更新*")
+        lines.append("*暂无更新事件*")
 
     return "\n".join(lines) + "\n"
 

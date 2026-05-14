@@ -83,9 +83,9 @@ def _load_content_updates(conn, days: int) -> list[dict]:
 
 
 def format_markdown(updates: list[dict], days: int) -> str:
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S +08")
     lines = [
-        "# MovieTrace 推荐导出",
+        "# MovieTrace 更新事件导出",
         "",
         f"**导出时间：** {now}",
         f"**覆盖范围：** 最近 {days} 天",
@@ -114,6 +114,11 @@ def format_markdown(updates: list[dict], days: int) -> str:
             else:
                 lines.append(f"- **{src_label}**: {status}")
         lines.append("")
+    else:
+        lines.extend([
+            "> ⚠️ 未检测到数据源状态（旧记录或 dry-run 模式下不会记录）。",
+            "",
+        ])
 
     lines.extend([
         "---",
@@ -129,8 +134,8 @@ def format_markdown(updates: list[dict], days: int) -> str:
             "",
             f"**数量：** {len(new_seasons)}",
             "",
-            "| 剧集 | TMDb ID | 更新类型 | 优先级 | 检测时间 |",
-            "|------|---------|----------|--------|----------|",
+            "| 剧集 | TMDb ID | 新季 | 优先级 | hot_score | 检测时间 |",
+            "|------|---------|------|--------|-----------|----------|",
         ])
         for u in new_seasons:
             source_info = _parse_source_json(u.get("source_summary_json", ""))
@@ -139,12 +144,14 @@ def format_markdown(updates: list[dict], days: int) -> str:
                 season_label = f"S{min(seasons)}-S{max(seasons)}"
             else:
                 season_label = f"S{source_info.get('season', '?')}"
+            hs = u.get("hot_score") or 0
             lines.append(
                 f"| {_esc(u.get('series_name') or u.get('title', 'N/A'))} "
                 f"| {u.get('tmdb_tv_id', 'N/A')} "
-                f"| 新季 {season_label} "
+                f"| {season_label} "
                 f"| {u.get('priority', 'N/A')} "
-                f"| {u.get('created_at', 'N/A')[:19]} |"
+                f"| {hs:.0f} "
+                f"| {u.get('created_at', 'N/A')[:16]} +08 |"
             )
 
     if other:
@@ -154,19 +161,21 @@ def format_markdown(updates: list[dict], days: int) -> str:
             "",
             f"**数量：** {len(other)}",
             "",
-            "| 标题 | 类型 | 优先级 | 检测时间 |",
-            "|------|------|--------|----------|",
+            "| 标题 | 类型 | 优先级 | hot_score | 检测时间 |",
+            "|------|------|--------|-----------|----------|",
         ])
         for u in other:
+            hs = u.get("hot_score") or 0
             lines.append(
                 f"| {_esc(u.get('title', 'N/A'))} "
                 f"| {u.get('update_type', 'N/A')} "
                 f"| {u.get('priority', 'N/A')} "
-                f"| {u.get('created_at', 'N/A')[:19]} |"
+                f"| {hs:.1f} "
+                f"| {u.get('created_at', 'N/A')[:16]} +08 |"
             )
 
     if not updates:
-        lines.append("*暂无推荐更新*")
+        lines.append("*暂无更新事件*")
 
     return "\n".join(lines) + "\n"
 
