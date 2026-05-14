@@ -11,7 +11,6 @@ import pytest
 
 from movietrace.sources.flixpatrol_api import (
     FlixPatrolClient,
-    SECRETS_PATH,
     TYPE_INT_TO_STR,
     PLATFORM_COMPANY_IDS,
     FP_COUNTRIES,

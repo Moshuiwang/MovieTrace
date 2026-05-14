@@ -154,6 +154,12 @@ class P1Dot5EMatchAllTest(unittest.TestCase):
         sources = {r[0] for r in ext_rows}
         self.assertIn("upstream", sources)
         self.assertIn("tmdb", sources)
+        # Verify TMDb external_id uses namespace prefix
+        tmdb_ext = [r[1] for r in ext_rows if r[0] == "tmdb"][0]
+        self.assertTrue(
+            tmdb_ext.startswith("tv:") or tmdb_ext.startswith("movie:"),
+            f"TMDb external_id '{tmdb_ext}' should have tv:/movie: prefix",
+        )
 
     def test_match_movie_from_upstream_name(self):
         from movietrace.db.schema import connect_database
@@ -174,6 +180,20 @@ class P1Dot5EMatchAllTest(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertTrue(result.get("matched"))
         self.assertEqual(result.get("content_type"), "movie")
+
+        # Verify TMDb external_id uses movie: prefix
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        ext_rows = conn.execute(
+            "select source, external_id from external_ids where canonical_item_id = ?",
+            (result["canonical_item_id"],),
+        ).fetchall()
+        conn.close()
+        tmdb_ext = [r[1] for r in ext_rows if r[0] == "tmdb"][0]
+        self.assertTrue(
+            tmdb_ext.startswith("movie:"),
+            f"Movie TMDb external_id '{tmdb_ext}' should have movie: prefix",
+        )
 
     def test_match_low_confidence_creates_quality_issue(self):
         from movietrace.db.schema import connect_database

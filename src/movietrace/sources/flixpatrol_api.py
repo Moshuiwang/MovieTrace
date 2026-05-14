@@ -7,12 +7,12 @@ import re
 import time
 from pathlib import Path
 
+from movietrace.config import get_secrets_path as _get_secrets_path
 from movietrace.logging.api_usage import fingerprint_key
 from movietrace.sources.http import FatalApiError, get_json
 
 logger = logging.getLogger("movietrace.sources.flixpatrol_api")
 
-SECRETS_PATH = "/tmp/movietrace_phase0_secrets.json"
 API_BASE_URL = "https://api.flixpatrol.com/v2"
 UA = "MovieTraceBot/0.1"
 
@@ -38,7 +38,9 @@ COMPANY_TO_PLATFORM: dict[str, str] = {v: k for k, v in PLATFORM_COMPANY_IDS.ite
 TYPE_INT_TO_STR: dict[int, str] = {2: "movie", 3: "tv_show"}
 
 
-def load_api_key(secrets_path: str = SECRETS_PATH) -> str:
+def load_api_key(secrets_path: str | None = None) -> str:
+    if secrets_path is None:
+        secrets_path = str(_get_secrets_path())
     try:
         data = json.loads(Path(secrets_path).read_text())
     except FileNotFoundError:

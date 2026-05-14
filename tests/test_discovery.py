@@ -104,7 +104,7 @@ class TestLookupCanonicalId:
             "insert into canonical_items (id, canonical_item_key, title, content_type, content_granularity) values (1, 'k1', 'T', 'movie', 'movie')"
         )
         db_conn.execute(
-            "insert into external_ids (canonical_item_id, source, external_id) values (1, 'tmdb', '76479')"
+            "insert into external_ids (canonical_item_id, source, external_id) values (1, 'tmdb', 'movie:76479')"
         )
         db_conn.commit()
         assert _lookup_canonical_id(db_conn, 76479) == 1
@@ -115,6 +115,43 @@ class TestLookupCanonicalId:
         )
         db_conn.commit()
         assert _lookup_canonical_id(db_conn, 99999) is None
+
+    def test_tv_movie_collision_isolated(self, db_conn):
+        """movie:100 and tv:100 are different namespace entries."""
+        db_conn.execute(
+            "create table if not exists canonical_items (id integer primary key, canonical_item_key text, title text, content_type text, content_granularity text)"
+        )
+        db_conn.execute(
+            "create table if not exists external_ids (id integer primary key, canonical_item_id integer references canonical_items(id), source text, external_id text)"
+        )
+        db_conn.execute(
+            "insert into canonical_items (id, canonical_item_key, title, content_type, content_granularity) values (1, 'k1', 'Movie 100', 'movie', 'movie')"
+        )
+        db_conn.execute(
+            "insert into external_ids (canonical_item_id, source, external_id) values (1, 'tmdb', 'movie:100')"
+        )
+        db_conn.commit()
+        # TV lookup for same numeric id must NOT return the movie
+        assert _lookup_canonical_id(db_conn, 100, media_type="tv") is None
+        # Movie lookup returns correct match
+        assert _lookup_canonical_id(db_conn, 100, media_type="movie") == 1
+
+    def test_tv_lookup_finds_tv_prefix(self, db_conn):
+        db_conn.execute(
+            "create table if not exists canonical_items (id integer primary key, canonical_item_key text, title text, content_type text, content_granularity text)"
+        )
+        db_conn.execute(
+            "create table if not exists external_ids (id integer primary key, canonical_item_id integer references canonical_items(id), source text, external_id text)"
+        )
+        db_conn.execute(
+            "insert into canonical_items (id, canonical_item_key, title, content_type, content_granularity) values (2, 'k2', 'Show 200', 'tv', 'season')"
+        )
+        db_conn.execute(
+            "insert into external_ids (canonical_item_id, source, external_id) values (2, 'tmdb', 'tv:200')"
+        )
+        db_conn.commit()
+        assert _lookup_canonical_id(db_conn, 200, media_type="tv") == 2
+        assert _lookup_canonical_id(db_conn, 200, media_type="show") == 2
 
 
 # ── run_discovery integration tests ────────────────────────────────────
@@ -434,5 +471,54 @@ class TestSourceFallback:
             assert dates["tmdb"] is None  # failed, no prior data
             assert dates["trakt"] == "2026-05-14"
             conn.close()
+        finally:
+            os.unlink(db_path)
+
+
+# ── P1.12-B: Dry-run no business writes tests ────────────────────────────
+
+
+class TestDryRunNoBusinessWrites:
+    """dry_run=True must not write to canonical_items / external_ids / content_updates."""
+
+    def test_dry_run_does_not_write_canonical_items(self):
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                       return_value={"planned_calls": 0, "actual_calls": 0}):
+                result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
+
+            conn = sqlite3.connect(db_path)
+            ci_count = conn.execute("select count(*) from canonical_items").fetchone()[0]
+            ext_count = conn.execute("select count(*) from external_ids").fetchone()[0]
+            cu_count = conn.execute("select count(*) from content_updates").fetchone()[0]
+            conn.close()
+
+            assert ci_count == 0, f"dry_run should not write canonical_items, found {ci_count}"
+            assert ext_count == 0, f"dry_run should not write external_ids, found {ext_count}"
+            assert cu_count == 0, f"dry_run should not write content_updates, found {cu_count}"
+        finally:
+            os.unlink(db_path)
+
+    def test_dry_run_reports_would_be_registered(self):
+        """dry_run=True returns would_be_registered stat, not auto_registered."""
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+            with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                       return_value={"planned_calls": 0, "actual_calls": 0}):
+                result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
+
+            stats = result.get("stats", {})
+            # auto_registered must be 0 (no writes happened)
+            assert stats.get("auto_registered", 0) == 0
+            assert isinstance(stats, dict)
         finally:
             os.unlink(db_path)

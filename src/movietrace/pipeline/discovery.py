@@ -395,13 +395,17 @@ def run_discovery(
 
         # P1.9: Auto-register candidates without canonical_item
         auto_registered = 0
+        would_be_registered = 0
         for c in passed:
             tmdb_id = c.get("tmdb_id")
             media_type = c.get("media_type", "movie")
             if tmdb_id and not _lookup_canonical_id(conn, tmdb_id, media_type):
-                cid = _ensure_canonical_item(conn, c)
-                if cid:
-                    auto_registered += 1
+                if dry_run:
+                    would_be_registered += 1
+                else:
+                    cid = _ensure_canonical_item(conn, c)
+                    if cid:
+                        auto_registered += 1
         if auto_registered:
             logger.info("Auto-registered %d new canonical_items", auto_registered)
             conn.commit()
@@ -410,6 +414,8 @@ def run_discovery(
         if not dry_run:
             written = _write_content_updates(conn, passed, snapshot_date, source_status)
             stats["written"] = written
+        else:
+            stats["would_be_registered"] = would_be_registered
         stats["auto_registered"] = auto_registered
 
         return {"candidates": passed, "all_scored": scored, "stats": stats}
@@ -708,17 +714,20 @@ def _write_content_updates(
 def _lookup_canonical_id(
     conn: sqlite3.Connection, tmdb_id: int, media_type: str = "movie"
 ) -> int | None:
-    """Look up canonical_item_id by tmdb_id. media_type disambiguates movie vs tv."""
-    # P1.9-hotfix-E: TMDb IDs are prefixed with tv:/movie: for namespace isolation
-    candidates = [f"{media_type}:{tmdb_id}", f"tv:{tmdb_id}", f"movie:{tmdb_id}", str(tmdb_id)]
-    for ext_id in candidates:
-        row = conn.execute(
-            "select canonical_item_id from external_ids where source = 'tmdb' and external_id = ?",
-            (ext_id,),
-        ).fetchone()
-        if row:
-            return row[0]
-    return None
+    """Look up canonical_item_id by tmdb_id with strict media_type namespace isolation.
+
+    tv/show → only queries tv:{id}; movie → only queries movie:{id}.
+    No cross-type fallback — a movie:100 does not match a tv lookup for 100.
+    """
+    if media_type in ("tv", "show"):
+        ext_id = f"tv:{tmdb_id}"
+    else:
+        ext_id = f"movie:{tmdb_id}"
+    row = conn.execute(
+        "select canonical_item_id from external_ids where source = 'tmdb' and external_id = ?",
+        (ext_id,),
+    ).fetchone()
+    return row[0] if row else None
 
 
 # ── Stats ────────────────────────────────────────────────────────────────
@@ -760,8 +769,4 @@ def _resolve_omdb_keys(secrets: dict) -> list[str]:
     return [api_key] if api_key else []
 
 
-def _load_secrets(path: str = "/tmp/movietrace_phase0_secrets.json") -> dict:
-    try:
-        return json.loads(open(path).read())
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+from movietrace.config import load_secrets as _load_secrets

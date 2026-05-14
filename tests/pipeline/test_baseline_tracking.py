@@ -176,7 +176,87 @@ class BaselineTrackingTest(unittest.TestCase):
         written1 = write_content_updates(self.conn, events)
         written2 = write_content_updates(self.conn, events)
         self.assertEqual(written1, 1)
-        self.assertEqual(written2, 0)  # Should be deduped
+        self.assertEqual(written2, 0)  # Same content_update_id → deduped
+
+    def test_write_content_updates_merges_multi_season(self):
+        """P1.12-E: Multiple new seasons for same series merge into one row."""
+        from movietrace.pipeline.baseline_tracking import (
+            NewSeasonEvent,
+            write_content_updates,
+        )
+        import json
+
+        vs_id, ci_id = self._setup_series(tmdb_tv_id="1399", name="Test Show", local_max=1)
+
+        events = [
+            NewSeasonEvent(
+                virtual_series_id=vs_id,
+                tmdb_tv_id="1399",
+                name="Test Show",
+                new_season_number=2,
+                previous_local_max=1,
+                detected_at="2026-05-12 12:00:00 +08",
+            ),
+            NewSeasonEvent(
+                virtual_series_id=vs_id,
+                tmdb_tv_id="1399",
+                name="Test Show",
+                new_season_number=3,
+                previous_local_max=1,
+                detected_at="2026-05-12 12:00:00 +08",
+            ),
+        ]
+        written = write_content_updates(self.conn, events)
+        self.assertEqual(written, 1)  # Merged into one row
+
+        row = self.conn.execute(
+            """select content_update_id, source_summary_json
+               from content_updates where update_type = 'new_season'"""
+        ).fetchone()
+        self.assertIsNotNone(row)
+        # content_update_id reflects range
+        self.assertIn("s2-s3", row[0])
+        summary = json.loads(row[1])
+        self.assertEqual(summary["season"], 3)  # backward compat: max
+        self.assertEqual(summary["seasons"], [2, 3])
+        self.assertEqual(summary["season_min"], 2)
+        self.assertEqual(summary["season_max"], 3)
+
+    def test_write_content_updates_single_season_still_works(self):
+        """Single new season: backward-compatible summary with season field."""
+        from movietrace.pipeline.baseline_tracking import (
+            NewSeasonEvent,
+            write_content_updates,
+        )
+        import json
+
+        vs_id, ci_id = self._setup_series(tmdb_tv_id="1399", name="Test Show", local_max=1)
+
+        events = [
+            NewSeasonEvent(
+                virtual_series_id=vs_id,
+                tmdb_tv_id="1399",
+                name="Test Show",
+                new_season_number=2,
+                previous_local_max=1,
+                detected_at="2026-05-12 12:00:00 +08",
+            ),
+        ]
+        written = write_content_updates(self.conn, events)
+        self.assertEqual(written, 1)
+
+        row = self.conn.execute(
+            """select content_update_id, source_summary_json
+               from content_updates where update_type = 'new_season'"""
+        ).fetchone()
+        summary = json.loads(row[1])
+        self.assertEqual(summary["season"], 2)
+        self.assertEqual(summary["seasons"], [2])
+        self.assertEqual(summary["season_min"], 2)
+        self.assertEqual(summary["season_max"], 2)
+        # Single season uses simple id
+        self.assertIn("s2", row[0])
+        self.assertNotIn("-", row[0].split(":")[-1])
 
     def test_update_local_max_season(self):
         from movietrace.pipeline.baseline_tracking import update_local_max_season

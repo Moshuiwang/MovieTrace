@@ -65,7 +65,12 @@ def _collect_unique_tmdb_tv_ids(conn, limit: int | None) -> dict[str, list[tuple
             (ci_id,),
         ).fetchone()
         if ext_row:
-            tmdb_tv_id = ext_row[0]
+            raw_id = ext_row[0]
+            # Strip tv:/movie: namespace prefix before passing to TMDb API
+            if raw_id.startswith("tv:") or raw_id.startswith("movie:"):
+                tmdb_tv_id = raw_id.split(":", 1)[1]
+            else:
+                tmdb_tv_id = raw_id
         else:
             tmdb_tv_id = _extract_tmdb_tv_id_from_key(ci_key)
 

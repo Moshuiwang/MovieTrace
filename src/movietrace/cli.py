@@ -12,6 +12,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
+
+from movietrace.config import load_secrets, get_secrets_path
 from datetime import date, datetime
 
 from movietrace.db.schema import connect_database
@@ -29,7 +32,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
     print(f"Dry-run: {dry_run}")
     print()
 
-    secrets = _load_secrets()
+    secrets = load_secrets()
     omdb_cfg = secrets.get("omdb") or {}
     omdb_keys = omdb_cfg.get("api_keys") or ([omdb_cfg.get("api_key")] if omdb_cfg.get("api_key") else [])
     tmdb_token = _load_tmdb_token()
@@ -166,13 +169,9 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
 
 def cmd_validate_feishu(args: argparse.Namespace) -> int:
     """Validate Feishu API connectivity and token."""
-    secrets_path = "/tmp/movietrace_phase0_secrets.json"
-
-    # Load secrets
-    try:
-        secrets = json.loads(open(secrets_path).read())
-    except FileNotFoundError:
-        print("✗ Secrets file not found:", secrets_path)
+    secrets = load_secrets()
+    if not secrets:
+        print("✗ Secrets file not found:", get_secrets_path())
         return 1
 
     feishu = secrets.get("feishu", {})
@@ -334,10 +333,8 @@ def cmd_check_feishu_schema(args: argparse.Namespace) -> int:
         "review_status", "batch_id", "fulfillment_status",
     }
 
-    secrets_path = "/tmp/movietrace_phase0_secrets.json"
-    try:
-        secrets = json.loads(open(secrets_path).read())
-    except FileNotFoundError:
+    secrets = load_secrets()
+    if not secrets:
         print("✗ Secrets file not found")
         return 1
 
@@ -403,17 +400,8 @@ def _load_config(path: str = "config.yaml") -> dict:
         return {}
 
 
-def _load_secrets(path: str = "/tmp/movietrace_phase0_secrets.json") -> dict:
-    try:
-        return json.loads(open(path).read())
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def _load_tmdb_token(
-    secrets_path: str = "/tmp/movietrace_phase0_secrets.json",
-) -> str:
-    secrets = json.loads(open(secrets_path).read())
+def _load_tmdb_token(secrets_path: str | None = None) -> str:
+    secrets = load_secrets(secrets_path)
     token = (secrets.get("tmdb") or {}).get("api_read_access_token")
     if not token:
         raise RuntimeError("TMDb API token not found in secrets file")
@@ -609,11 +597,9 @@ def cmd_fetch_trakt_trending(args: argparse.Namespace) -> int:
     print(f"Shows limit: {shows_limit}, Movies limit: {movies_limit}")
     print()
 
-    secrets_path = "/tmp/movietrace_phase0_secrets.json"
-    try:
-        secrets = json.loads(open(secrets_path).read())
-    except FileNotFoundError:
-        print(f"✗ Secrets file not found: {secrets_path}")
+    secrets = load_secrets()
+    if not secrets:
+        print(f"✗ Secrets file not found: {get_secrets_path()}")
         return 1
 
     client_id = (secrets.get("trakt") or {}).get("client_id")

@@ -867,8 +867,9 @@ def _build_searcher_from_secrets(secrets_path: Path) -> MultiSourceSearcher:
     from movietrace.sources.omdb import OmdbSearchClient
     from movietrace.sources.tmdb import TmdbSearchClient
     from movietrace.sources.trakt import TraktSearchClient
+    from movietrace.config import load_secrets
 
-    secrets = json.loads(secrets_path.read_text(encoding="utf-8"))
+    secrets = load_secrets(secrets_path)
     searchers: list[EntitySearcher] = []
     tmdb_token = (secrets.get("tmdb") or {}).get("api_read_access_token")
     omdb_api_key = (secrets.get("omdb") or {}).get("api_key")
@@ -889,7 +890,7 @@ def main() -> None:
     parser.add_argument("--db", default="data/movietrace.db")
     parser.add_argument("--report", default="reports/full_entity_matching_report.md")
     parser.add_argument(
-        "--secrets", default="/tmp/movietrace_phase0_secrets.json"
+        "--secrets", default=str(Path.home() / ".config" / "movietrace" / "secrets.json")
     )
     parser.add_argument("--limit", type=int)
     args = parser.parse_args()
@@ -1249,7 +1250,7 @@ def match_upstream_program(
         (
             canonical_item_id,
             "tmdb",
-            tmdb_id,
+            f"{content_type}:{tmdb_id}",
             "series" if content_type == "tv" else "movie",
         ),
     )

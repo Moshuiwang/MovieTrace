@@ -10,6 +10,7 @@ from movietrace.pipeline.multi_source_merge import MergedCandidate
 from movietrace.sources.http import FatalApiError
 from movietrace.sources.omdb import OmdbDetailClient, format_imdb_id
 from movietrace.sources.tmdb import TmdbDetailClient
+from movietrace.logging.api_usage import fingerprint_key
 
 logger = logging.getLogger("movietrace.pipeline.omdb_enrichment")
 
@@ -117,8 +118,8 @@ def enrich_with_omdb(
                 api_calls += 1
                 dead_keys.add(key)
                 logger.warning(
-                    "OMDb key %s... HTTP %s — marked dead, trying next key",
-                    key[:8], exc.status_code,
+                    "OMDb key %s HTTP %s — marked dead, trying next key",
+                    fingerprint_key(key), exc.status_code,
                 )
                 continue
             except Exception as exc:

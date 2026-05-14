@@ -185,6 +185,41 @@ class P1Dot5CBackfillTest(unittest.TestCase):
         ).fetchall()
         self.assertEqual(len(unlinked), 0)
 
+    def test_strips_tv_prefix_from_external_id(self):
+        """find_or_create_virtual_series_for_canonical_item strips tv: prefix before TMDb API."""
+        from movietrace.pipeline.virtual_series import find_or_create_virtual_series_for_canonical_item
+
+        # Insert canonical_item with tv: prefixed external_id (P1.9-hotfix-E format)
+        self.conn.execute(
+            """insert into canonical_items(
+                canonical_item_key, title, content_type, content_granularity, season_number
+            ) values ('tmdb:tv:1399:season:1', 'Game of Thrones', 'tv', 'season', 1)"""
+        )
+        ci_id = self.conn.execute("select last_insert_rowid()").fetchone()[0]
+        self.conn.execute(
+            "insert or ignore into external_ids(canonical_item_id, source, external_id, external_granularity) values (?, 'tmdb', 'tv:1399', 'series')",
+            (ci_id,),
+        )
+        self.conn.commit()
+
+        class VerifyingMockClient:
+            def __init__(self, details):
+                self.details = details
+                self.last_tv_id = None
+
+            def get_tv_details(self, tmdb_tv_id):
+                self.last_tv_id = tmdb_tv_id
+                return self.details.get(tmdb_tv_id, {})
+
+        mock = VerifyingMockClient(
+            {"1399": {"name": "Game of Thrones", "status": "Returning Series", "number_of_seasons": 8}}
+        )
+
+        vs_id = find_or_create_virtual_series_for_canonical_item(self.conn, ci_id, mock)
+        self.assertIsNotNone(vs_id)
+        self.assertEqual(mock.last_tv_id, "1399",
+                        f"Expected bare '1399' but got '{mock.last_tv_id}' — tv: prefix was not stripped")
+
 
 if __name__ == "__main__":
     unittest.main()

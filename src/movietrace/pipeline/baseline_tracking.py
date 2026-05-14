@@ -80,28 +80,50 @@ def detect_new_seasons(
 def write_content_updates(
     conn: sqlite3.Connection, events: list[NewSeasonEvent]
 ) -> int:
-    """Write new season events to content_updates table. Returns count written."""
-    written = 0
+    """Write new season events to content_updates, merging multi-season into one row.
+
+    Groups events by virtual_series_id so that detecting S2+S3 for the same series
+    produces one content_update with full season range in source_summary_json,
+    avoiding silent data loss from the (canonical_item_id, update_type) unique index.
+    """
+    from collections import defaultdict
+
+    by_vs: dict[int, list[NewSeasonEvent]] = defaultdict(list)
     for event in events:
+        by_vs[event.virtual_series_id].append(event)
+
+    written = 0
+    for vs_id, vs_events in by_vs.items():
         # Find a canonical_item linked to this virtual_series
         ci_row = conn.execute(
             """select ci.id from canonical_items ci
                where ci.virtual_series_id = ?
                order by ci.season_number asc limit 1""",
-            (event.virtual_series_id,),
+            (vs_id,),
         ).fetchone()
         if not ci_row:
             continue
         canonical_item_id = ci_row[0]
 
-        content_update_id = (
-            f"new_season:vs_{event.virtual_series_id}:s{event.new_season_number}"
-        )
+        seasons = sorted(e.new_season_number for e in vs_events)
+        season_min = seasons[0]
+        season_max = seasons[-1]
+
+        # Idempotent content_update_id: single season "s2", range "s2-s3"
+        if len(seasons) == 1:
+            cu_id = f"new_season:vs_{vs_id}:s{season_min}"
+        else:
+            cu_id = f"new_season:vs_{vs_id}:s{season_min}-s{season_max}"
+
+        sample_event = vs_events[0]
         source_summary = json.dumps(
             {
-                "tmdb_tv_id": event.tmdb_tv_id,
-                "season": event.new_season_number,
-                "detected_at": event.detected_at,
+                "tmdb_tv_id": sample_event.tmdb_tv_id,
+                "season": season_max,  # backward-compat: max season
+                "seasons": seasons,
+                "season_min": season_min,
+                "season_max": season_max,
+                "detected_at": sample_event.detected_at,
             },
             ensure_ascii=False,
         )
@@ -113,9 +135,9 @@ def write_content_updates(
                 priority, hot_score, match_confidence_low, source_summary_json
             ) values (?, ?, 'new_season', ?, NULL, 0, ?)""",
             (
-                content_update_id,
+                cu_id,
                 canonical_item_id,
-                _priority_from_virtual_series(conn, event.virtual_series_id),
+                _priority_from_virtual_series(conn, vs_id),
                 source_summary,
             ),
         )

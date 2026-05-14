@@ -200,5 +200,75 @@ class OmdbResolveKeysTest(unittest.TestCase):
         self.assertEqual(keys, ["k1", "k2"])
 
 
+class OmdbKeyLogMaskingTest(unittest.TestCase):
+    """P1.12-C: OMDb key log output must use fingerprint, never raw key."""
+
+    def test_short_key_not_in_log_output(self):
+        """8-char OMDb key must not appear in log messages."""
+        from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+        from movietrace.sources.http import FatalApiError
+        from movietrace.db.schema import initialize_database, connect_database
+        import logging
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.db"
+            initialize_database(db_path)
+            conn = connect_database(db_path)
+
+            # Mock OmdbDetailClient to raise FatalApiError
+            short_key = "c9c22b79"  # 8-char key
+            with patch("movietrace.pipeline.omdb_enrichment.OmdbDetailClient") as mock_client_cls:
+                mock_client = MagicMock()
+                mock_client.get_by_imdb_id.side_effect = FatalApiError(403, "Fatal")
+                mock_client_cls.return_value = mock_client
+
+                candidate = MergedCandidate(
+                    tmdb_id=100, imdb_id="tt1234567", title="Test", media_type="movie"
+                )
+
+                with self.assertLogs("movietrace.pipeline.omdb_enrichment", level="WARNING") as log_capture:
+                    enrich_with_omdb(conn, [candidate], [short_key], db_path=str(db_path), request_date="2026-05-14")
+
+                log_text = "\n".join(log_capture.output)
+                self.assertNotIn(short_key, log_text,
+                                f"Complete key '{short_key}' found in log output")
+                # fingerprint should be present instead
+                self.assertIn("OMDb key", log_text)
+
+            conn.close()
+
+    def test_long_key_not_in_log_output(self):
+        """Longer OMDb key must not appear in log messages."""
+        from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+        from movietrace.sources.http import FatalApiError
+        from movietrace.db.schema import initialize_database, connect_database
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.db"
+            initialize_database(db_path)
+            conn = connect_database(db_path)
+
+            long_key = "abcdef1234567890"  # 16-char key
+            with patch("movietrace.pipeline.omdb_enrichment.OmdbDetailClient") as mock_client_cls:
+                mock_client = MagicMock()
+                mock_client.get_by_imdb_id.side_effect = FatalApiError(403, "Fatal")
+                mock_client_cls.return_value = mock_client
+
+                candidate = MergedCandidate(
+                    tmdb_id=100, imdb_id="tt1234567", title="Test", media_type="movie"
+                )
+
+                with self.assertLogs("movietrace.pipeline.omdb_enrichment", level="WARNING") as log_capture:
+                    enrich_with_omdb(conn, [candidate], [long_key], db_path=str(db_path), request_date="2026-05-14")
+
+                log_text = "\n".join(log_capture.output)
+                self.assertNotIn(long_key, log_text,
+                                f"Complete key '{long_key}' found in log output")
+
+            conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -198,7 +198,6 @@ def test_load_api_key_from_valid_file():
         json.dump(secrets, f)
         tmp_path = f.name
     try:
-        # Override path for this test
         orig = sup_g.SECRETS_PATH
         sup_g.SECRETS_PATH = tmp_path
         key, error, masked = sup_g.load_api_key()

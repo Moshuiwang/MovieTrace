@@ -120,7 +120,12 @@ def find_or_create_virtual_series_for_canonical_item(
     ).fetchone()
 
     if row:
-        tmdb_tv_id = row[0]
+        raw_id = row[0]
+        # Strip tv:/movie: namespace prefix before passing to TMDb API (P1.9-hotfix-E)
+        if raw_id.startswith("tv:") or raw_id.startswith("movie:"):
+            tmdb_tv_id = raw_id.split(":", 1)[1]
+        else:
+            tmdb_tv_id = raw_id
     else:
         # Fallback: extract from canonical_item_key
         key_row = conn.execute(

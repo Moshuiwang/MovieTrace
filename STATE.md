@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-14 15:50 +08
-**更新人：** Codex（GPT-5）+ moshuiwang
+**最后更新：** 2026-05-14 17:30 +08
+**更新人：** Claude Code（deepseek-v4-pro）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -25,8 +25,8 @@
 | **Phase 1.9：code review hotfix + 候选自动注册** | ✅ 全部完成（405 测试, 2026-05-14） |
 | **Phase 1.10：源数据预算与抓取兜底** | ✅ 全部完成（437 测试, 2026-05-14） |
 | **Phase 1.11：API 调用韧性增强** | ✅ 全部完成（458 测试, 2026-05-14） |
-| **Phase 1.12：review hotfix** | 📝 任务包已创建，待执行 |
-| **Phase 1.13：content_updates 数据模型修正** | 📝 任务包已创建，待 P1.12-A/B 后执行 |
+| **Phase 1.12：review hotfix** | ✅ 全部完成（478 测试, 2026-05-14） |
+| **Phase 1.13：content_updates 数据模型修正** | 📝 任务包已创建，待执行 |
 
 ---
 
@@ -257,37 +257,56 @@ daily-discover 2026-05-13:
 
 ---
 
-| **Phase 1.9：code review hotfix** | 📋 任务包已创建，待用户安排执行 |
+| **Phase 1.9：code review hotfix + 候选自动注册** | ✅ 全部完成（405 测试, 2026-05-14） |
 
 ---
 
-## Phase 1.9 hotfix 任务包（2026-05-14）
+## Phase 1.12 执行结果（2026-05-14）
 
-Code review（`reports/code_review_2026-05-14.md`）发现 10 个问题。CR-001 已修复，剩余 5 个 bug + 1 个默认值问题拆为 6 个任务包：
+按 A → B → C → D → E → F 顺序全部完成。
 
 ```
-P1.9-hotfix-A（inspect-api-usage SQL 崩溃）         📋 待执行
+P1.12-A（TMDb namespace 闭环修复）                    ✅
     ↓
-P1.9-hotfix-B（TV freshness last_air_date 未落地）  📋 待执行
+P1.12-B（daily-discover dry-run 不写业务结果）        ✅
     ↓
-P1.9-hotfix-C（baseline 多新季 local_max 回写）     📋 待执行
+P1.12-C（OMDb key 日志脱敏）                           ✅
     ↓
-P1.9-hotfix-D（API logging 脱敏加固）               📋 待执行
+P1.12-D（PyYAML 依赖声明补齐）                         ✅
     ↓
-P1.9-hotfix-E（TMDb movie/tv ID 命名空间隔离）      📋 待执行
+P1.12-E（多新季 content_update 汇总修复）              ✅
     ↓
-P1.9-hotfix-F（Hulu→Paramount+ 默认值同步）         📋 待执行
+P1.12-F（Secrets 路径迁移）                            ✅
 ```
 
-**任务包文档：**
-- [P1.9-hotfix-A](docs/tasks/p1.9_hotfix_a_inspect_api_usage_sql_fix.md)
-- [P1.9-hotfix-B](docs/tasks/p1.9_hotfix_b_tv_freshness_last_air_date.md)
-- [P1.9-hotfix-C](docs/tasks/p1.9_hotfix_c_baseline_multi_season_fix.md)
-- [P1.9-hotfix-D](docs/tasks/p1.9_hotfix_d_api_logging_sanitization.md)
-- [P1.9-hotfix-E](docs/tasks/p1.9_hotfix_e_tmdb_id_namespace.md)
-- [P1.9-hotfix-F](docs/tasks/p1.9_hotfix_f_hulu_paramount_defaults.md)
+### P1.12-A：TMDb namespace 闭环修复
+- `_lookup_canonical_id()` 严格按 media_type 查询，不再跨类型 fallback
+- `match_upstream_program()` TMDb external_id 写入带 `tv:`/`movie:` 前缀
+- `find_or_create_virtual_series_for_canonical_item()` 剥离前缀后传 TMDb API
+- 回填脚本同步处理前缀；Migration 013 清理残留裸 ID；schema version 12→13
 
-**CR-005（content_updates 唯一键）、CR-007（secrets 路径）、CR-009/010、CC-001~004 当时暂不纳入 P1.9；其中 CR-005/CR-007 已于后续决策进入 P1.13 / P1.12-F。**
+### P1.12-B：daily-discover dry-run 不写业务结果
+- `run_discovery(dry_run=True)` 不再调用 `_ensure_canonical_item()`
+- dry-run 统计 `would_be_registered` 而非 `auto_registered`
+
+### P1.12-C：OMDb key 日志脱敏
+- key 失效日志从 `key[:8]` 改为 `fingerprint_key(key)`
+
+### P1.12-D：PyYAML 依赖声明补齐
+- `requirements.txt` 添加 `PyYAML==6.0.3`
+
+### P1.12-E：多新季 content_update 汇总修复
+- `write_content_updates()` 按 `virtual_series_id` 分组，同剧多新季合并为一条
+- `source_summary_json` 新增 `seasons`/`season_min`/`season_max`，保留 `season` 向后兼容
+
+### P1.12-F：Secrets 路径迁移
+- 新建 `src/movietrace/config.py`：`load_secrets()` / `get_secrets_path()` / 权限检查
+- 新路径 `~/.config/movietrace/secrets.json`，fallback 旧路径 + deprecation warning
+- 4 文件 8 处硬编码全部替换；`cli.py`/`discovery.py` 重复 `_load_secrets()` 删除
+
+**新增文件：** `config.py` · migration 013 · `tests/test_config.py` · `tests/db/test_schema_migration_013.py`
+
+**测试：** 478 passed（+20 vs P1.11）
 
 ---
 
@@ -365,21 +384,9 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 
 ## 进行中任务
 
-- **Phase 1.12：review hotfix（待执行）**
-  - [执行顺序](docs/tasks/p1.12_execution_order.md)
-  - [P1.12-A：TMDb namespace 闭环修复](docs/tasks/p1.12_hotfix_a_tmdb_namespace_closure.md)
-  - [P1.12-B：daily-discover dry-run 不写业务结果](docs/tasks/p1.12_hotfix_b_dry_run_no_business_writes.md)
-  - [P1.12-C：OMDb key 日志脱敏](docs/tasks/p1.12_hotfix_c_omdb_key_log_masking.md)
-  - [P1.12-D：PyYAML 依赖声明补齐](docs/tasks/p1.12_hotfix_d_pyyaml_dependency.md)
-  - [P1.12-E：多新季 content_update 汇总修复](docs/tasks/p1.12_hotfix_e_baseline_multi_season_update_summary.md)
-  - [P1.12-F：Secrets 路径迁移](docs/tasks/p1.12_hotfix_f_secrets_path_migration.md)（CR-007 + ADR-0011）
-- 用户确认：**新集更新追踪放入 V2 backlog**，不进入 P1.12。
-- 用户确认：**Secrets 迁移到 `~/.config/movietrace/secrets.json`**（ADR-0011）。
-
 - **Phase 1.13：content_updates 事件历史化（待执行）**
   - [P1.13：content_updates 事件历史化](docs/tasks/p1.13_content_updates_event_history.md)
   - 决策：[ADR-0012：content_updates 改为事件历史表](docs/decisions/0012-content-updates-event-history.md)
-  - 执行顺序建议：先完成 P1.12-A（TMDb namespace）和 P1.12-B（dry-run 不写业务结果），再执行 P1.13。
   - 用户确认：允许运营在最近 N 天导出里看到跨天重复内容；重复展示代价低于重新变热内容被系统吞掉。
 
 ---
@@ -528,13 +535,12 @@ P1.11-B（OMDb 多 Key 轮转）                           ✅
 ## 阻塞项
 
 - **FP API 订阅**：402 Payment Required，US/World/Nigeria/Kenya 全部不可用
-- **OMDb API**：401 Unauthorized，key 过期或配额耗尽
 
 ---
 
 ## 待用户决策
 
-- **P1.8-B（OMDb key 授权排查）**：纯调研任务，未执行
+- ~~P1.8-B（OMDb key 授权排查）~~ → 已完成：新 key `c9c22b79` 验证通过（HTTP 200）
 - ~~CR-005（content_updates 唯一键设计）~~ → 已决策，ADR-0012 + P1.13
 - ~~CR-007（secrets 路径迁移）~~ → 已决策，ADR-0011 + P1.12-F
 
@@ -546,16 +552,15 @@ P1.11-B（OMDb 多 Key 轮转）                           ✅
 
 ## 给下一个 Agent 的交接
 
-- **Phase 1.11 全部完成**：API 致命错误熔断 + OMDb 多 Key 轮转
-- **FP 熔断已验证**：dry-run 显示首次 402 即停止（1 次而非 24 次）
-- **OMDb 多 key 已配置**：`c9c22b79`（新 key）+ `e19de8a0`（旧 key）
-- **修复预存 bug**：`_read_cache`/`_write_cache` 硬编码 `source='tmdb'` 导致 OMDb 缓存命中率 0%
-- **FP 和 OMDb API 仍然不可用**（旧 key），新 OMDb key `c9c22b79` 待验证
-- **Schema version = 12**（migrations 001-012）
-- **TMDb Bearer Token 路径：** `/tmp/movietrace_phase0_secrets.json`
-- **测试：** 458 passed，~59s，无 API 消耗
-- **测试全部 mock 化**：不会再消耗任何 API 配额
-- **收尾记录**：P1.11 代码已提交到 `b36f5c2`；ADR-0010 与本轮 Codex 日报随收尾提交记录
+- **Phase 1.12 全部完成**：TMDb namespace 闭环 + dry-run 写入修复 + OMDb key 脱敏 + PyYAML 依赖 + 多新季汇总 + Secrets 迁移
+- **Schema version = 13**（migrations 001-013）
+- **Secrets 新路径：** `~/.config/movietrace/secrets.json`（fallback 旧 `/tmp` 路径 + warning）
+- **新增 config 模块：** `src/movietrace/config.py` 统一 secrets 加载入口
+- **TMDb Bearer Token 路径：** 通过 `config.load_secrets()` 加载
+- **FP API 仍然不可用**（402）；**OMDb 已恢复**
+- **测试：** 478 passed，~65s，无 API 消耗
+- **新集更新追踪→V2 backlog**
+- **Phase 1.13（content_updates 事件历史化）待执行**
 
 ---
 

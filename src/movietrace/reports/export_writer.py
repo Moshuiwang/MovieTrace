@@ -134,10 +134,15 @@ def format_markdown(updates: list[dict], days: int) -> str:
         ])
         for u in new_seasons:
             source_info = _parse_source_json(u.get("source_summary_json", ""))
+            seasons = source_info.get("seasons")
+            if seasons and len(seasons) > 1:
+                season_label = f"S{min(seasons)}-S{max(seasons)}"
+            else:
+                season_label = f"S{source_info.get('season', '?')}"
             lines.append(
                 f"| {_esc(u.get('series_name') or u.get('title', 'N/A'))} "
                 f"| {u.get('tmdb_tv_id', 'N/A')} "
-                f"| 新季 S{source_info.get('season', '?')} "
+                f"| 新季 {season_label} "
                 f"| {u.get('priority', 'N/A')} "
                 f"| {u.get('created_at', 'N/A')[:19]} |"
             )
