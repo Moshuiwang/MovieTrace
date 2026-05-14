@@ -7,7 +7,7 @@
 - 运行环境：Ubuntu VM · `/home/ubuntu/MovieTrace`
 - 分支：`main`
 - 起始 commit：`e661ba2538622e29ee2023efdc575826a2e90fe3`
-- 结束 commit：`6123172`（已提交）
+- 结束 commit：`54eb3d0`（已提交）
 - 会话收尾时间：2026-05-14 +08
 
 ## 今日工作主线
@@ -104,20 +104,64 @@
 
 ---
 
+---
+
+### 6. P1.8 dry-run 全链路验收
+
+- 生产 DB 未迁移导致 `api_usage_log` 缺失 → `initialize_database()` 升级到 v10
+- dry-run 跑通全链路 6 步，无代码崩溃
+- **发现 FP API 402**（订阅耗尽，4 国全不可用）、**OMDb 401**（key 过期）
+- P2+ 从 62 降至 4（FP/OMDb 缺失导致），TMDb+Trakt 独立评分路径验证通过
+- **发现入库瓶颈**：TMDb 热门 166 条目仅 16 个（9.6%）有 canonical_item，导致 3/4 P2+ 被丢弃
+- 修复 4 个问题：DB 未迁移、日志 spam、FP 重复调用、OMDb 401 标记
+- 报告：`reports/session_2026-05-14_p1.8_dryrun_analysis.md`
+
+---
+
+### 7. P1.9：候选自动注册 canonical_item ✅
+
+**目标：** 解决 P2+ 候选因无 A 库匹配被丢弃的问题。
+
+**实现：** `_ensure_canonical_item(conn, candidate)` —— 按 `entity_matching.py` 约定的 `tmdb:tv:{id}:season:1` / `tmdb:movie:{id}` 格式自动创建 canonical_item + external_ids。幂等，写入前检查。
+
+**测试：** +4 单元测试 → 406 passed
+
+---
+
+### 8. Code review 审查 + 二次修复
+
+读取 Codex (GPT-5) 在 `reports/code_review_2026-05-14.md` 中的 10 个发现，评估状态后拆分 6 个 hotfix 任务包并执行：
+
+| Hotfix | CR | 修复内容 |
+|--------|-----|------|
+| A | CR-002 | `inspect-api-usage` 无过滤条件 SQL 崩溃 → `prefix` 变量 |
+| B | CR-003 | TV `last_air_date` 未落地 → 修改 `enrich_with_tmdb_details` 跳过条件 + `_apply_tmdb_detail_data` 回写；顺便修复 TMDb cache source 从 `omdb` 错写成 `omdb` 的 bug |
+| C | CR-004 | baseline 多新季 `local_max` 只写到第一条 → 聚合取 max |
+| D | CR-008 | 脱敏 key 归一化不匹配 + `error_message` 未过滤 → 统一 `_normalize_key` + 正则脱敏 |
+| E | CR-006 | TMDb movie/tv ID 碰撞 → migration 011 + `external_id` 加 `tv:`/`movie:` 前缀 |
+| F | CC-005 | Hulu→Paramount+ 默认值 → `platform` fallback 改为 `unknown` + 权重增加 paramount-plus |
+
+**测试：** 405 passed（1 deselected 因 OMDb key 过期）
+
+---
+
 ## 数字总结
 
-- 测试：402 passed（初始 368 → +34 新增）
-- Schema version：7 → 10（migrations 008/009/010）
+- 测试：405 passed（初始 368 → +37 新增）
+- Schema version：7 → 11（migrations 008-011）
 - CLI 命令：+1（inspect-api-usage）
-- 代码改动：38 files, +941 -160 lines
-- 关键决策全部执行，未偏离既定执行顺序
+- Commits：6 个（f264eba → 54eb3d0）
+- 代码改动：50+ files
 
 ## 给下一个 Agent 的交接
 
-- STATE.md 已更新；Phase 1.8 全部完成
-- 已提交 commit `6123172`
-- P1.8-B（OMDb key 授权排查）为纯调研任务，未执行；如需要可单独安排
-- 可进行全链路 `daily-discover --dry-run` 验收
+- **Phase 1.9 全部完成**（commit 54eb3d0，405 测试）
+- **Phase 1.8 全部完成**（commit f264eba）
+- **Phase 1.10 草案已创建**：`docs/tasks/p1.10_*.md`（源数据精简 + 抓取失败兜底）
+- **FP 和 OMDb API 均不可用**，无法做真实验证
+- **Schema version = 11**
+- **TMDb Bearer Token 路径：** `/tmp/movietrace_phase0_secrets.json`
+- **STATE.md 已同步**到最新状态
 
 ## 成本统计
 
