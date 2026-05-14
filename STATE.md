@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-14 14:14 +08
-**更新人：** Claude Code（deepseek-v4-pro）+ moshuiwang
+**最后更新：** 2026-05-14 15:14 +08
+**更新人：** Codex（GPT-5）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -25,6 +25,7 @@
 | **Phase 1.9：code review hotfix + 候选自动注册** | ✅ 全部完成（405 测试, 2026-05-14） |
 | **Phase 1.10：源数据预算与抓取兜底** | ✅ 全部完成（437 测试, 2026-05-14） |
 | **Phase 1.11：API 调用韧性增强** | ✅ 全部完成（458 测试, 2026-05-14） |
+| **Phase 1.12：review hotfix** | 📝 任务包已创建，待执行 |
 
 ---
 
@@ -363,7 +364,14 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 
 ## 进行中任务
 
-- 无。Phase 1.11 已全部完成（含 P1.11-hotfix OMDb cache source）。下一阶段待用户决定。
+- **Phase 1.12：review hotfix（待执行）**
+  - [执行顺序](docs/tasks/p1.12_execution_order.md)
+  - [P1.12-A：TMDb namespace 闭环修复](docs/tasks/p1.12_hotfix_a_tmdb_namespace_closure.md)
+  - [P1.12-B：daily-discover dry-run 不写业务结果](docs/tasks/p1.12_hotfix_b_dry_run_no_business_writes.md)
+  - [P1.12-C：OMDb key 日志脱敏](docs/tasks/p1.12_hotfix_c_omdb_key_log_masking.md)
+  - [P1.12-D：PyYAML 依赖声明补齐](docs/tasks/p1.12_hotfix_d_pyyaml_dependency.md)
+  - [P1.12-E：多新季 content_update 汇总修复](docs/tasks/p1.12_hotfix_e_baseline_multi_season_update_summary.md)
+- 用户确认：**新集更新追踪放入 V2 backlog**，不进入 P1.12。
 
 ---
 
@@ -517,10 +525,13 @@ P1.11-B（OMDb 多 Key 轮转）                           ✅
 
 ## 待用户决策
 
-- **pyyaml 是否纳入 requirements.txt**（延续）
 - **P1.8-B（OMDb key 授权排查）**：纯调研任务，未执行
-- **CR-005（content_updates 唯一键设计）**：需产品决策
+- **CR-005（content_updates 唯一键设计）**：暂不进入 P1.12；P1.12-E 只做无 schema 的多新季 summary 修复
 - **CR-007（secrets 路径迁移）**：需产品决策
+
+## V2 backlog
+
+- **新集更新追踪（new_episode / episode-level update）**：用户于 2026-05-14 确认放入 V2，不进入 P1.12 hotfix；已补充至 [ADR-0007](docs/decisions/0007-repositioning-to-update-tracking.md) 的 2026-05-14 修正。本阶段只修复“多新季信息丢失”，不新增 episode-level 追踪。
 
 ---
 
