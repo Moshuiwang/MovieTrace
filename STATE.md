@@ -94,6 +94,16 @@ PR #1 已合入，分支已删除。
 
 ---
 
+## 日常监控
+
+- **Cron：** 每天 08:00 北京时间自动执行 `scripts/daily_run.sh`（dry-run 模式）
+- **日志：** `reports/logs/daily_YYYYMMDD.log`
+- **检查方式：** 看日志尾部 `=== 运行摘要 ===`，`状态: ✅` 正常，`状态: ❌` 需排查
+- **关键信号：** 退出码非零 · Source data 全部 fallback · P2+ 为 0 · circuit breaker 触发
+- **详细操作：** 见 [runbook](docs/operations/runbook.md)
+
+---
+
 ## 待用户决策
 
 （无）
