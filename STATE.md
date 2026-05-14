@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-14 10:04 +08
-**更新人：** Codex（system prompt 标识：Codex, a coding agent based on GPT-5）+ moshuiwang
+**最后更新：** 2026-05-14 +08
+**更新人：** Claude Code (deepseek-v4-pro) + moshuiwang
 **所在分支：** `main`
 
 ---
@@ -22,6 +22,7 @@
 | **Phase 1.6：首次真实运行 + 验收** | ✅ 已完成（2026-05-12） |
 | **Phase 1.7：多热门源扩充** | ✅ 全部完成（366 测试, 2026-05-13） |
 | **Phase 1.8：条件性调优前置数据治理** | ✅ 全部完成（402 测试, 2026-05-14） |
+| **Phase 1.9：code review hotfix + 候选自动注册** | ✅ 全部完成（405 测试, 2026-05-14） |
 | **Phase 1.10：源数据预算与抓取兜底** | 📝 任务包草案已创建，待用户审阅 |
 
 ---
@@ -361,8 +362,8 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 
 ## 进行中任务
 
-- Phase 1.9 hotfix 6 个任务包已创建，等待用户安排执行。建议顺序：A → B → C → D → E → F。
-- Phase 1.10 源数据预算与抓取兜底 5 个任务包草案已创建，等待用户审阅。建议顺序：A → B → C → D → E。
+- 无。Phase 1.9 全部完成（auto-register + 6 hotfix）。
+- Phase 1.10 任务包草案已创建，待用户审阅。
 
 ### Phase 1.10 任务包草案（2026-05-14）
 
@@ -377,7 +378,24 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 
 ## P1.9 执行结果（2026-05-14）
 
-- **P1.9（auto-register canonical_item）**：✅ 已完成（commit b4f6e99，406 测试）
+```
+P1.9（auto-register canonical_item）                 ✅ commit b4f6e99
+    ↓
+P1.9-hotfix-A（inspect-api-usage SQL 修复）          ✅
+    ↓
+P1.9-hotfix-B（TV freshness last_air_date 数据链路）  ✅ + 修复 TMDb 缓存 source bug
+    ↓
+P1.9-hotfix-C（baseline 多新季 local_max 回写）      ✅
+    ↓
+P1.9-hotfix-D（API logging 脱敏加固）                ✅
+    ↓
+P1.9-hotfix-E（TMDb movie/tv ID 命名空间隔离）       ✅ migration 011
+    ↓
+P1.9-hotfix-F（Hulu→Paramount+ 默认值同步）          ✅
+```
+
+**最终 commit：** `359198c`
+**测试：** 405 passed
 
 ---
 
@@ -392,25 +410,21 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 
 - **pyyaml 是否纳入 requirements.txt**（延续）
 - **P1.8-B（OMDb key 授权排查）**：纯调研任务，未执行
-- **P1.9-hotfix 执行**：6 个任务包待安排
 - **CR-005（content_updates 唯一键设计）**：需产品决策
 - **CR-007（secrets 路径迁移）**：需产品决策
-- **P1.10 source_fallback 最大可用天数**：用户已确认默认 `max_staleness_days=30`
-- **P1.10 兜底范围**：用户已确认仅覆盖 FP / TMDb / Trakt 热源，不覆盖 OMDb / TMDb detail / external_ids 富化
-- **P1.10 fallback 数据是否进入供应商主列表**：用户已确认允许进入，但报告必须显著标记
-- **P1.10 TMDb / Trakt 每接口 20 条**：用户已确认默认 20，保留 config / CLI 覆盖能力
+- **P1.10 任务包**：草案已创建，待审阅
 
 ---
 
 ## 给下一个 Agent 的交接
 
-- **P1.9 已完成**：P2+ 候选自动注册 canonical_item（commit b4f6e99，406 测试）
-- **P1.9-hotfix A-F 待执行**：6 个任务包路径见 `docs/tasks/p1.9_hotfix_*.md`
-- **P1.10 草案已创建**：源数据精简 + 抓取失败兜底，路径见 `docs/tasks/p1.10_*.md`
-- **P1.8 全部完成**（commit f264eba，402 测试）
+- **Phase 1.9 全部完成**：auto-register canonical_item + 6 hotfix（commit 359198c，405 测试）
+- **Phase 1.8 全部完成**（commit f264eba）
+- **Phase 1.10 草案已创建**：源数据精简 + 抓取失败兜底，路径见 `docs/tasks/p1.10_*.md`
 - **FP 和 OMDb API 均不可用**，无法做真实验证，需先解决配额
-- **Schema version = 10**（migrations 001-010）
+- **Schema version = 11**（migrations 001-011）
 - **TMDb Bearer Token 路径：** `/tmp/movietrace_phase0_secrets.json`
+- 日报：`journal/2026-05-14_0000_claude-code_deepseek-v4-pro.md`
 
 ---
 
