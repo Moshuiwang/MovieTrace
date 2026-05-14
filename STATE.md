@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-14 13:32 +08
-**更新人：** Claude Code（deepseek-v4-pro）+ moshuiwang
+**最后更新：** 2026-05-14 13:58 +08
+**更新人：** Codex（GPT-5）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -535,7 +535,7 @@ P1.11-B（OMDb 多 Key 轮转）                           ✅
 - **TMDb Bearer Token 路径：** `/tmp/movietrace_phase0_secrets.json`
 - **测试：** 458 passed，~59s，无 API 消耗
 - **测试全部 mock 化**：不会再消耗任何 API 配额
-- **工作区有未提交变更**（P1.11 修改 + docs/decisions/0010 来自上一会话）
+- **收尾记录**：P1.11 代码已提交到 `b36f5c2`；ADR-0010 与本轮 Codex 日报随收尾提交记录
 
 ---
 
