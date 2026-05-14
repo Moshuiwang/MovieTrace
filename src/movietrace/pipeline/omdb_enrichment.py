@@ -129,8 +129,10 @@ def enrich_with_tmdb_details(
         if not c.tmdb_id:
             continue
         # Skip if we already have good data from TMDb trending
+        # P1.9-hotfix-B: TV candidates also need last_air_date (not in trending payload)
         if c.tmdb_data and c.tmdb_data.get("release_date") and c.tmdb_data.get("original_language"):
-            continue
+            if c.media_type != "tv" or c.tmdb_data.get("last_air_date"):
+                continue
 
         cache_key = f"tmdb:detail:{c.tmdb_id}:{c.media_type}"
         cached = _read_cache(conn, cache_key, cache_ttl_hours)
@@ -165,7 +167,7 @@ def enrich_with_tmdb_details(
 def _read_cache(conn: sqlite3.Connection, key: str, ttl_hours: int) -> dict | None:
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).strftime("%Y-%m-%d %H:%M:%S")
     row = conn.execute(
-        "select response_json from api_cache where source = 'omdb' and cache_key = ? and fetched_at >= ?",
+        "select response_json from api_cache where source = 'tmdb' and cache_key = ? and fetched_at >= ?",
         (key, cutoff),
     ).fetchone()
     if row:
@@ -179,7 +181,7 @@ def _read_cache(conn: sqlite3.Connection, key: str, ttl_hours: int) -> dict | No
 def _write_cache(conn: sqlite3.Connection, key: str, data: dict) -> None:
     try:
         conn.execute(
-            "insert or replace into api_cache (source, cache_key, response_json) values ('omdb', ?, ?)",
+            "insert or replace into api_cache (source, cache_key, response_json) values ('tmdb', ?, ?)",
             (key, json.dumps(data, ensure_ascii=False)),
         )
         conn.commit()
@@ -233,3 +235,18 @@ def _apply_tmdb_detail_data(c: MergedCandidate, data: dict) -> None:
         vc = data.get("vote_count")
         if vc:
             c.tmdb_data["vote_count"] = int(vc)
+    # P1.9-hotfix-B: TV freshness fields from detail API
+    if not c.tmdb_data.get("last_air_date"):
+        lad = data.get("last_air_date")
+        if lad:
+            c.tmdb_data["last_air_date"] = str(lad)
+    if not c.tmdb_data.get("last_episode_air_date"):
+        lea = data.get("last_episode_to_air")
+        if isinstance(lea, dict):
+            c.tmdb_data["last_episode_air_date"] = str(lea.get("air_date", "")) if lea.get("air_date") else None
+    if not c.tmdb_data.get("first_air_date"):
+        fad = data.get("first_air_date")
+        if fad:
+            c.tmdb_data["first_air_date"] = str(fad)
+    if not c.tmdb_data.get("movie_release_date") and data.get("release_date"):
+        c.tmdb_data["movie_release_date"] = str(data["release_date"])

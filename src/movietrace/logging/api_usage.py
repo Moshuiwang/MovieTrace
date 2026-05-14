@@ -48,6 +48,8 @@ def log_api_call(
     """Write one row to api_usage_log. Best-effort — never raises."""
     if error_message and len(error_message) > MAX_ERROR_LEN:
         error_message = error_message[:MAX_ERROR_LEN]
+    if error_message:
+        error_message = _sanitize_error_message(error_message)
     metadata_json = None
     if metadata:
         # Ensure no keys leak into metadata
@@ -87,26 +89,45 @@ def log_api_call(
         logger.debug("Failed to write api_usage_log row", exc_info=True)
 
 
-# Fields that must never appear in metadata
-_FORBIDDEN_META_KEYS = {
-    "apikey", "api_key", "api-key", "authorization",
-    "bearer", "token", "access_token", "secret", "password",
-    "key", "credentials",
+# Fields that must never appear in metadata (normalized form)
+_NORM_FORBIDDEN = {
+    "apikey", "authorization", "bearer", "token",
+    "accesstoken", "secret", "password", "key", "credentials",
+    "clientsecret", "clientid",
 }
+
+
+def _normalize_key(key: str) -> str:
+    return "".join(c for c in key.lower() if c.isalnum())
 
 
 def _sanitize_metadata(meta: dict) -> dict:
     """Remove any key-like fields from metadata before writing."""
     safe = {}
     for k, v in meta.items():
-        kl = k.lower().replace("_", "").replace("-", "")
-        if kl in _FORBIDDEN_META_KEYS:
+        if _normalize_key(k) in _NORM_FORBIDDEN:
             continue
         if isinstance(v, str) and len(v) > 200:
             safe[k] = v[:200] + "..."
         else:
             safe[k] = v
     return safe
+
+
+_SENSITIVE_PATTERNS = [
+    (r"apikey=[^&\s]+", "apikey=***"),
+    (r"api_key=[^&\s]+", "api_key=***"),
+    (r"Bearer\s+[A-Za-z0-9._\-]+", "Bearer ***"),
+    (r"Basic\s+[A-Za-z0-9+/=]+", "Basic ***"),
+]
+
+
+def _sanitize_error_message(msg: str) -> str:
+    """Mask API keys and tokens that may appear in error messages."""
+    import re
+    for pattern, replacement in _SENSITIVE_PATTERNS:
+        msg = re.sub(pattern, replacement, msg, flags=re.IGNORECASE)
+    return msg
 
 
 class ApiCallTracker:

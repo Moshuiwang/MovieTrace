@@ -203,7 +203,8 @@ def run_discovery(
         auto_registered = 0
         for c in passed:
             tmdb_id = c.get("tmdb_id")
-            if tmdb_id and not _lookup_canonical_id(conn, tmdb_id):
+            media_type = c.get("media_type", "movie")
+            if tmdb_id and not _lookup_canonical_id(conn, tmdb_id, media_type):
                 cid = _ensure_canonical_item(conn, c)
                 if cid:
                     auto_registered += 1
@@ -242,7 +243,7 @@ def _to_scoring_dict(c) -> dict:
         ext_data["imdb_votes"] = c.imdb_votes
 
     content_type = "tv_show" if c.media_type in ("tv", "show") else "movie"
-    platform = "hulu"
+    platform = "unknown"
     ranking = None
     if c.fp_items:
         best = min((i for i in c.fp_items if i.get("ranking") is not None),
@@ -444,11 +445,12 @@ def _ensure_canonical_item(
         )
         canonical_id = cursor.lastrowid
 
-    # Register tmdb → canonical mapping in external_ids
+    # Register tmdb → canonical mapping in external_ids (P1.9-hotfix-E: prefixed)
+    ext_id = f"{content_type}:{tmdb_id}" if content_type in ("tv", "movie") else str(tmdb_id)
     conn.execute(
         """insert or ignore into external_ids
            (canonical_item_id, source, external_id) values (?, ?, ?)""",
-        (canonical_id, "tmdb", str(tmdb_id)),
+        (canonical_id, "tmdb", ext_id),
     )
 
     logger.info(
@@ -474,7 +476,7 @@ def _write_content_updates(
             continue
         content_update_id = f"discovery:{tmdb_id}:{snapshot_date}"
 
-        canonical_id = _lookup_canonical_id(conn, tmdb_id)
+        canonical_id = _lookup_canonical_id(conn, tmdb_id, c.get("media_type", "movie"))
         if not canonical_id:
             continue
 
@@ -504,13 +506,20 @@ def _write_content_updates(
     return count
 
 
-def _lookup_canonical_id(conn: sqlite3.Connection, tmdb_id: int) -> int | None:
-    row = conn.execute(
-        """select canonical_item_id from external_ids
-           where source = 'tmdb' and external_id = ?""",
-        (str(tmdb_id),),
-    ).fetchone()
-    return row[0] if row else None
+def _lookup_canonical_id(
+    conn: sqlite3.Connection, tmdb_id: int, media_type: str = "movie"
+) -> int | None:
+    """Look up canonical_item_id by tmdb_id. media_type disambiguates movie vs tv."""
+    # P1.9-hotfix-E: TMDb IDs are prefixed with tv:/movie: for namespace isolation
+    candidates = [f"{media_type}:{tmdb_id}", f"tv:{tmdb_id}", f"movie:{tmdb_id}", str(tmdb_id)]
+    for ext_id in candidates:
+        row = conn.execute(
+            "select canonical_item_id from external_ids where source = 'tmdb' and external_id = ?",
+            (ext_id,),
+        ).fetchone()
+        if row:
+            return row[0]
+    return None
 
 
 # ── Stats ────────────────────────────────────────────────────────────────

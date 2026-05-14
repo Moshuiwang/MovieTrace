@@ -5,8 +5,8 @@
 
 ---
 
-**最后更新：** 2026-05-14 +08
-**更新人：** Claude Code (deepseek-v4-pro) + moshuiwang
+**最后更新：** 2026-05-14 10:04 +08
+**更新人：** Codex（system prompt 标识：Codex, a coding agent based on GPT-5）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -22,6 +22,7 @@
 | **Phase 1.6：首次真实运行 + 验收** | ✅ 已完成（2026-05-12） |
 | **Phase 1.7：多热门源扩充** | ✅ 全部完成（366 测试, 2026-05-13） |
 | **Phase 1.8：条件性调优前置数据治理** | ✅ 全部完成（402 测试, 2026-05-14） |
+| **Phase 1.10：源数据预算与抓取兜底** | 📝 任务包草案已创建，待用户审阅 |
 
 ---
 
@@ -361,6 +362,18 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 ## 进行中任务
 
 - Phase 1.9 hotfix 6 个任务包已创建，等待用户安排执行。建议顺序：A → B → C → D → E → F。
+- Phase 1.10 源数据预算与抓取兜底 5 个任务包草案已创建，等待用户审阅。建议顺序：A → B → C → D → E。
+
+### Phase 1.10 任务包草案（2026-05-14）
+
+| 任务包 | 目标 | 状态 |
+|--------|------|------|
+| [P1.10-A](docs/tasks/p1.10_a_tmdb_source_limit.md) | TMDb 每个抓取接口限制为 20 条 | 待审 |
+| [P1.10-B](docs/tasks/p1.10_b_trakt_source_limit.md) | Trakt shows/movies trending 各限制为 20 条 | 待审 |
+| [P1.10-C](docs/tasks/p1.10_c_source_fetch_status_schema.md) | 新增 source fetch 状态表与 helper | 待审 |
+| [P1.10-D](docs/tasks/p1.10_d_source_fallback_runtime.md) | 单 source 抓取失败时回退到最近可用 snapshot | 待审 |
+| [P1.10-E](docs/tasks/p1.10_e_fallback_report_visibility.md) | 报告和导出展示 fresh/fallback/failed 状态 | 待审 |
+| [P1.10 执行顺序](docs/tasks/p1.10_execution_order.md) | 明确依赖、顺序和用户已确认决策 | 待审 |
 
 ## P1.9 执行结果（2026-05-14）
 
@@ -382,6 +395,10 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 - **P1.9-hotfix 执行**：6 个任务包待安排
 - **CR-005（content_updates 唯一键设计）**：需产品决策
 - **CR-007（secrets 路径迁移）**：需产品决策
+- **P1.10 source_fallback 最大可用天数**：用户已确认默认 `max_staleness_days=30`
+- **P1.10 兜底范围**：用户已确认仅覆盖 FP / TMDb / Trakt 热源，不覆盖 OMDb / TMDb detail / external_ids 富化
+- **P1.10 fallback 数据是否进入供应商主列表**：用户已确认允许进入，但报告必须显著标记
+- **P1.10 TMDb / Trakt 每接口 20 条**：用户已确认默认 20，保留 config / CLI 覆盖能力
 
 ---
 
@@ -389,6 +406,7 @@ P1.8-E（多源结构化字段）                              ✅  migration 01
 
 - **P1.9 已完成**：P2+ 候选自动注册 canonical_item（commit b4f6e99，406 测试）
 - **P1.9-hotfix A-F 待执行**：6 个任务包路径见 `docs/tasks/p1.9_hotfix_*.md`
+- **P1.10 草案已创建**：源数据精简 + 抓取失败兜底，路径见 `docs/tasks/p1.10_*.md`
 - **P1.8 全部完成**（commit f264eba，402 测试）
 - **FP 和 OMDb API 均不可用**，无法做真实验证，需先解决配额
 - **Schema version = 10**（migrations 001-010）

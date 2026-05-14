@@ -209,14 +209,14 @@ def run_baseline_tracking(
         stats["detected"] = len(events)
 
         if events:
-            # Update local_max_season for each event
-            seen_vs: set[int] = set()
+            # P1.9-hotfix-C: aggregate by vs_id, update to max new_season_number
+            max_by_vs: dict[int, int] = {}
             for event in events:
-                if event.virtual_series_id not in seen_vs:
-                    seen_vs.add(event.virtual_series_id)
-                    update_local_max_season(
-                        conn, event.virtual_series_id, event.new_season_number
-                    )
+                vs_id = event.virtual_series_id
+                if vs_id not in max_by_vs or event.new_season_number > max_by_vs[vs_id]:
+                    max_by_vs[vs_id] = event.new_season_number
+            for vs_id, max_ns in max_by_vs.items():
+                update_local_max_season(conn, vs_id, max_ns)
 
             written = write_content_updates(conn, events)
             stats["written"] = written

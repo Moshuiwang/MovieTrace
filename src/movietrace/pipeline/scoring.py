@@ -29,6 +29,7 @@ DEFAULT_WEIGHTS: dict = {
         "hbo-max": 0.85,
         "apple-tv-plus": 0.8,
         "hulu": 0.8,
+        "paramount-plus": 0.8,
     },
     "freshness": {"full_score_days": 90, "half_score_days": 180},
 }
@@ -159,7 +160,7 @@ def compute_imdb_rating_score(ext_data: dict | None) -> tuple[float, str | None]
 def compute_platform_weight_score(platform: str, cfg: dict) -> float:
     """Compute platform weight score (0-100)."""
     pw = cfg.get("platform_weight", {})
-    weight = pw.get(platform, pw.get("hulu", 0.8))
+    weight = pw.get(platform, pw.get("unknown", 0.8))
     return float(weight) * 100
 
 

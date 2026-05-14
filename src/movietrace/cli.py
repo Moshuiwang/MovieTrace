@@ -620,23 +620,25 @@ def cmd_inspect_api_usage(args: argparse.Namespace) -> int:
         params.append(args.service)
 
     where = ""
+    prefix = "WHERE"  # for sub-queries: "WHERE x AND y" or "WHERE status='success'"
     if conditions:
         where = " WHERE " + " AND ".join(conditions)
+        prefix = "AND"
 
     # Summary query
     total = conn.execute(f"select count(*) from api_usage_log{where}", params).fetchone()[0]
     success = conn.execute(
-        f"select count(*) from api_usage_log{where} AND status='success'", params
+        f"select count(*) from api_usage_log{where} {prefix} status='success'", params
     ).fetchone()[0]
     errors = conn.execute(
-        f"select count(*) from api_usage_log{where} AND status IN ('http_error','network_error')",
+        f"select count(*) from api_usage_log{where} {prefix} status IN ('http_error','network_error')",
         params,
     ).fetchone()[0]
     quota = conn.execute(
-        f"select count(*) from api_usage_log{where} AND quota_error=1", params
+        f"select count(*) from api_usage_log{where} {prefix} quota_error=1", params
     ).fetchone()[0]
     rate_limited = conn.execute(
-        f"select count(*) from api_usage_log{where} AND rate_limited=1", params
+        f"select count(*) from api_usage_log{where} {prefix} rate_limited=1", params
     ).fetchone()[0]
 
     fmt = args.format or "table"
@@ -691,8 +693,8 @@ def cmd_inspect_api_usage(args: argparse.Namespace) -> int:
             params,
         ).fetchall()
         if by_service:
-            print(f"| Service    | Total | Success | Quota | Rate Limited |")
-            print(f"|------------|-------|---------|-------|--------------|")
+            print("| Service    | Total | Success | Quota | Rate Limited |")
+            print("|------------|-------|---------|-------|--------------|")
             for r in by_service:
                 print(f"| {r[0]:10} | {r[1]:5} | {r[2]:7} | {r[3]:5} | {r[4]:12} |")
             print()
@@ -703,8 +705,8 @@ def cmd_inspect_api_usage(args: argparse.Namespace) -> int:
             params,
         ).fetchall()
         if by_endpoint:
-            print(f"| Endpoint                | Count |")
-            print(f"|-------------------------|-------|")
+            print("| Endpoint                | Count |")
+            print("|-------------------------|-------|")
             for r in by_endpoint:
                 print(f"| {r[0]:23} | {r[1]:5} |")
             print()

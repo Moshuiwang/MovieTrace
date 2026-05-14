@@ -296,7 +296,7 @@ class TestEnsureCanonicalItem:
             assert count == 1
             # Only one external_ids row
             ext_count = conn.execute(
-                "select count(*) from external_ids where source='tmdb' and external_id='77777'"
+                "select count(*) from external_ids where source='tmdb' and external_id='movie:77777'"
             ).fetchone()[0]
             assert ext_count == 1
             conn.close()
