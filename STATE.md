@@ -6,7 +6,7 @@
 
 ---
 
-**最后更新：** 2026-05-15 11:08 +08
+**最后更新：** 2026-05-15 13:20 +08
 **更新人：** Claude Opus 4.7（DeepSeek V4 Pro；API / bash workspace）+ moshuiwang
 **所在分支：** `main`
 
@@ -36,6 +36,26 @@
 | **Phase 1.20：code review 跟进修正** | ✅ 全部完成 |
 
 **测试：** 499 passed（全量）
+
+## 最近完成
+
+### P1.20 code review 跟进（全量）
+- 任务包：[`docs/tasks/p1.20_a_baseline_report_trust_signals.md`](docs/tasks/p1.20_a_baseline_report_trust_signals.md)、[`docs/tasks/p1.20_b_cache_null_handling_and_vs_name.md`](docs/tasks/p1.20_b_cache_null_handling_and_vs_name.md)
+- `tmdb_detail_cache` 空响应返回 `(None, False)` 而非 `({}, False)`
+- `_update_virtual_series_from_details` name 直接覆盖，null 时 warning
+- `_baseline_local_max` 返回 `(value, is_fallback)` 元组，fallback 显示 `~N`
+- routine 空 plan 三种原因诊断：全 null / 部分 null / status 不匹配
+- 测试 499 passed
+
+### Poll scheduler 配额简化
+- 移除 tier / quota / coverage_days 三段分配逻辑，routine 简化为单 SQL 全量轮询 Returning Series + In Production
+- `daily_max_calls` 默认 0（无限制），config 设为 2000 兜底
+- 测试 499 passed
+
+### Hot 报告质量分析（2026-05-15）
+- 75 条 `new_discovery` 中 88%（66 条）`virtual_series_id = NULL`——A 库未收录的 trending 热门候选
+- 9 条已追踪剧集同时出现在 hot 和 baseline 报告里（如 INVINCIBLE、9-1-1）
+- 结论：hot 报告应只保留 A 库未收录候选，去掉已追踪条目的重复信息；当前暂不落地，等下次需要时改一行 SQL
 
 ---
 
