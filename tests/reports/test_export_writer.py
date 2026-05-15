@@ -25,8 +25,10 @@ class ExportWriterTest(unittest.TestCase):
     def _seed_content_update(self):
         # Create virtual_series
         self.conn.execute(
-            """insert into virtual_series(tmdb_tv_id, name, poll_priority)
-               values ('1399', 'Test Series', 'normal')"""
+            """insert into virtual_series(
+                tmdb_tv_id, name, poll_priority, local_max_season,
+                tmdb_number_of_seasons
+            ) values ('1399', 'Test Series', 'normal', 1, 2)"""
         )
         vs_id = self.conn.execute("select last_insert_rowid()").fetchone()[0]
 
@@ -46,18 +48,18 @@ class ExportWriterTest(unittest.TestCase):
                 content_update_id, canonical_item_id, update_type,
                 priority, hot_score, match_confidence_low, source_summary_json
             ) values ('new_season:vs_1:s2', ?, 'new_season', 'P2', NULL, 0,
-                      '{"tmdb_tv_id":"1399","season":2,"detected_at":"2026-05-12 12:00:00 +08"}')""",
+                      '{"tmdb_tv_id":"1399","season":2,"season_min":2,"season_max":2,"detected_at":"2026-05-12 12:00:00 +08","baseline_detected_at":"2026-05-12 12:00:00 +08","baseline_local_max_season":1,"tmdb_number_of_seasons":2}')""",
             (ci_id,),
         )
         self.conn.commit()
 
     def test_export_generates_md_file(self):
-        from movietrace.reports.export_writer import export_recommendations
+        from movietrace.reports.export_writer import export_baseline_updates
 
         self._seed_content_update()
 
         out_dir = Path(self.tmpdir.name) / "exports"
-        result = export_recommendations(
+        result = export_baseline_updates(
             db_path=str(self.db_path), output_dir=str(out_dir), days=30
         )
 
@@ -66,14 +68,20 @@ class ExportWriterTest(unittest.TestCase):
         content = Path(result["md_path"]).read_text()
         self.assertIn("# MovieTrace", content)
         self.assertIn("基线新季", content)
+        self.assertIn("漏斗数据", content)
+        self.assertIn("A库当前季数", content)
+        self.assertIn("baseline检测时间", content)
+        self.assertIn("事件写入时间", content)
+        self.assertIn("| 1 | 2 | S2 |", content)
+        self.assertTrue((out_dir / "baseline_latest.md").exists())
 
     def test_export_generates_json_file(self):
-        from movietrace.reports.export_writer import export_recommendations
+        from movietrace.reports.export_writer import export_baseline_updates
 
         self._seed_content_update()
 
         out_dir = Path(self.tmpdir.name) / "exports"
-        result = export_recommendations(
+        result = export_baseline_updates(
             db_path=str(self.db_path), output_dir=str(out_dir), days=30
         )
 
@@ -81,14 +89,17 @@ class ExportWriterTest(unittest.TestCase):
         content = Path(result["json_path"]).read_text()
         self.assertIn("content_update_id", content)
         self.assertIn("new_season", content)
+        self.assertIn("baseline_local_max_season", content)
+        self.assertIn("baseline_detected_at", content)
+        self.assertIn("event_written_at", content)
 
     def test_export_dry_run_does_not_write(self):
-        from movietrace.reports.export_writer import export_recommendations
+        from movietrace.reports.export_writer import export_baseline_updates
 
         self._seed_content_update()
 
         out_dir = Path(self.tmpdir.name) / "exports"
-        result = export_recommendations(
+        result = export_baseline_updates(
             db_path=str(self.db_path), output_dir=str(out_dir), days=30, dry_run=True
         )
 
@@ -96,23 +107,36 @@ class ExportWriterTest(unittest.TestCase):
         self.assertFalse(list(out_dir.glob("*")) if out_dir.exists() else [])
 
     def test_export_respects_days_filter(self):
-        from movietrace.reports.export_writer import export_recommendations
+        from movietrace.reports.export_writer import export_baseline_updates
 
         self._seed_content_update()
 
         out_dir = Path(self.tmpdir.name) / "exports"
         # days=30 should include recently seeded content
-        result = export_recommendations(
+        result = export_baseline_updates(
             db_path=str(self.db_path), output_dir=str(out_dir), days=30
         )
         self.assertGreaterEqual(result["total_items"], 1)
 
         # Very short window (0.0001 days ≈ 8.6 seconds) — might or might not include,
         # but the point is the parameter is passed correctly
-        result_zero = export_recommendations(
+        result_zero = export_baseline_updates(
             db_path=str(self.db_path), output_dir=str(out_dir), days=100
         )
         self.assertGreaterEqual(result_zero["total_items"], 1)
+
+    def test_export_recommendations_excludes_new_season(self):
+        from movietrace.reports.export_writer import export_recommendations
+
+        self._seed_content_update()
+
+        out_dir = Path(self.tmpdir.name) / "exports"
+        result = export_recommendations(
+            db_path=str(self.db_path), output_dir=str(out_dir), days=30
+        )
+
+        self.assertEqual(result["total_items"], 0)
+        self.assertTrue((out_dir / "latest.md").exists())
 
     def test_source_data_status_in_markdown(self):
         from movietrace.reports.export_writer import export_recommendations
@@ -192,12 +216,12 @@ class ExportWriterTest(unittest.TestCase):
         )
 
     def test_no_source_status_does_not_crash_markdown(self):
-        from movietrace.reports.export_writer import export_recommendations
+        from movietrace.reports.export_writer import export_baseline_updates
 
         self._seed_content_update()
 
         out_dir = Path(self.tmpdir.name) / "exports"
-        result = export_recommendations(
+        result = export_baseline_updates(
             db_path=str(self.db_path), output_dir=str(out_dir), days=30
         )
 

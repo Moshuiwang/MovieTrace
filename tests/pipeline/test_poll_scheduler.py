@@ -27,6 +27,13 @@ class PollSchedulerTest(unittest.TestCase):
             (tmdb_tv_id, name, priority, last_polled_at),
         )
 
+    def _insert_vs_with_status(self, tmdb_tv_id, name, priority, tmdb_status):
+        self.conn.execute(
+            """insert into virtual_series(tmdb_tv_id, name, poll_priority, tmdb_status)
+               values (?, ?, ?, ?)""",
+            (tmdb_tv_id, name, priority, tmdb_status),
+        )
+
     def test_skip_excluded_from_plan(self):
         from movietrace.pipeline.poll_scheduler import build_daily_poll_plan
 
@@ -72,6 +79,28 @@ class PollSchedulerTest(unittest.TestCase):
 
         plan = build_daily_poll_plan(self.conn)
         self.assertEqual(len(plan), 0)
+
+    def test_catch_up_includes_all_non_skip(self):
+        from movietrace.pipeline.poll_scheduler import build_daily_poll_plan
+
+        self._insert_vs_with_status("1", "Returning", "urgent", "Returning Series")
+        self._insert_vs_with_status("2", "Ended", "low", "Ended")
+        self._insert_vs_with_status("3", "Canceled", "skip", "Canceled")
+
+        plan = build_daily_poll_plan(self.conn, mode="catch-up")
+
+        self.assertEqual({p.tmdb_tv_id for p in plan}, {"1", "2"})
+
+    def test_routine_filters_ended_series(self):
+        from movietrace.pipeline.poll_scheduler import build_daily_poll_plan
+
+        self._insert_vs_with_status("1", "Returning", "urgent", "Returning Series")
+        self._insert_vs_with_status("2", "Production", "normal", "In Production")
+        self._insert_vs_with_status("3", "Ended", "low", "Ended")
+
+        plan = build_daily_poll_plan(self.conn)
+
+        self.assertEqual({p.tmdb_tv_id for p in plan}, {"1", "2"})
 
 
 if __name__ == "__main__":

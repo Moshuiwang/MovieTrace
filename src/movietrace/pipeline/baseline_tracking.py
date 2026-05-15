@@ -6,10 +6,14 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Callable
 from zoneinfo import ZoneInfo
 
 from movietrace.db.schema import connect_database
 from movietrace.pipeline.poll_scheduler import PollPlan, build_daily_poll_plan
+from movietrace.pipeline.scoring import compute_hot_score, load_weights_config, map_priority
+from movietrace.pipeline.tmdb_detail_cache import get_tmdb_detail_with_cache
+from movietrace.pipeline.virtual_series import derive_poll_priority
 from movietrace.sources.tmdb import TmdbDetailClient
 
 logger = logging.getLogger("movietrace.pipeline.baseline_tracking")
@@ -25,6 +29,10 @@ class NewSeasonEvent:
     new_season_number: int
     previous_local_max: int
     detected_at: str
+    tmdb_details: dict | None = None
+    hot_score: float = 0.0
+    priority: str = "P3"
+    score_breakdown: dict | None = None
 
 
 def detect_new_seasons(
@@ -32,20 +40,36 @@ def detect_new_seasons(
     poll_plan: list[PollPlan],
     tmdb_client: TmdbDetailClient,
     interval: float = 1.0,
+    *,
+    weights_config: dict | None = None,
+    progress_callback: Callable[[int, int, PollPlan, bool, int], None] | None = None,
 ) -> list[NewSeasonEvent]:
     """Query TMDb for each series in the plan and detect new seasons."""
     events: list[NewSeasonEvent] = []
     now_str = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S +08")
+    scoring_cfg = weights_config or load_weights_config()
 
-    for item in poll_plan:
+    total = len(poll_plan)
+    for index, item in enumerate(poll_plan, start=1):
+        cache_hit = False
         try:
-            details = tmdb_client.get_tv_details(item.tmdb_tv_id)
+            details, cache_hit = get_tmdb_detail_with_cache(
+                conn,
+                tmdb_client,
+                item.tmdb_tv_id,
+                "tv",
+                required_keys=("number_of_seasons",),
+            )
         except Exception as exc:
             logger.warning("TMDb API error for %s: %s", item.tmdb_tv_id, exc)
             continue
 
         if not details or not details.get("name"):
+            if progress_callback:
+                progress_callback(index, total, item, cache_hit, len(events))
             continue
+
+        _update_virtual_series_from_details(conn, item.virtual_series_id, details)
 
         tmdb_seasons = details.get("number_of_seasons")
         if tmdb_seasons is None:
@@ -60,6 +84,7 @@ def detect_new_seasons(
 
         if tmdb_seasons > local_max:
             # New seasons detected
+            hot_score, priority, breakdown = _score_baseline_series(details, scoring_cfg)
             for season_num in range(local_max + 1, tmdb_seasons + 1):
                 events.append(
                     NewSeasonEvent(
@@ -69,8 +94,15 @@ def detect_new_seasons(
                         new_season_number=season_num,
                         previous_local_max=local_max,
                         detected_at=now_str,
+                        tmdb_details=details,
+                        hot_score=hot_score,
+                        priority=priority,
+                        score_breakdown=breakdown,
                     )
                 )
+
+        if progress_callback:
+            progress_callback(index, total, item, cache_hit, len(events))
 
         time.sleep(interval)
 
@@ -124,6 +156,14 @@ def write_content_updates(
                 "season_min": season_min,
                 "season_max": season_max,
                 "detected_at": sample_event.detected_at,
+                "baseline_detected_at": sample_event.detected_at,
+                "baseline_local_max_season": sample_event.previous_local_max,
+                "tmdb_number_of_seasons": (sample_event.tmdb_details or {}).get("number_of_seasons"),
+                "tmdb_status": (sample_event.tmdb_details or {}).get("status"),
+                "in_production": (sample_event.tmdb_details or {}).get("in_production"),
+                "last_episode_to_air": (sample_event.tmdb_details or {}).get("last_episode_to_air"),
+                "next_episode_to_air": (sample_event.tmdb_details or {}).get("next_episode_to_air"),
+                "hot_score_breakdown": sample_event.score_breakdown or {},
             },
             ensure_ascii=False,
         )
@@ -133,11 +173,12 @@ def write_content_updates(
             """insert or ignore into content_updates(
                 content_update_id, canonical_item_id, update_type,
                 priority, hot_score, match_confidence_low, source_summary_json
-            ) values (?, ?, 'new_season', ?, NULL, 0, ?)""",
+            ) values (?, ?, 'new_season', ?, ?, 0, ?)""",
             (
                 cu_id,
                 canonical_item_id,
-                _priority_from_virtual_series(conn, vs_id),
+                sample_event.priority,
+                sample_event.hot_score,
                 source_summary,
             ),
         )
@@ -185,6 +226,96 @@ def _priority_from_virtual_series(
     return "P2"
 
 
+def _update_virtual_series_from_details(
+    conn: sqlite3.Connection, virtual_series_id: int, details: dict
+) -> None:
+    status = details.get("status")
+    name = details.get("name")
+    if not name:
+        logger.warning("TMDb returned null/empty name for VS %d (tmdb_tv_id not in context)", virtual_series_id)
+    conn.execute(
+        """update virtual_series
+           set name = ?,
+               tmdb_status = ?,
+               tmdb_number_of_seasons = ?,
+               poll_priority = ?,
+               updated_at = datetime('now')
+           where id = ?""",
+        (
+            name,
+            status,
+            details.get("number_of_seasons"),
+            derive_poll_priority(status),
+            virtual_series_id,
+        ),
+    )
+
+
+def _score_baseline_series(details: dict, cfg: dict) -> tuple[float, str, dict]:
+    last_episode = details.get("last_episode_to_air")
+    release_date = None
+    if isinstance(last_episode, dict):
+        release_date = last_episode.get("air_date")
+    release_date = release_date or details.get("last_air_date") or details.get("first_air_date")
+
+    hot_score, breakdown = compute_hot_score(
+        {
+            "fp_items": [],
+            "ext_data": {
+                "tmdb_popularity": details.get("popularity"),
+                "tmdb_vote_average": details.get("vote_average"),
+                "tmdb_vote_count": details.get("vote_count"),
+            },
+            "platform": "unknown",
+            "content_type": "tv_show",
+            "release_date": release_date,
+            "language": details.get("original_language"),
+            "ranking": None,
+        },
+        cfg,
+    )
+    return hot_score, map_priority(hot_score, cfg.get("priority_thresholds")), breakdown
+
+
+def _diagnose_empty_routine_plan(conn: sqlite3.Connection) -> None:
+    """Log why routine mode produced an empty plan."""
+    total_row = conn.execute(
+        "select count(*) from virtual_series where poll_priority != 'skip'"
+    ).fetchone()
+    total_trackable = int(total_row[0] or 0) if total_row else 0
+
+    if total_trackable == 0:
+        logger.info("Plan empty: no trackable series found (all skipped?).")
+        return
+
+    null_status_row = conn.execute(
+        """select count(*) from virtual_series
+           where poll_priority != 'skip'
+             and (tmdb_status is null or trim(tmdb_status) = '')"""
+    ).fetchone()
+    null_status = int(null_status_row[0] or 0) if null_status_row else 0
+
+    if null_status == total_trackable:
+        logger.info(
+            "Plan empty: all %d trackable series have null tmdb_status. "
+            "Run catch-up first to backfill TMDb status.",
+            total_trackable,
+        )
+    elif null_status > 0:
+        logger.info(
+            "Plan empty: %d of %d trackable series have null tmdb_status, "
+            "the rest have non-Returning/non-In Production status.",
+            null_status,
+            total_trackable,
+        )
+    else:
+        logger.info(
+            "Plan empty: 0 of %d trackable series match routine status filter "
+            "(Returning Series / In Production).",
+            total_trackable,
+        )
+
+
 def run_baseline_tracking(
     db_path: str = "data/movietrace.db",
     config: dict | None = None,
@@ -193,6 +324,8 @@ def run_baseline_tracking(
     dry_run: bool = False,
     limit: int | None = None,
     interval: float = 1.0,
+    mode: str = "routine",
+    progress_callback: Callable[[int, int, PollPlan, bool, int], None] | None = None,
 ) -> dict:
     """Main entry point for baseline tracking.
 
@@ -200,22 +333,26 @@ def run_baseline_tracking(
         polled, plan_size, detected, written, errors, dry_run
     """
     conn = connect_database(db_path)
+    stats = {
+        "plan_size": 0,
+        "polled": 0,
+        "detected": 0,
+        "written": 0,
+        "errors": 0,
+        "dry_run": dry_run,
+        "mode": mode,
+    }
 
     try:
-        plan = build_daily_poll_plan(conn, config)
+        plan = build_daily_poll_plan(conn, config, mode=mode)
         if limit is not None:
             plan = plan[:limit]
 
-        stats = {
-            "plan_size": len(plan),
-            "polled": 0,
-            "detected": 0,
-            "written": 0,
-            "errors": 0,
-            "dry_run": dry_run,
-        }
+        stats["plan_size"] = len(plan)
 
         if not plan:
+            if mode == "routine":
+                _diagnose_empty_routine_plan(conn)
             return stats
 
         if dry_run:
@@ -226,7 +363,13 @@ def run_baseline_tracking(
             raise RuntimeError("TMDb token required for baseline tracking")
 
         client = TmdbDetailClient(tmdb_token, db_path=db_path, request_date=date.today().isoformat())
-        events = detect_new_seasons(conn, plan, client, interval=interval)
+        events = detect_new_seasons(
+            conn,
+            plan,
+            client,
+            interval=interval,
+            progress_callback=progress_callback,
+        )
         stats["polled"] = len(plan)
         stats["detected"] = len(events)
 

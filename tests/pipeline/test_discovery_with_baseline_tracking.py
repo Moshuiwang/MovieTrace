@@ -23,11 +23,10 @@ class DiscoveryWithBaselineTrackingTest(unittest.TestCase):
 
     def test_baseline_track_cli_exists(self):
         """Verify baseline-track is a registered CLI command."""
-        import subprocess
-        import os
         # Verify the module loads without error
-        from movietrace.cli import cmd_baseline_track
+        from movietrace.cli import cmd_baseline_track, cmd_export_baseline_updates
         self.assertTrue(callable(cmd_baseline_track))
+        self.assertTrue(callable(cmd_export_baseline_updates))
 
     def test_baseline_tracking_runs_on_empty_db(self):
         """Baseline tracking should run gracefully on an empty DB."""

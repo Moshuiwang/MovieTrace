@@ -1,6 +1,6 @@
 #!/bin/bash
-# MovieTrace 每日自动运行脚本
-# 由 crontab 调用，每天上午 08:00 执行（北京时间）
+# MovieTrace 基线新季追踪脚本
+# 由上层调度调用；建议每周运行一次。
 
 PROJECT_DIR="/home/ubuntu/MovieTrace"
 cd "$PROJECT_DIR"
@@ -8,29 +8,26 @@ cd "$PROJECT_DIR"
 LOG_DIR="$PROJECT_DIR/reports/logs"
 mkdir -p "$LOG_DIR"
 
-LOG_FILE="$LOG_DIR/daily_$(date +%Y%m%d).log"
+LOG_FILE="$LOG_DIR/baseline_$(date +%Y%m%d).log"
 START_TIME=$(date '+%Y-%m-%d %H:%M:%S +08')
 
 {
-    echo "=== MovieTrace daily-discover ==="
+    echo "=== MovieTrace baseline-track ==="
     echo "开始: $START_TIME"
 
     source .venv/bin/activate
 
-    # commit 模式：写入热点发现 content_updates；baseline tracking 由 baseline_run.sh 独立执行。
-    PYTHONPATH=src python -m movietrace.cli daily-discover 2>&1
-    DISCOVER_EXIT=$?
+    PYTHONPATH=src python -m movietrace.cli baseline-track --mode routine 2>&1
+    TRACK_EXIT=$?
 
-    # 导出最近 1 天结果到 latest.md / latest.json（固定文件名，每日覆盖）
-    if [ "$DISCOVER_EXIT" -eq 0 ]; then
-        PYTHONPATH=src python -m movietrace.cli export-recommendations --days 1 2>&1
+    if [ "$TRACK_EXIT" -eq 0 ]; then
+        PYTHONPATH=src python -m movietrace.cli export-baseline-updates --days 7 2>&1
         EXPORT_EXIT=$?
     else
         EXPORT_EXIT=0
     fi
 
-    # 合并退出码：任意一个非零即异常
-    if [ "$DISCOVER_EXIT" -ne 0 ] || [ "$EXPORT_EXIT" -ne 0 ]; then
+    if [ "$TRACK_EXIT" -ne 0 ] || [ "$EXPORT_EXIT" -ne 0 ]; then
         EXIT_CODE=1
     else
         EXIT_CODE=0
@@ -45,9 +42,9 @@ START_TIME=$(date '+%Y-%m-%d %H:%M:%S +08')
     echo "=== 运行摘要 ==="
     echo "结束: $END_TIME"
     echo "耗时: ${DURATION}s"
-    echo "退出码: $EXIT_CODE (discover=$DISCOVER_EXIT export=$EXPORT_EXIT)"
+    echo "退出码: $EXIT_CODE (track=$TRACK_EXIT export=$EXPORT_EXIT)"
     if [ "$EXIT_CODE" -ne 0 ]; then
-        echo "状态: ❌ 异常退出（discover=$DISCOVER_EXIT, export=$EXPORT_EXIT）"
+        echo "状态: ❌ 异常退出（track=$TRACK_EXIT, export=$EXPORT_EXIT）"
     else
         echo "状态: ✅ 正常完成"
     fi

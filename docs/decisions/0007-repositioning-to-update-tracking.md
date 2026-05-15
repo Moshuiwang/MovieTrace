@@ -308,3 +308,21 @@ FlixPatrol/TMDb 热度榜抓)。
 - P1.12 只修复 review 发现的新季链路、dry-run、日志脱敏、依赖声明等问题，不新增 `new_episode`。
 
 本修正不影响 ADR-0007 的核心定位：MovieTrace 仍是更新追踪系统，不是主观推荐系统；A 库/B 库/中间表架构边界不变。
+
+---
+
+## 2026-05-15 修正：热点发现与基线追踪节奏拆分
+
+**修正日期：** 2026-05-15 +08
+**触发：** 首次 commit 运行后，用户判断基线新季明显偏少，并重新明确产品节奏：每日热点发现与基线主动追踪应是两个独立功能，各自有独立步骤和调度。
+
+本 ADR 原文将功能 2 描述为每日嵌入 `daily-discover`。该口径修正为：
+
+- `daily-discover` 只执行功能 1：全网热点追踪、评分、基线标记和热点事件写入。
+- `baseline-track` 独立执行功能 2：A 库已有 TV 剧集的新季追踪，当前上层调度暂定每周一次。
+- baseline tracking 支持一次性 `catch-up` 追平，以及后续 `routine` 例行追踪。
+- 例行追踪不做真实全量，而是基于 TMDb `status` / `in_production` 判断仍可能更新的剧集。
+- baseline 新季事件不受 `hot_score` 阈值过滤，但必须写入 `hot_score` 供运营排序参考。
+- `export-recommendations` 导出热点报告；`export-baseline-updates` 导出独立 baseline 报告。
+
+本修正不改变 V1 的边界：仍只追踪 TV 新季，不做 episode-level `new_episode`；不改变 A 库只读原则；不引入新数据源或新依赖。

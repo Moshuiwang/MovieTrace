@@ -1,7 +1,7 @@
 # MovieTrace 日常运行手册
 
 > **目的：** 让接手者能独立完成日常运行和排障。
-> **最后更新：** 2026-05-14
+> **最后更新：** 2026-05-15
 
 ---
 
@@ -53,7 +53,7 @@ sqlite3 data/movietrace.db "select count(*) from content_updates where created_a
 # dry-run 模式（不写入 B 库，推荐日常先用这个看结果）
 PYTHONPATH=src python -m movietrace.cli daily-discover --dry-run
 
-# commit 模式（写入 content_updates 和 baseline 追踪）
+# commit 模式（只写入热点发现 content_updates）
 PYTHONPATH=src python -m movietrace.cli daily-discover
 ```
 
@@ -70,7 +70,7 @@ PYTHONPATH=src python -m movietrace.cli inspect-updates --days 30
 ### 3.3 导出给运营
 
 ```bash
-# 导出最近 7 天的 MD + JSON 报告
+# 导出最近 7 天的热点 MD + JSON 报告
 PYTHONPATH=src python -m movietrace.cli export-recommendations --days 7
 
 # 指定输出目录
@@ -80,8 +80,17 @@ PYTHONPATH=src python -m movietrace.cli export-recommendations --days 7 --output
 ### 3.4 基线追踪（独立命令）
 
 ```bash
-# 独立运行基线新季检测
-PYTHONPATH=src python -m movietrace.cli baseline-track
+# 例行运行基线新季检测（按 TMDb 状态筛选仍可能更新的剧集）
+PYTHONPATH=src python -m movietrace.cli baseline-track --mode routine
+
+# 一次性追平全部非 skip 剧集
+PYTHONPATH=src python -m movietrace.cli baseline-track --mode catch-up
+
+# 导出最近 7 天的基线新季独立报告
+PYTHONPATH=src python -m movietrace.cli export-baseline-updates --days 7
+
+# 上层调度可每周调用
+./scripts/baseline_run.sh
 ```
 
 ---
@@ -94,7 +103,7 @@ PYTHONPATH=src python -m movietrace.cli baseline-track
 | 评分计算 | 完整执行 | 完整执行 |
 | content_updates 写入 | **不写入** | 写入 |
 | canonical_items 注册 | **不注册** | 自动注册 |
-| baseline local_max 回写 | **不回写** | 回写 |
+| baseline local_max 回写 | 不适用于 `daily-discover` | 由独立 `baseline-track` 回写 |
 | 终端输出 | 显示 "would be registered" | 显示 "auto_registered" |
 
 **原则：不确定时先 dry-run，确认输出合理再 commit。**
@@ -168,7 +177,7 @@ Source data:
   Trakt: fresh 2026-05-14
 ```
 
-导出报告 MD 头部也包含"数据源状态"区块。
+热点导出报告 MD 头部也包含"数据源状态"区块。baseline 独立报告不展示热点源状态。
 
 ---
 

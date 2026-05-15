@@ -7,6 +7,11 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from movietrace.pipeline.multi_source_merge import MergedCandidate
+from movietrace.pipeline.tmdb_detail_cache import (
+    get_tmdb_detail_with_cache,
+    read_tmdb_detail_cache,
+    write_tmdb_detail_cache,
+)
 from movietrace.sources.http import FatalApiError
 from movietrace.sources.omdb import OmdbDetailClient, format_imdb_id
 from movietrace.sources.tmdb import TmdbDetailClient
@@ -178,26 +183,23 @@ def enrich_with_tmdb_details(
             if c.media_type != "tv" or c.tmdb_data.get("last_air_date"):
                 continue
 
-        cache_key = f"tmdb:detail:{c.tmdb_id}:{c.media_type}"
-        cached = _read_cache(conn, cache_key, cache_ttl_hours)
-        if cached:
-            cache_hits += 1
-            _apply_tmdb_detail_data(c, cached)
-            enriched += 1
-            continue
-
         try:
-            if c.media_type == "tv":
-                data = client.get_tv_details(str(c.tmdb_id))
+            data, cache_hit = get_tmdb_detail_with_cache(
+                conn,
+                client,
+                c.tmdb_id,
+                c.media_type,
+                ttl_hours=cache_ttl_hours,
+            )
+            if cache_hit:
+                cache_hits += 1
             else:
-                data = client.get_movie_details(str(c.tmdb_id))
-            api_calls += 1
+                api_calls += 1
         except Exception as exc:
             logger.warning("TMDb detail failed for %s (%s): %s", c.tmdb_id, c.media_type, exc)
             continue
 
         if data:
-            _write_cache(conn, cache_key, data)
             _apply_tmdb_detail_data(c, data)
             enriched += 1
 
@@ -209,6 +211,10 @@ def enrich_with_tmdb_details(
 
 
 def _read_cache(conn: sqlite3.Connection, key: str, ttl_hours: int, source: str = "tmdb") -> dict | None:
+    if source == "tmdb" and key.startswith("tmdb:detail:"):
+        parts = key.split(":")
+        if len(parts) == 4:
+            return read_tmdb_detail_cache(conn, parts[2], parts[3], ttl_hours=ttl_hours)
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).strftime("%Y-%m-%d %H:%M:%S")
     row = conn.execute(
         "select response_json from api_cache where source = ? and cache_key = ? and fetched_at >= ?",
@@ -223,6 +229,11 @@ def _read_cache(conn: sqlite3.Connection, key: str, ttl_hours: int, source: str 
 
 
 def _write_cache(conn: sqlite3.Connection, key: str, data: dict, source: str = "tmdb") -> None:
+    if source == "tmdb" and key.startswith("tmdb:detail:"):
+        parts = key.split(":")
+        if len(parts) == 4:
+            write_tmdb_detail_cache(conn, parts[2], parts[3], data)
+            return
     try:
         conn.execute(
             "insert or replace into api_cache (source, cache_key, response_json) values (?, ?, ?)",

@@ -46,7 +46,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
     movie_weekly_day = fp_cfg.get("movie_weekly_day", 0)
 
     # Step 1: Fetch TMDb trending
-    print("[1/6] Fetching TMDb trending...", end=" ", flush=True)
+    print("[1/5] Fetching TMDb trending...", end=" ", flush=True)
     tmdb_result = {}
     try:
         from movietrace.pipeline.tmdb_trending import fetch_and_store_tmdb_trending
@@ -119,27 +119,9 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
         print(f"FAILED: {exc}")
         return 1
 
-    # Step 6: Baseline tracking
-    cfg = _load_config()
-    bt_cfg = cfg.get("baseline_tracking", {})
+    # Step 5: Write discovery updates only. Baseline tracking has its own cadence.
     written = stats.get("written", 0)
-    if bt_cfg.get("enabled", True):
-        print(f"[5/5] Writing content_updates + baseline tracking...", end=" ", flush=True)
-        try:
-            from movietrace.pipeline.baseline_tracking import run_baseline_tracking
-            bt_result = run_baseline_tracking(
-                db_path="data/movietrace.db",
-                tmdb_token=tmdb_token,
-                dry_run=dry_run,
-            )
-            print(
-                f"OK (written={written} + {bt_result.get('written', 0)} new_seasons)"
-            )
-        except Exception as exc:
-            print(f"FAILED: {exc}")
-            return 1
-    else:
-        print(f"[5/5] Writing content_updates... OK (written={written}, baseline skipped)")
+    print(f"[5/5] Writing content_updates... OK (written={written})")
 
     print()
     # Source data status (P1.10-D)
@@ -421,6 +403,7 @@ def cmd_baseline_track(args: argparse.Namespace) -> int:
 
     print("MovieTrace baseline-track")
     print(f"Dry-run: {args.dry_run}")
+    print(f"Mode: {args.mode}")
     if args.limit:
         print(f"Limit: {args.limit}")
     print()
@@ -429,11 +412,25 @@ def cmd_baseline_track(args: argparse.Namespace) -> int:
         from movietrace.pipeline.baseline_tracking import run_baseline_tracking
 
         tmdb_token = _load_tmdb_token()
+        progress = None
+        if not args.dry_run:
+            def progress(index, total, item, cache_hit, detected):
+                if index == 1 or index == total or index % 10 == 0:
+                    source = "cache" if cache_hit else "api"
+                    print(
+                        f"Progress: {index}/{total} [{source}] "
+                        f"{item.name} (tmdb={item.tmdb_tv_id}) detected={detected}",
+                        flush=True,
+                    )
+
         result = run_baseline_tracking(
             db_path=args.db or "data/movietrace.db",
+            config=cfg,
             tmdb_token=tmdb_token,
             dry_run=args.dry_run,
             limit=args.limit,
+            mode=args.mode,
+            progress_callback=progress,
         )
 
         print(f"Plan size: {result.get('plan_size', 0)}")
@@ -481,6 +478,38 @@ def cmd_export_recommendations(args: argparse.Namespace) -> int:
         return 0
     except Exception as exc:
         print(f"✗ Export failed: {exc}")
+        return 1
+
+
+def cmd_export_baseline_updates(args: argparse.Namespace) -> int:
+    """Export baseline new-season updates as separate MD + JSON report files."""
+    print("MovieTrace export-baseline-updates")
+    print(f"Days: {args.days}")
+    print(f"Output dir: {args.output_dir}")
+    print()
+
+    try:
+        from movietrace.reports.export_writer import export_baseline_updates
+
+        result = export_baseline_updates(
+            db_path=args.db or "data/movietrace.db",
+            output_dir=args.output_dir,
+            days=args.days,
+            dry_run=args.dry_run,
+        )
+
+        if result.get("dry_run"):
+            print(f"[DRY-RUN] Would export {result.get('total_items', 0)} items")
+        else:
+            print(f"MD:   {result.get('md_path', '')}")
+            print(f"JSON: {result.get('json_path', '')}")
+            print(f"Total items: {result.get('total_items', 0)}")
+
+        print()
+        print("✓ Baseline export complete")
+        return 0
+    except Exception as exc:
+        print(f"✗ Baseline export failed: {exc}")
         return 1
 
 
@@ -776,6 +805,12 @@ def main() -> None:
     p_track.add_argument("--db", help="Database path")
     p_track.add_argument("--dry-run", action="store_true")
     p_track.add_argument("--limit", type=int)
+    p_track.add_argument(
+        "--mode",
+        choices=["routine", "catch-up"],
+        default="routine",
+        help="Tracking mode: routine status-filtered polling or one-time catch-up",
+    )
 
     # export-recommendations
     p_export = sub.add_parser("export-recommendations", help="Export recommendations to MD+JSON")
@@ -783,6 +818,15 @@ def main() -> None:
     p_export.add_argument("--days", type=int, default=7, help="Days to cover (default: 7)")
     p_export.add_argument("--output-dir", default="reports", help="Output directory")
     p_export.add_argument("--dry-run", action="store_true")
+
+    # export-baseline-updates
+    p_export_baseline = sub.add_parser(
+        "export-baseline-updates", help="Export baseline new-season updates to MD+JSON"
+    )
+    p_export_baseline.add_argument("--db", help="Database path")
+    p_export_baseline.add_argument("--days", type=int, default=7, help="Days to cover (default: 7)")
+    p_export_baseline.add_argument("--output-dir", default="reports", help="Output directory")
+    p_export_baseline.add_argument("--dry-run", action="store_true")
 
     # fetch-tmdb-trending
     p_tmdb = sub.add_parser("fetch-tmdb-trending", help="Fetch TMDb trending/popular data")
@@ -819,6 +863,7 @@ def main() -> None:
         "check-feishu-schema": cmd_check_feishu_schema,
         "baseline-track": cmd_baseline_track,
         "export-recommendations": cmd_export_recommendations,
+        "export-baseline-updates": cmd_export_baseline_updates,
         "fetch-tmdb-trending": cmd_fetch_tmdb_trending,
         "fetch-trakt-trending": cmd_fetch_trakt_trending,
         "inspect-updates": cmd_inspect_updates,

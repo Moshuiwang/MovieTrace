@@ -6,8 +6,8 @@
 
 ---
 
-**当前阶段：** Phase 1 全部任务包已完成；当前为 V1 维护/收尾（P1.15 文档收口进行中）
-**最后更新：** 2026-05-14 20:52 +08 by Claude Code (deepseek-v4-pro)
+**当前阶段：** Phase 1 全部任务包已完成；当前为 V1 运行观察期（P1.18 调整热点发现与基线追踪节奏）
+**最后更新：** 2026-05-15 09:48 +08 by Codex (GPT-5)
 
 ---
 
@@ -15,11 +15,11 @@
 
 ### ✅ V1 做什么
 
-**核心目标：** 每日检测全网热门英文影视内容的更新事件，以及 A 库（运营业务库）中已有 TV 剧集的新季更新，写入中间表/导出清单供运营从中挑选并提交供应商。详见 [ADR-0007](docs/decisions/0007-repositioning-to-update-tracking.md)。
+**核心目标：** 每日检测全网热门英文影视内容的更新事件；A 库（运营业务库）中已有 TV 剧集的新季更新由 `baseline-track` 独立按上层调度节奏执行，写入 B 库后导出清单供运营挑选并提交供应商。详见 [ADR-0007](docs/decisions/0007-repositioning-to-update-tracking.md)。
 
 **功能范围：**
 - 功能 1：全网热门追踪（FlixPatrol + TMDb + Trakt + OMDb，按 `hot_score` 阈值过滤）
-- 功能 2：基线内容主动追踪（TV 剧集，按 TMDb `status` 智能轮询；电影跳过）
+- 功能 2：基线内容主动追踪（TV 剧集，独立于每日热点发现；按 TMDb `status` / `in_production` 智能追踪；电影跳过）
 - 综合评分（hot_score 0-100，可解释，可配置）
 - 与 A 库匹配标记（`is_in_baseline`，低置信度匹配标记 `match_confidence_low`）
 - 输出两类 + 1 低置信度收纳：
@@ -28,7 +28,7 @@
   - ⚠️ 待人工确认：实体匹配低置信度，需运营在中间表中判断对应关系
 - 每日 Markdown 日报（运行可观察性）
 - 本地 MD + JSON 报告导出（`export-recommendations`）；未来如需中间表协作界面（Notion/Excel），接口抽象等 V2 或后续决策
-- 检测与导出解耦：`daily-discover`（检测，写 B 库）+ `export-recommendations`（导出 MD + JSON 到 `reports/`）
+- 检测与导出解耦：`daily-discover`（热点检测，写 B 库）+ `baseline-track`（基线新季检测，独立节奏）+ `export-recommendations` / `export-baseline-updates`（导出 MD + JSON 到 `reports/`）
 - `content_updates` 作为事件历史表：跨天重新命中的内容允许再次进入最近 N 天导出；discovery 事件 ID 必须包含 TMDb 媒体命名空间（ADR-0012）
 - 手动 dry-run 和 commit 模式
 - bootstrap（180 天追赶）和 daily 两种运行模式
@@ -152,3 +152,4 @@ V2 启动需**全部满足**：
 | 2026-05-14 | 明确 `content_updates` 从全局去重建议池改为事件历史表；跨天重复命中可再次写入 | ADR-0012 |
 | 2026-05-14 | 明确 discovery `content_update_id` 使用 `discovery:{movie|tv}:{tmdb_id}:{date}`，避免 TMDb movie/tv 数字 ID 撞车 | P1.13 review hotfix |
 | 2026-05-14 | SCOPE.md 修正：飞书写入从"当前实现"改为历史，当前输出链路为 B 库 + MD/JSON 导出 | P1.15 V1 收口 |
+| 2026-05-15 | `daily-discover` 与 `baseline-track` 节奏拆分；baseline 报告独立导出并写入 `hot_score` | P1.18 用户决策 |

@@ -3,6 +3,8 @@
 
 baseline_tracking:
   enabled: true
+  # routine mode uses status-filtered polling; catch-up mode ignores these coverage
+  # windows and polls all non-skip virtual_series once.
   urgent_coverage_days: 14
   normal_coverage_days: 21
   low_coverage_days: 180
