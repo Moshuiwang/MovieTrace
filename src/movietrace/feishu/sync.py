@@ -65,11 +65,6 @@ F = {
     "负责人":            "fldp05S9Pz",
 }
 
-# field_id used for date-filter queries
-_FID_DATE = F["发现日期"]
-_FID_CONTENT_UPDATE_ID = F["content_update_id"]
-
-
 # ── REST API helpers ──────────────────────────────────────────────────────
 
 def _request_json(
@@ -94,6 +89,17 @@ def _request_json(
         raise RuntimeError(f"Feishu API HTTP {e.code}: {body[:500]}") from e
 
 
+def _to_epoch_ms(dt_str: str) -> int | None:
+    """Convert 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS' (CST) to Feishu epoch ms."""
+    if not dt_str:
+        return None
+    try:
+        fmt = "%Y-%m-%d %H:%M:%S" if len(dt_str) > 10 else "%Y-%m-%d"
+        return int(datetime.strptime(dt_str[:19], fmt).replace(tzinfo=TZ).timestamp() * 1000)
+    except (ValueError, TypeError):
+        return None
+
+
 # ── Record operations ─────────────────────────────────────────────────────
 
 def _list_records_for_date(
@@ -110,7 +116,7 @@ def _list_records_for_date(
                 "conjunction": "and",
                 "conditions": [
                     {
-                        "field_name": _FID_DATE,  # 发现日期
+                        "field_name": "同步批次",  # text field; 发现日期(type=5) doesn't accept date strings in filter
                         "operator": "is",
                         "value": [run_date],
                     }
@@ -129,7 +135,7 @@ def _list_records_for_date(
         for item in data.get("items", []):
             fields = item.get("fields", {})
             # API may return rich-text segments for text fields
-            cid_val = fields.get(_FID_CONTENT_UPDATE_ID, "")  # content_update_id
+            cid_val = fields.get("content_update_id", "")
             if isinstance(cid_val, list):
                 cid_val = "".join(seg.get("text", "") for seg in cid_val)
             record_id = item.get("record_id", "")
@@ -215,7 +221,7 @@ def sync_table(
     # 3. Build records, separate creates from updates
     print("同步记录...")
     stats = {"total": len(records), "created": 0, "updated": 0, "errors": 0}
-    now_str = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
+    now_ts = int(datetime.now(TZ).timestamp() * 1000)
 
     new_discovery_count = 0
     new_season_count = 0
@@ -242,23 +248,26 @@ def sync_table(
                     source_statuses[src] = st
                 source_status_str = ", ".join(parts)
 
-            # Build fields dict keyed by field_id, Chinese name in comment
-            fields = {
-                F["发现日期"]:          run_date,
-                F["content_update_id"]: snapshot_key,
-                F["标题"]:             str(rec.get("title", "")),
-                F["类型"]:             _derive_content_type(rec),
-                F["更新类型"]:          str(rec.get("update_type", "")),
-                F["优先级"]:            str(rec.get("priority", "")),
-                F["hot_score"]:        float(rec.get("hot_score") or 0),
-                F["季号"]:             int(rec.get("season") or 0),
-                F["TMDb TV ID"]:       str(rec.get("tmdb_tv_id") or ""),
-                F["是否低置信度"]:        bool(rec.get("match_confidence_low", False)),
-                F["数据源状态"]:         source_status_str,
-                F["检测时间"]:          str(rec.get("event_written_at", "")),
-                F["同步时间"]:          now_str,
-                F["同步批次"]:          run_date,
+            detected_at = _to_epoch_ms(
+                rec.get("event_written_at") or rec.get("created_at", "")
+            )
+            fields: dict = {
+                "发现日期":          _to_epoch_ms(run_date),
+                "content_update_id": snapshot_key,
+                "标题":             str(rec.get("title", "")),
+                "类型":             _derive_content_type(rec),
+                "更新类型":          str(rec.get("update_type", "")),
+                "优先级":            str(rec.get("priority", "")),
+                "hot_score":        float(rec.get("hot_score") or 0),
+                "季号":             int(rec.get("season") or 0),
+                "TMDb TV ID":       str(rec.get("tmdb_tv_id") or ""),
+                "是否低置信度":        "是" if rec.get("match_confidence_low") else "否",
+                "数据源状态":         source_status_str,
+                "同步时间":          now_ts,
+                "同步批次":          run_date,
             }
+            if detected_at is not None:
+                fields["检测时间"] = detected_at
 
             ut = rec.get("update_type", "")
             if ut == "new_discovery":
@@ -278,10 +287,9 @@ def sync_table(
                 to_update.append((existing_lookup[snapshot_key], fields))
                 stats["updated"] += 1
             else:
-                fields[F["运营状态"]] = "待看"
-                fields[F["运营备注"]] = ""
-                fields[F["供应商状态"]] = "未提交"
-                fields[F["负责人"]] = ""
+                fields["运营状态"] = "待看"
+                fields["供应商状态"] = "未提交"
+                # 负责人 omitted: user field cannot accept empty string
                 to_create.append({"fields": fields})
                 stats["created"] += 1
 
@@ -325,6 +333,8 @@ def sync_table(
 def _derive_content_type(rec: dict) -> str:
     if ct := rec.get("content_type"):
         return ct
+    if rec.get("update_type") == "new_season":
+        return "tv"
     cid = rec.get("content_update_id", "")
     if isinstance(cid, str):
         if ":movie:" in cid:
