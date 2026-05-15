@@ -10,6 +10,7 @@ mkdir -p "$LOG_DIR"
 
 LOG_FILE="$LOG_DIR/baseline_$(date +%Y%m%d).log"
 START_TIME=$(date '+%Y-%m-%d %H:%M:%S +08')
+RUN_DATE=$(date +%Y-%m-%d)
 
 {
     echo "=== MovieTrace baseline-track ==="
@@ -27,7 +28,36 @@ START_TIME=$(date '+%Y-%m-%d %H:%M:%S +08')
         EXPORT_EXIT=0
     fi
 
-    if [ "$TRACK_EXIT" -ne 0 ] || [ "$EXPORT_EXIT" -ne 0 ]; then
+    # 飞书表格同步（baseline 报告用独立源文件）
+    SYNC_EXIT=0
+    DOC_EXIT=0
+    NOTIFY_EXIT=0
+    if [ "$TRACK_EXIT" -eq 0 ] && [ "$EXPORT_EXIT" -eq 0 ]; then
+        PYTHONPATH=src python -m movietrace.cli sync-feishu-table --source reports/baseline_latest.json --date "$RUN_DATE" 2>&1
+        SYNC_EXIT=$?
+
+        PYTHONPATH=src python -m movietrace.cli sync-feishu-doc --source reports/baseline_latest.md --title "MovieTrace 基线追踪 $RUN_DATE" 2>&1
+        DOC_EXIT=$?
+
+        if [ "$SYNC_EXIT" -eq 0 ]; then
+            PYTHONPATH=src python -m movietrace.cli notify-feishu --level success --date "$RUN_DATE" --log-file "$LOG_FILE" 2>&1
+        else
+            PYTHONPATH=src python -m movietrace.cli notify-feishu --level error --title "基线同步 - 飞书表格写入失败" --detail "sync-feishu-table exit=$SYNC_EXIT" --log-file "$LOG_FILE" 2>&1
+        fi
+        NOTIFY_EXIT=$?
+    fi
+
+    if [ "$TRACK_EXIT" -ne 0 ]; then
+        PYTHONPATH=src python -m movietrace.cli notify-feishu --level error --title "基线追踪失败" --detail "baseline-track exit=$TRACK_EXIT" --log-file "$LOG_FILE" 2>&1
+        NOTIFY_EXIT=$?
+    elif [ "$EXPORT_EXIT" -ne 0 ]; then
+        PYTHONPATH=src python -m movietrace.cli notify-feishu --level error --title "基线追踪 - 导出失败" --detail "export-baseline-updates exit=$EXPORT_EXIT" --log-file "$LOG_FILE" 2>&1
+        NOTIFY_EXIT=$?
+    fi
+
+    # DOC_EXIT（文档同步）不纳入退出码：文档同步为辅助功能，失败不阻塞核心流程，
+    # 错误已通过 NOTIFY_EXIT 告警；SYNC_EXIT（表格同步）为核心路径，纳入退出码。
+    if [ "$TRACK_EXIT" -ne 0 ] || [ "$EXPORT_EXIT" -ne 0 ] || [ "$SYNC_EXIT" -ne 0 ]; then
         EXIT_CODE=1
     else
         EXIT_CODE=0
@@ -42,9 +72,9 @@ START_TIME=$(date '+%Y-%m-%d %H:%M:%S +08')
     echo "=== 运行摘要 ==="
     echo "结束: $END_TIME"
     echo "耗时: ${DURATION}s"
-    echo "退出码: $EXIT_CODE (track=$TRACK_EXIT export=$EXPORT_EXIT)"
+    echo "退出码: $EXIT_CODE (track=$TRACK_EXIT export=$EXPORT_EXIT sync=$SYNC_EXIT)"
     if [ "$EXIT_CODE" -ne 0 ]; then
-        echo "状态: ❌ 异常退出（track=$TRACK_EXIT, export=$EXPORT_EXIT）"
+        echo "状态: ❌ 异常退出（track=$TRACK_EXIT, export=$EXPORT_EXIT, sync=$SYNC_EXIT）"
     else
         echo "状态: ✅ 正常完成"
     fi

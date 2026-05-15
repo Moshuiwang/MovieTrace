@@ -6,6 +6,16 @@ feishu:
   schema_table_name: MovieTrace节目库导出Schema
   test_table_name: MovieTrace写入测试
 
+feishu_sync:
+  enabled: true
+  table_name: "每日发现"
+  doc_folder_token: ""
+  # notify_user_open_id and gmail credentials go in secrets.json → feishu section:
+  #   "feishu": {
+  #     "notify_user_open_id": "ou_...",
+  #     "gmail": {"enabled": false, "smtp_user": "your@gmail.com", "smtp_password": ""}
+  #   }
+
 source_fetch_limits:
   tmdb:
     pages_per_endpoint: 1
