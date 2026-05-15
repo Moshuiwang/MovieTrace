@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-16 01:07 +08
-**更新人：** Claude Sonnet 4.6（claude-sonnet-4-6；Claude Code CLI）+ moshuiwang
+**最后更新：** 2026-05-16 01:15 +08
+**更新人：** Claude Code CLI（deepseek-v4-flash）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -35,9 +35,17 @@
 | **Phase 1.19：baseline 报告可观测性修正** | ✅ 已完成 |
 | **Phase 1.20：code review 跟进修正** | ✅ 全部完成 |
 
-**测试：** 499 passed（全量）
+**测试：** 451 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
 
 ## 最近完成
+
+### 飞书新 App 迁移 + 多维表格重建（2026-05-16）
+- 飞书凭据切换至新 App `cli_aa8d80407af89bdf`，用户 `ou_15b9e43c2f80fadbe998791b4246a86f`
+- 新建多维表格"发现运行日志"（base `P6y3bMbAXazlL5sui4Mc6B5znMb`，table `tbl84xx4WNv54An9`）：18 字段，类型/单选/日期/人员字段全部正确配置
+- `sync.py` 重构：移除表/字段自建逻辑，改用 `field_id` 字典定位（`F` 映射，sync.py:50-68）；表名改字段名改均不断链
+- `cli.py` 移除 `--table-name` 参数，直接读 `discovery_table_id`
+- 用户已授予 `full_access` 管理权限
+- 测试 451 passed；dry-run 80 条正常
 
 ### P1.20 code review 跟进（全量）
 - 任务包：[`docs/tasks/p1.20_a_baseline_report_trust_signals.md`](docs/tasks/p1.20_a_baseline_report_trust_signals.md)、[`docs/tasks/p1.20_b_cache_null_handling_and_vs_name.md`](docs/tasks/p1.20_b_cache_null_handling_and_vs_name.md)
@@ -157,7 +165,7 @@ PR #1 已合入，分支已删除。
 
 ## 待用户决策
 
-- **飞书运营同步提交**：`notify.py` / `sync.py` / `cli.py` / shell 脚本已实现并通过 /simplify 清理，测试 499 passed，等待 review 后提交
+（无。飞书运营同步代码已通过 field_id 重构，等待 commit。）
 
 ## V2 backlog
 
@@ -176,8 +184,9 @@ PR #1 已合入，分支已删除。
 - **content_updates 语义：** 事件历史表，`content_update_id` 唯一，discovery ID 格式 `discovery:{movie|tv}:{tmdb_id}:{date}`
 - **上下文加载：** 按 `docs/context_map.md` 四层地图加载，历史查 `rg` 不整篇读
 - **FP API 402** 不可用 · **OMDb** 正常
-- **测试：** 495 passed, 1 warning, ~68s, 无 API 消耗
+- **测试：** 451 passed, ~65s, 无 API 消耗
 - **CI：** `.github/workflows/ci.yml`（PR + main push）
 - **Phase 1 全部 43 个任务包执行完毕**
 - **P1.17 跳过**（不满足真实运行 3-7 天前置条件）
-- **飞书运营同步**：`src/movietrace/feishu/notify.py`、`src/movietrace/feishu/sync.py` 已实现（每日快照模式）；CLI 新增 `sync-feishu-table`、`sync-feishu-doc`、`notify-feishu` 三条命令；shell 脚本已集成同步步骤；经 /simplify 清理后 499 tests passed，待提交
+- **飞书运营同步**：`src/movietrace/feishu/notify.py`、`src/movietrace/feishu/sync.py` 已实现（每日快照模式）；CLI 新增 `sync-feishu-table`、`sync-feishu-doc`、`notify-feishu` 三条命令；shell 脚本已集成同步步骤；已重构为 field_id 定位；451 tests passed
+	- **飞书多维表格**：base `P6y3bMbAXazlL5sui4Mc6B5znMb`，table `tbl84xx4WNv54An9`（名称"发现运行日志"），18 字段，field_id 映射见 `sync.py:50-68`

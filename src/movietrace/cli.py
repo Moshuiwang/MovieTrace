@@ -513,6 +513,168 @@ def cmd_export_baseline_updates(args: argparse.Namespace) -> int:
         return 1
 
 
+# ── sync-feishu-table ─────────────────────────────────────────────────────
+
+
+def cmd_sync_feishu_table(args: argparse.Namespace) -> int:
+    """Sync latest.json records to a Feishu bitable."""
+    cfg = _load_config()
+    fs_cfg = cfg.get("feishu_sync", {})
+    if not fs_cfg.get("enabled", True):
+        print("feishu_sync is disabled in config.yaml (enabled: false)")
+        return 0
+
+    secrets = load_secrets()
+    feishu_secrets = secrets.get("feishu") or {}
+    app_id = feishu_secrets.get("app_id", "")
+    app_secret = feishu_secrets.get("app_secret", "")
+    app_token = feishu_secrets.get("base_app_token", "")
+    if not all([app_id, app_secret, app_token]):
+        print("ERROR: feishu credentials (app_id, app_secret, base_app_token) not found in secrets.json")
+        return 1
+
+    table_id = feishu_secrets.get("discovery_table_id", "")
+    if not table_id:
+        print("ERROR: feishu.discovery_table_id not found in secrets.json")
+        return 1
+
+    print("MovieTrace sync-feishu-table")
+    print(f"Source: {args.source}")
+    print(f"Table ID: {table_id}")
+    print(f"Dry-run: {args.dry_run}")
+    print()
+
+    try:
+        from movietrace.feishu.sync import sync_table
+
+        run_date = args.date or date.today().isoformat()
+
+        stats = sync_table(
+            json_path=args.source,
+            run_date=run_date,
+            app_id=app_id,
+            app_secret=app_secret,
+            app_token=app_token,
+            table_id=table_id,
+            dry_run=args.dry_run,
+        )
+
+        if stats.get("dry_run"):
+            print("\n[DRY-RUN] 完成预览")
+        else:
+            print(f"\n同步完成: total={stats['total']}, created={stats['created']}, updated={stats['updated']}, errors={stats['errors']}")
+
+        print("✓ sync-feishu-table complete")
+        return 0 if stats.get("errors", 0) == 0 else 1
+    except Exception as exc:
+        print(f"✗ sync-feishu-table failed: {exc}")
+        return 1
+
+
+# ── sync-feishu-doc ────────────────────────────────────────────────────────
+
+
+def cmd_sync_feishu_doc(args: argparse.Namespace) -> int:
+    """Sync latest.md as a Feishu document."""
+    cfg = _load_config()
+    fs_cfg = cfg.get("feishu_sync", {})
+    if not fs_cfg.get("enabled", True):
+        print("feishu_sync is disabled in config.yaml (enabled: false)")
+        return 0
+
+    folder_token = fs_cfg.get("doc_folder_token", "")
+
+    title = args.title or f"MovieTrace 每日发现 {date.today().isoformat()}"
+
+    print("MovieTrace sync-feishu-doc")
+    print(f"Source: {args.source}")
+    print(f"Title: {title}")
+    print(f"Dry-run: {args.dry_run}")
+    print()
+
+    try:
+        from movietrace.feishu.sync import sync_doc
+
+        result = sync_doc(
+            md_path=args.source,
+            title=title,
+            folder_token=folder_token,
+            dry_run=args.dry_run,
+        )
+
+        if result.get("dry_run"):
+            print("\n[DRY-RUN] 完成预览")
+        else:
+            print(f"\nDoc URL: {result.get('doc_url', 'N/A')}")
+            print(f"Doc token: {result.get('doc_token', 'N/A')}")
+
+        print("✓ sync-feishu-doc complete")
+        return 0
+    except Exception as exc:
+        print(f"✗ sync-feishu-doc failed: {exc}")
+        return 1
+
+
+# ── notify-feishu ──────────────────────────────────────────────────────────
+
+
+def cmd_notify_feishu(args: argparse.Namespace) -> int:
+    """Send a notification via Feishu bot."""
+    secrets = load_secrets()
+    feishu_secrets = secrets.get("feishu") or {}
+    user_open_id = feishu_secrets.get("notify_user_open_id", "")
+    if not user_open_id:
+        print("ERROR: feishu.notify_user_open_id not found in secrets.json")
+        return 1
+
+    from movietrace.feishu.notify import send_summary, send_alert
+
+    log_file = args.log_file or ""
+
+    if args.level == "success":
+        run_date = args.date or date.today().isoformat()
+
+        if args.stats_file:
+            with open(args.stats_file) as f:
+                stats = json.load(f)
+        else:
+            stats = {}
+
+        doc_url = args.doc_url or ""
+        ok = send_summary(user_open_id, run_date, stats, doc_url=doc_url, log_file=log_file)
+    else:
+        ok = send_alert(
+            user_open_id,
+            level=args.level,
+            title=args.title or "MovieTrace 运行异常",
+            detail=args.detail or "",
+            log_file=log_file,
+        )
+
+    if ok:
+        print("✓ notify-feishu sent")
+    else:
+        # Try Gmail fallback — credentials live in secrets.json → feishu.gmail
+        gmail_cfg = feishu_secrets.get("gmail", {})
+        if gmail_cfg.get("enabled"):
+            from movietrace.feishu.notify import send_email
+            sent = send_email(
+                smtp_user=gmail_cfg.get("smtp_user", ""),
+                smtp_password=gmail_cfg.get("smtp_password", ""),
+                to=gmail_cfg.get("smtp_user", ""),
+                subject=f"MovieTrace {args.level}: {args.title or 'Alert'}",
+                body=f"Level: {args.level}\nDetail: {args.detail or ''}\nLog: {log_file}",
+            )
+            if sent:
+                print("✓ Gmail fallback sent")
+                return 0
+
+        print("✗ notify-feishu failed (and no fallback available)")
+        return 1
+
+    return 0
+
+
 # ── inspect-updates ─────────────────────────────────────────────────────
 
 
@@ -847,6 +1009,28 @@ def main() -> None:
     p_inspect_up.add_argument("--id", help="Show detail for specific content_update_id")
     p_inspect_up.add_argument("--format", choices=["table", "json", "md"], default="table")
 
+    # sync-feishu-table
+    p_sync = sub.add_parser("sync-feishu-table", help="Sync discovery results to Feishu bitable")
+    p_sync.add_argument("--source", default="reports/latest.json", help="JSON source path")
+    p_sync.add_argument("--date", help="Run date YYYY-MM-DD (default: today)")
+    p_sync.add_argument("--dry-run", action="store_true")
+
+    # sync-feishu-doc
+    p_doc = sub.add_parser("sync-feishu-doc", help="Sync Markdown report as Feishu doc")
+    p_doc.add_argument("--source", default="reports/latest.md", help="Markdown source path")
+    p_doc.add_argument("--title", help="Document title (default: auto-generated)")
+    p_doc.add_argument("--dry-run", action="store_true")
+
+    # notify-feishu
+    p_notify = sub.add_parser("notify-feishu", help="Send Feishu notification")
+    p_notify.add_argument("--level", choices=["success", "error", "warning"], default="success")
+    p_notify.add_argument("--title", help="Notification title (for error/warning)")
+    p_notify.add_argument("--detail", help="Error detail")
+    p_notify.add_argument("--date", help="Run date YYYY-MM-DD")
+    p_notify.add_argument("--stats-file", help="JSON file with sync stats")
+    p_notify.add_argument("--doc-url", help="Feishu doc URL to include")
+    p_notify.add_argument("--log-file", help="Local log file path")
+
     # inspect-api-usage
     p_api_usage = sub.add_parser("inspect-api-usage", help="Query API usage log")
     p_api_usage.add_argument("--date", help="Filter: YYYY-MM-DD")
@@ -864,6 +1048,9 @@ def main() -> None:
         "baseline-track": cmd_baseline_track,
         "export-recommendations": cmd_export_recommendations,
         "export-baseline-updates": cmd_export_baseline_updates,
+        "sync-feishu-table": cmd_sync_feishu_table,
+        "sync-feishu-doc": cmd_sync_feishu_doc,
+        "notify-feishu": cmd_notify_feishu,
         "fetch-tmdb-trending": cmd_fetch_tmdb_trending,
         "fetch-trakt-trending": cmd_fetch_trakt_trending,
         "inspect-updates": cmd_inspect_updates,
