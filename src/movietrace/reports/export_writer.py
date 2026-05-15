@@ -337,7 +337,7 @@ def format_json(updates: list[dict]) -> str:
             "hot_score": u.get("hot_score"),
             "title": u.get("title"),
             "series_name": u.get("series_name"),
-            "tmdb_tv_id": u.get("tmdb_tv_id"),
+            "tmdb_tv_id": u.get("tmdb_tv_id") or _extract_tmdb_tv_id(u.get("content_update_id", "")),
             "season": source_info.get("season"),
             "seasons": source_info.get("seasons"),
             "baseline_local_max_season": blm_value,
@@ -371,6 +371,14 @@ def _baseline_local_max(source_info: dict, update: dict) -> tuple[int | None, bo
     if season is not None:
         return max(season - 1, 0), True
     return _to_int(update.get("stored_local_max_season")), True
+
+
+def _extract_tmdb_tv_id(content_update_id: str) -> str | None:
+    """Extract TMDb TV ID from 'discovery:tv:{id}:{date}' format IDs."""
+    parts = content_update_id.split(":") if content_update_id else []
+    if len(parts) >= 3 and parts[0] == "discovery" and parts[1] == "tv":
+        return parts[2]
+    return None
 
 
 def _to_int(value) -> int | None:

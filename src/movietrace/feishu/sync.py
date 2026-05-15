@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import subprocess
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone as _UTC
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -89,13 +89,17 @@ def _request_json(
         raise RuntimeError(f"Feishu API HTTP {e.code}: {body[:500]}") from e
 
 
-def _to_epoch_ms(dt_str: str) -> int | None:
-    """Convert 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS' (CST) to Feishu epoch ms."""
+def _to_epoch_ms(dt_str: str, tz=None) -> int | None:
+    """Convert 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS' to Feishu epoch ms.
+
+    tz defaults to CST (Asia/Shanghai). Pass _UTC for DB-stored UTC timestamps.
+    """
     if not dt_str:
         return None
     try:
         fmt = "%Y-%m-%d %H:%M:%S" if len(dt_str) > 10 else "%Y-%m-%d"
-        return int(datetime.strptime(dt_str[:19], fmt).replace(tzinfo=TZ).timestamp() * 1000)
+        used_tz = tz if tz is not None else TZ
+        return int(datetime.strptime(dt_str[:19], fmt).replace(tzinfo=used_tz).timestamp() * 1000)
     except (ValueError, TypeError):
         return None
 
@@ -248,8 +252,10 @@ def sync_table(
                     source_statuses[src] = st
                 source_status_str = ", ".join(parts)
 
+            # event_written_at_utc / created_at are both stored as UTC in the DB
             detected_at = _to_epoch_ms(
-                rec.get("event_written_at") or rec.get("created_at", "")
+                rec.get("event_written_at_utc") or rec.get("created_at", ""),
+                tz=_UTC,
             )
             fields: dict = {
                 "发现日期":          _to_epoch_ms(run_date),
