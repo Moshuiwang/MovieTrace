@@ -11,15 +11,20 @@ from __future__ import annotations
 
 import json
 import subprocess
-import urllib.request
 from datetime import datetime, timezone as _UTC
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from movietrace.feishu.baseline import fetch_tenant_access_token
+from movietrace.feishu._http import (
+    OPEN_API_BASE,
+    request_json,
+    batch_create_records,
+    batch_update_records,
+    unwrap_text_field,
+)
 
 TZ = ZoneInfo("Asia/Shanghai")
-OPEN_API_BASE = "https://open.feishu.cn/open-apis"
 
 # ── Field ID map (table: 发现运行日志, 2026-05-16) ─────────────────────────
 # Field IDs are stable across renames; Chinese names in comments for readability.
@@ -69,27 +74,6 @@ F = {
 
 # ── REST API helpers ──────────────────────────────────────────────────────
 
-def _request_json(
-    method: str,
-    url: str,
-    *,
-    token: str | None = None,
-    payload: dict | None = None,
-) -> dict:
-    headers = {"Content-Type": "application/json; charset=utf-8"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    data = None
-    if payload is not None:
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Feishu API HTTP {e.code}: {body[:500]}") from e
-
 
 def _to_epoch_ms(dt_str: str, tz=None) -> int | None:
     """Convert 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS' to Feishu epoch ms.
@@ -133,7 +117,7 @@ def _list_records_for_date(
         if page_token:
             payload["page_token"] = page_token
 
-        resp = _request_json("POST", url, token=token, payload=payload)
+        resp = request_json("POST", url, token=token, payload=payload)
         if resp.get("code") != 0:
             raise RuntimeError(f"list records for date failed: {resp}")
 
@@ -141,9 +125,7 @@ def _list_records_for_date(
         for item in data.get("items", []):
             fields = item.get("fields", {})
             # API may return rich-text segments for text fields
-            cid_val = fields.get("content_update_id", "")
-            if isinstance(cid_val, list):
-                cid_val = "".join(seg.get("text", "") for seg in cid_val)
+            cid_val = unwrap_text_field(fields.get("content_update_id", ""))
             record_id = item.get("record_id", "")
             if cid_val and record_id:
                 lookup[cid_val] = record_id
@@ -155,24 +137,6 @@ def _list_records_for_date(
             break
 
     return lookup
-
-
-def _create_records(token: str, app_token: str, table_id: str, records: list[dict]) -> None:
-    """Batch create records. Each record is {fields: {field_id: value}}."""
-    url = f"{OPEN_API_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_create"
-    payload = {"records": records}
-    resp = _request_json("POST", url, token=token, payload=payload)
-    if resp.get("code") != 0:
-        raise RuntimeError(f"batch create records failed: {resp}")
-
-
-def _update_record(token: str, app_token: str, table_id: str, record_id: str, fields: dict) -> None:
-    """Update a single record's fields, keyed by field_id."""
-    url = f"{OPEN_API_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/records/{record_id}"
-    payload = {"fields": fields}
-    resp = _request_json("PUT", url, token=token, payload=payload)
-    if resp.get("code") != 0:
-        raise RuntimeError(f"update record {record_id} failed: {resp}")
 
 
 # ── Main sync function ────────────────────────────────────────────────────
@@ -314,20 +278,21 @@ def sync_table(
     for start in range(0, len(to_create), batch_size):
         batch = to_create[start:start + batch_size]
         try:
-            _create_records(token, app_token, table_id, batch)
+            batch_create_records(token, app_token, table_id, batch)
         except Exception as e:
             print(f"  ERROR batch create [{start}:{start+len(batch)}]: {e}")
             stats["errors"] += len(batch)
             stats["created"] -= len(batch)
 
-    # 5. Update existing records one by one
-    for record_id, fields in to_update:
+    # 5. Batch update existing records (500 per call via _http)
+    if to_update:
+        updates = [{"record_id": rid, "fields": fields} for rid, fields in to_update]
         try:
-            _update_record(token, app_token, table_id, record_id, fields)
+            batch_update_records(token, app_token, table_id, updates)
         except Exception as e:
-            print(f"  ERROR update record {record_id}: {e}")
-            stats["errors"] += 1
-            stats["updated"] -= 1
+            print(f"  ERROR batch update {len(to_update)} records: {e}")
+            stats["errors"] += len(to_update)
+            stats["updated"] -= len(to_update)
 
     stats["new_discovery"] = new_discovery_count
     stats["new_season"] = new_season_count

@@ -513,6 +513,20 @@ def cmd_export_baseline_updates(args: argparse.Namespace) -> int:
         return 1
 
 
+# ── Feishu credential helpers ─────────────────────────────────────────────
+
+
+def _load_feishu_creds(secrets: dict) -> tuple[str, str, str] | None:
+    """Extract (app_id, app_secret, base_app_token) from secrets dict. Returns None if any missing."""
+    feishu = secrets.get("feishu", {})
+    app_id = feishu.get("app_id")
+    app_secret = feishu.get("app_secret")
+    app_token = feishu.get("base_app_token")
+    if not all([app_id, app_secret, app_token]):
+        return None
+    return app_id, app_secret, app_token
+
+
 # ── sync-feishu-table ─────────────────────────────────────────────────────
 
 
@@ -525,14 +539,13 @@ def cmd_sync_feishu_table(args: argparse.Namespace) -> int:
         return 0
 
     secrets = load_secrets()
-    feishu_secrets = secrets.get("feishu") or {}
-    app_id = feishu_secrets.get("app_id", "")
-    app_secret = feishu_secrets.get("app_secret", "")
-    app_token = feishu_secrets.get("base_app_token", "")
-    if not all([app_id, app_secret, app_token]):
+    creds = _load_feishu_creds(secrets)
+    if creds is None:
         print("ERROR: feishu credentials (app_id, app_secret, base_app_token) not found in secrets.json")
         return 1
+    app_id, app_secret, app_token = creds
 
+    feishu_secrets = secrets.get("feishu") or {}
     table_id = feishu_secrets.get("discovery_table_id", "")
     if not table_id:
         print("ERROR: feishu.discovery_table_id not found in secrets.json")
@@ -820,6 +833,72 @@ def cmd_fetch_trakt_trending(args: argparse.Namespace) -> int:
         return 1
 
 
+# ── sync-feishu-gap-table ────────────────────────────────────────────────────
+
+
+def cmd_sync_feishu_gap_table(args: argparse.Namespace) -> int:
+    """Sync A库缺口 snapshot table to Feishu bitable.
+
+    Reads current DB state directly (not content_updates events).
+    Upsert key: TMDb ID.
+    """
+    cfg = _load_config()
+    fs_cfg = cfg.get("feishu_sync", {})
+    if not fs_cfg.get("enabled", True):
+        print("feishu_sync is disabled in config.yaml (enabled: false)")
+        return 0
+
+    secrets = load_secrets()
+    creds = _load_feishu_creds(secrets)
+    if creds is None:
+        print("ERROR: feishu credentials (app_id, app_secret, base_app_token) not found in secrets.json")
+        return 1
+    app_id, app_secret, app_token = creds
+
+    feishu_secrets = secrets.get("feishu") or {}
+    table_id = feishu_secrets.get("gap_table_id", "")
+    if not table_id:
+        print("ERROR: feishu.gap_table_id not found in secrets.json — run step 4 first")
+        return 1
+
+    print("MovieTrace sync-feishu-gap-table")
+    print(f"Table ID: {table_id}")
+    print(f"Dry-run: {args.dry_run}")
+    print()
+
+    try:
+        from movietrace.feishu.gap_sync import compute_current_gaps, sync_gap_table
+        from movietrace.db.schema import connect_database
+
+        conn = connect_database(args.db or "data/movietrace.db")
+        rows = compute_current_gaps(conn)
+        conn.close()
+
+        print(f"计算得 {len(rows)} 条缺口行")
+        print()
+
+        stats = sync_gap_table(
+            rows,
+            app_id=app_id,
+            app_secret=app_secret,
+            app_token=app_token,
+            table_id=table_id,
+            dry_run=args.dry_run,
+        )
+
+        if stats.get("dry_run"):
+            print("\n[DRY-RUN] 完成预览")
+        else:
+            print(f"\n同步完成: total={stats['total']}, "
+                  f"created={stats['created']}, updated={stats['updated']}, errors={stats['errors']}")
+
+        print("✓ sync-feishu-gap-table complete")
+        return 0 if stats.get("errors", 0) == 0 else 1
+    except Exception as exc:
+        print(f"✗ sync-feishu-gap-table failed: {exc}")
+        return 1
+
+
 # ── inspect-api-usage ─────────────────────────────────────────────────────
 
 
@@ -1038,6 +1117,11 @@ def main() -> None:
     p_api_usage.add_argument("--service", help="Filter: tmdb, trakt, omdb, flixpatrol")
     p_api_usage.add_argument("--format", choices=["table", "json"], default="table")
 
+    # sync-feishu-gap-table
+    p_gap = sub.add_parser("sync-feishu-gap-table", help="Sync A库缺口 snapshot to Feishu bitable")
+    p_gap.add_argument("--db", help="Database path")
+    p_gap.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
 
     handlers = {
@@ -1055,6 +1139,7 @@ def main() -> None:
         "fetch-trakt-trending": cmd_fetch_trakt_trending,
         "inspect-updates": cmd_inspect_updates,
         "inspect-api-usage": cmd_inspect_api_usage,
+        "sync-feishu-gap-table": cmd_sync_feishu_gap_table,
     }
 
     handler = handlers.get(args.command)
