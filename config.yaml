@@ -3,12 +3,10 @@
 
 baseline_tracking:
   enabled: true
-  # routine mode uses status-filtered polling; catch-up mode ignores these coverage
-  # windows and polls all non-skip virtual_series once.
-  urgent_coverage_days: 14
-  normal_coverage_days: 21
-  low_coverage_days: 180
-  daily_max_calls: 50
+  # routine mode polls all Returning Series / In Production (or null status);
+  # catch-up mode polls all non-skip virtual_series once.
+  # daily_max_calls hard cap; 2000 is effectively no limit for current scale.
+  daily_max_calls: 2000
   api_interval_seconds: 1
 
 source_fetch_limits:

@@ -41,16 +41,15 @@ class PollSchedulerTest(unittest.TestCase):
         plan = build_daily_poll_plan(self.conn)
         self.assertEqual(len(plan), 0)
 
-    def test_urgent_coverage_14_days(self):
+    def test_routine_polls_all_returning_like(self):
         from movietrace.pipeline.poll_scheduler import build_daily_poll_plan
 
         for i in range(28):
-            self._insert_vs(str(i), f"Urgent {i}", "urgent")
+            self._insert_vs(str(i), f"Show {i}", "urgent")
 
         plan = build_daily_poll_plan(self.conn)
-        urgent = [p for p in plan if p.poll_priority == "urgent"]
-        # 28 items / 14 days = 2 per day
-        self.assertGreater(len(urgent), 0)
+        # All 28 inserted via _insert_vs have null tmdb_status, so all match
+        self.assertEqual(len(plan), 28)
 
     def test_null_last_polled_first(self):
         from movietrace.pipeline.poll_scheduler import build_daily_poll_plan
@@ -70,7 +69,7 @@ class PollSchedulerTest(unittest.TestCase):
         for i in range(100):
             self._insert_vs(str(i), f"Show {i}", "urgent")
 
-        config = {"baseline_tracking": {"daily_max_calls": 5, "urgent_coverage_days": 1}}
+        config = {"baseline_tracking": {"daily_max_calls": 5}}
         plan = build_daily_poll_plan(self.conn, config)
         self.assertLessEqual(len(plan), 5)
 
