@@ -1,0 +1,63 @@
+=== MovieTrace baseline-track ===
+开始: 2026-05-16 02:32:43 +08
+MovieTrace baseline-track
+Dry-run: False
+Mode: routine
+
+Progress: 1/85 [cache] FROM (tmdb=124364) detected=0
+Progress: 10/85 [cache] Ginny & Georgia (tmdb=117581) detected=0
+Progress: 20/85 [api] Wednesday (tmdb=119051) detected=0
+Progress: 30/85 [cache] Selling the OC (tmdb=139566) detected=0
+Progress: 40/85 [cache] The Gilded Age (tmdb=81723) detected=0
+Progress: 50/85 [api] Abbott Elementary (tmdb=125935) detected=0
+Progress: 60/85 [api] Shōgun (tmdb=126308) detected=0
+Progress: 70/85 [cache] Love Is Blind (tmdb=99353) detected=0
+Progress: 80/85 [cache] SHErlock (tmdb=224755) detected=0
+Progress: 85/85 [api] Bleach (tmdb=30984) detected=0
+Plan size: 85
+Polled:    85
+Detected:  0
+Written:   0
+Errors:    0
+
+✓ Baseline tracking complete
+MovieTrace export-baseline-updates
+Days: 7
+Output dir: reports
+
+MD:   reports/baseline_updates_2026-05-16_0237.md
+JSON: reports/baseline_updates_2026-05-16_0237.json
+Total items: 0
+
+✓ Baseline export complete
+MovieTrace sync-feishu-table
+Source: reports/baseline_latest.json
+Table ID: tbl84xx4WNv54An9
+Dry-run: False
+
+读取 0 条记录 from reports/baseline_latest.json
+运行日期: 2026-05-16
+Table ID:  tbl84xx4WNv54An9
+获取飞书 token...
+加载 2026-05-16 已有记录...
+  已有记录: 156 条
+同步记录...
+
+同步完成: total=0, created=0, updated=0, errors=0
+✓ sync-feishu-table complete
+MovieTrace sync-feishu-doc
+Source: reports/baseline_latest.md
+Title: MovieTrace 基线追踪 2026-05-16
+Dry-run: False
+
+
+Doc URL: https://www.feishu.cn/docx/Dn9kdvveYoPlRixtHljcQzlUnee
+Doc token: Dn9kdvveYoPlRixtHljcQzlUnee
+✓ sync-feishu-doc complete
+✓ notify-feishu sent
+
+=== 运行摘要 ===
+结束: 2026-05-16 02:37:14 +08
+耗时: 271s
+退出码: 0 (track=0 export=0 sync=0)
+状态: ✅ 正常完成

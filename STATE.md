@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-16 01:15 +08
-**更新人：** Claude Code CLI（deepseek-v4-flash）+ moshuiwang
+**最后更新：** 2026-05-16 04:00 +08
+**更新人：** Claude Code CLI（Opus 4.7 + Sonnet 4.6 子代理）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -34,10 +34,26 @@
 | **Phase 1.18：热点发现与基线追踪节奏拆分** | ✅ 已完成 |
 | **Phase 1.19：baseline 报告可观测性修正** | ✅ 已完成 |
 | **Phase 1.20：code review 跟进修正** | ✅ 全部完成 |
+| **Phase 1.21：A库缺口快照子表（状态快照）** | ✅ 全部完成 |
 
-**测试：** 451 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
+**测试：** 505 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
 
 ## 最近完成
+
+### P1.21：A库缺口快照子表（2026-05-16）
+- 任务包：[`docs/tasks/p1.21_a_lib_gap_snapshot_table.md`](docs/tasks/p1.21_a_lib_gap_snapshot_table.md)，决策：[ADR-0013](docs/decisions/0013-baseline-gap-snapshot-table.md)
+- **问题**：2026-05-15 morning "清扫 151 条 new_season" 后，local_max_season 未回滚，导致 baseline catch-up 第二次跑 detected=0；事件日志驱动的飞书表展现层不可靠
+- **解决**：飞书新增子表 "A库缺口"（`tbl1NNU8kmlLKpLm`），直接从 `virtual_series + canonical_items + api_cache` 实时算缺口，**不依赖 content_updates 事件历史**
+- 行粒度：1 行 = 1 series；upsert by TMDb ID
+- 范围：season-level；表结构预留 episode-level 字段（缺口类型 / 缺口集）
+- 状态机：人工标"待补/部分补充/已补/跳过"，系统提示"建议已补"（缺口数=0 时）
+- 新代码：`src/movietrace/feishu/_http.py`（共享 REST helpers）、`src/movietrace/feishu/gap_sync.py`、CLI `sync-feishu-gap-table`、`tests/test_gap_sync.py`
+- 重构：`sync.py` 抽取重复 HTTP 函数到 `_http.py`，per-record PUT 改为 `batch_update_records`
+- `baseline_run.sh` 集成新同步步骤，GAP_EXIT 纳入退出码 + 错误告警
+- 重置 local_max_season（用 A 库 max 为起点）+ catch-up 冒烟：plan 272、polled 272、detected 258、写入 147 条 new_season
+- 飞书两张子表全部清空重填：A库缺口 142 行（仅有缺口的），热点发现 150 行（最近 7 天 hot 候选）
+- 测试 505 passed
+- DB 备份：`data/movietrace_backup_20260516_0326_pre_p121.db`
 
 ### 飞书新 App 迁移 + 多维表格重建（2026-05-16）
 - 飞书凭据切换至新 App `cli_aa8d80407af89bdf`，用户 `ou_15b9e43c2f80fadbe998791b4246a86f`
@@ -129,7 +145,7 @@
 | `upstream_episodes` | 6,562 | A 库子节目 |
 | `canonical_items` | ~905 | TV season 509 · TV series 289 · Movie 107 |
 | `virtual_series` | 307 | urgent 85 · low 187 · skip 35 |
-| `content_updates` | ~227 | 事件历史表（schema 14）；new_discovery 76 · new_season 151 |
+| `content_updates` | ~298 | 事件历史表（schema 14）；new_discovery 151 · new_season 147 |
 
 - TV 链接率：790/790 = 100%
 - `imdb_id` 全空 · 85% 节目名含 `S\d\d` 季号
@@ -188,5 +204,9 @@ PR #1 已合入，分支已删除。
 - **CI：** `.github/workflows/ci.yml`（PR + main push）
 - **Phase 1 全部 43 个任务包执行完毕**
 - **P1.17 跳过**（不满足真实运行 3-7 天前置条件）
-- **飞书运营同步**：`src/movietrace/feishu/notify.py`、`src/movietrace/feishu/sync.py` 已实现（每日快照模式）；CLI 新增 `sync-feishu-table`、`sync-feishu-doc`、`notify-feishu` 三条命令；shell 脚本已集成同步步骤；已重构为 field_id 定位；451 tests passed
-	- **飞书多维表格**：base `P6y3bMbAXazlL5sui4Mc6B5znMb`，table `tbl84xx4WNv54An9`（名称"发现运行日志"），18 字段，field_id 映射见 `sync.py:50-68`
+- **飞书运营同步**：`src/movietrace/feishu/notify.py`、`src/movietrace/feishu/sync.py`、`gap_sync.py` 已实现；CLI `sync-feishu-table`、`sync-feishu-doc`、`notify-feishu`、`sync-feishu-gap-table`；shell 脚本集成；505 tests passed
+	- **飞书多维表格**：base `P6y3bMbAXazlL5sui4Mc6B5znMb`，三个子表：
+		- `tbl84xx4WNv54An9`（"热点发现"）：每日 hot discoveries，append-by-date，150 行
+		- `tbl1NNU8kmlLKpLm`（"A库缺口"）：实时状态快照，upsert by series，142 行
+		- `tblPXLrWEEf4bhtM`（"字段说明"）：字段释义
+	- **共享 HTTP 模块**：`src/movietrace/feishu/_http.py`（`request_json` / `batch_create_records` / `batch_update_records` / `unwrap_text_field`）
