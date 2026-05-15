@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-15 13:20 +08
-**更新人：** Claude Opus 4.7（DeepSeek V4 Pro；API / bash workspace）+ moshuiwang
+**最后更新：** 2026-05-16 01:07 +08
+**更新人：** Claude Sonnet 4.6（claude-sonnet-4-6；Claude Code CLI）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -130,7 +130,7 @@
 
 ## 进行中任务
 
-（无。P1.20-A/B 已完成，项目继续处于 V1 运行观察期。）
+（无。P1.20-A/B 已完成，飞书运营同步代码已实现并清理，待用户决策提交。）
 
 ## V1 收口任务包（P1.14-P1.17）：全部完成
 
@@ -157,7 +157,7 @@ PR #1 已合入，分支已删除。
 
 ## 待用户决策
 
-- **飞书运营同步需求继续打磨**：飞书表使用事件池还是每日快照、通知对象、同步字段范围、是否锁定 `lark-cli` 版本
+- **飞书运营同步提交**：`notify.py` / `sync.py` / `cli.py` / shell 脚本已实现并通过 /simplify 清理，测试 499 passed，等待 review 后提交
 
 ## V2 backlog
 
@@ -180,4 +180,4 @@ PR #1 已合入，分支已删除。
 - **CI：** `.github/workflows/ci.yml`（PR + main push）
 - **Phase 1 全部 43 个任务包执行完毕**
 - **P1.17 跳过**（不满足真实运行 3-7 天前置条件）
-- **飞书运营同步**：需求草案已落在 `docs/notes/feishu_ops_sync_requirements.md`；尚未建任务包、尚未实现代码；明天优先继续产品打磨
+- **飞书运营同步**：`src/movietrace/feishu/notify.py`、`src/movietrace/feishu/sync.py` 已实现（每日快照模式）；CLI 新增 `sync-feishu-table`、`sync-feishu-doc`、`notify-feishu` 三条命令；shell 脚本已集成同步步骤；经 /simplify 清理后 499 tests passed，待提交
