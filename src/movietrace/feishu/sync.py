@@ -32,7 +32,8 @@ OPEN_API_BASE = "https://open.feishu.cn/open-apis"
 #   fldnywX91r       → 优先级         (select: P0/P1/P2)
 #   fldjqIzdkN       → hot_score     (number)
 #   fld0yUemzc       → 季号          (number)
-#   fldP8KPqVk       → TMDb TV ID    (text)
+#   fldP8KPqVk       → TMDb ID       (text)
+#   fld1f3gP2r       → A库最新季      (text: "S{n}" or "无")
 #   fldL0PhEUG       → 是否低置信度    (select: 是/否)
 #   fldjQdgnUW       → 数据源状态      (text)
 #   fldkSISjWq       → 检测时间       (date: yyyy/MM/dd HH:mm)
@@ -53,7 +54,8 @@ F = {
     "优先级":            "fldnywX91r",
     "hot_score":        "fldjqIzdkN",
     "季号":             "fld0yUemzc",
-    "TMDb TV ID":       "fldP8KPqVk",
+    "TMDb ID":          "fldP8KPqVk",
+    "A库最新季":         "fld1f3gP2r",
     "是否低置信度":        "fldL0PhEUG",
     "数据源状态":         "fldjQdgnUW",
     "检测时间":          "fldkSISjWq",
@@ -266,7 +268,8 @@ def sync_table(
                 "优先级":            str(rec.get("priority", "")),
                 "hot_score":        float(rec.get("hot_score") or 0),
                 "季号":             int(rec.get("season") or 0),
-                "TMDb TV ID":       str(rec.get("tmdb_tv_id") or ""),
+                "TMDb ID":          str(rec.get("tmdb_id") or rec.get("tmdb_tv_id") or ""),
+                "A库最新季":         f"S{rec['upstream_max_season']}" if rec.get("upstream_max_season") is not None else "无",
                 "是否低置信度":        "是" if rec.get("match_confidence_low") else "否",
                 "数据源状态":         source_status_str,
                 "同步时间":          now_ts,

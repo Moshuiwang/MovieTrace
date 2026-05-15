@@ -118,17 +118,24 @@ def _load_content_updates(conn, days: int, *, report_kind: str = "all") -> list[
                   cu.created_at,
                   ci.title, ci.content_type, ci.content_granularity,
                   vs.name as series_name, vs.tmdb_tv_id,
-                  vs.local_max_season, vs.tmdb_number_of_seasons
+                  vs.local_max_season, vs.tmdb_number_of_seasons,
+                  upstream_agg.upstream_max_season
            from content_updates cu
            join canonical_items ci on ci.id = cu.canonical_item_id
            left join virtual_series vs on vs.id = ci.virtual_series_id
+           left join (
+               select ci2.virtual_series_id, max(ci2.season_number) as upstream_max_season
+               from canonical_items ci2
+               join external_ids ei on ei.canonical_item_id = ci2.id and ei.source = 'upstream'
+               group by ci2.virtual_series_id
+           ) upstream_agg on upstream_agg.virtual_series_id = ci.virtual_series_id
            where cu.created_at >= datetime('now', ?)
              {type_clause}
            order by cu.created_at desc""",
         (f"-{days} days",),
     ).fetchall()
 
-    return [
+    result = [
         {
             "id": r[0],
             "content_update_id": r[1],
@@ -145,9 +152,33 @@ def _load_content_updates(conn, days: int, *, report_kind: str = "all") -> list[
             "tmdb_tv_id": r[12],
             "stored_local_max_season": r[13],
             "stored_tmdb_number_of_seasons": r[14],
+            "upstream_max_season": r[15],
         }
         for r in rows
     ]
+
+    # For new_discovery TV items without virtual_series, fill tmdb_number_of_seasons
+    # from api_cache so the season field can be populated.
+    need_cache = [
+        (i, parts[2])
+        for i, row in enumerate(result)
+        if row["stored_tmdb_number_of_seasons"] is None
+        for parts in [(row["content_update_id"] or "").split(":")]
+        if len(parts) >= 3 and parts[0] == "discovery" and parts[1] == "tv"
+    ]
+    if need_cache:
+        cache_keys = [f"tmdb:detail:{tmdb_id}:tv" for _, tmdb_id in need_cache]
+        phs = ",".join("?" for _ in cache_keys)
+        cache_rows = conn.execute(
+            f"select cache_key, json_extract(response_json, '$.number_of_seasons') from api_cache where cache_key in ({phs})",
+            cache_keys,
+        ).fetchall()
+        cache_map = {r[0].split(":")[2]: int(r[1]) for r in cache_rows if r[1] is not None}
+        for i, tmdb_id in need_cache:
+            if tmdb_id in cache_map:
+                result[i]["stored_tmdb_number_of_seasons"] = cache_map[tmdb_id]
+
+    return result
 
 
 def _build_baseline_funnel(conn, report_items: int) -> dict:
@@ -330,6 +361,16 @@ def format_json(updates: list[dict]) -> str:
     for u in updates:
         source_info = _parse_source_json(u.get("source_summary_json", ""))
         blm_value, blm_fallback = _baseline_local_max(source_info, u)
+        tmdb_seasons = (
+            source_info.get("tmdb_number_of_seasons")
+            if source_info.get("tmdb_number_of_seasons") is not None
+            else u.get("stored_tmdb_number_of_seasons")
+        )
+        raw_season = source_info.get("season")
+        # For new_discovery TV, season field is not set; use total seasons from TMDb instead.
+        if not raw_season and u.get("update_type") == "new_discovery":
+            raw_season = tmdb_seasons
+        upstream = u.get("upstream_max_season")
         export.append({
             "content_update_id": u.get("content_update_id"),
             "update_type": u.get("update_type"),
@@ -337,14 +378,12 @@ def format_json(updates: list[dict]) -> str:
             "hot_score": u.get("hot_score"),
             "title": u.get("title"),
             "series_name": u.get("series_name"),
-            "tmdb_tv_id": u.get("tmdb_tv_id") or _extract_tmdb_tv_id(u.get("content_update_id", "")),
-            "season": source_info.get("season"),
+            "tmdb_id": u.get("tmdb_tv_id") or _extract_tmdb_id(u.get("content_update_id", "")),
+            "season": raw_season,
             "seasons": source_info.get("seasons"),
             "baseline_local_max_season": blm_value,
             "baseline_local_max_season_is_fallback": blm_fallback,
-            "tmdb_number_of_seasons": source_info.get("tmdb_number_of_seasons")
-            if source_info.get("tmdb_number_of_seasons") is not None
-            else u.get("stored_tmdb_number_of_seasons"),
+            "tmdb_number_of_seasons": tmdb_seasons,
             "tmdb_status": source_info.get("tmdb_status"),
             "in_production": source_info.get("in_production"),
             "last_episode_to_air": source_info.get("last_episode_to_air"),
@@ -355,6 +394,7 @@ def format_json(updates: list[dict]) -> str:
             "event_written_at_utc": u.get("created_at"),
             "source_data_status": source_info.get("source_data_status"),
             "created_at": u.get("created_at"),
+            "upstream_max_season": upstream,
         })
     return json.dumps(export, indent=2, ensure_ascii=False)
 
@@ -373,10 +413,10 @@ def _baseline_local_max(source_info: dict, update: dict) -> tuple[int | None, bo
     return _to_int(update.get("stored_local_max_season")), True
 
 
-def _extract_tmdb_tv_id(content_update_id: str) -> str | None:
-    """Extract TMDb TV ID from 'discovery:tv:{id}:{date}' format IDs."""
+def _extract_tmdb_id(content_update_id: str) -> str | None:
+    """Extract TMDb ID from 'discovery:{tv|movie}:{id}:{date}' format IDs."""
     parts = content_update_id.split(":") if content_update_id else []
-    if len(parts) >= 3 and parts[0] == "discovery" and parts[1] == "tv":
+    if len(parts) >= 3 and parts[0] == "discovery":
         return parts[2]
     return None
 
