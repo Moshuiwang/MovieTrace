@@ -12,12 +12,12 @@ DEFAULT_CONFIG_PATH = str(_PROJECT_ROOT / "config/scoring_weights.yaml")
 
 DEFAULT_WEIGHTS: dict = {
     "weights": {
-        "flixpatrol": 0.30,
+        "flixpatrol": 0.10,
         "tmdb_popularity": 0.15,
-        "trakt": 0.10,
-        "tmdb_rating": 0.10,
-        "imdb_rating": 0.10,
-        "platform_weight": 0.10,
+        "trakt": 0.15,
+        "tmdb_rating": 0.15,
+        "imdb_rating": 0.15,
+        "platform_weight": 0.15,
         "content_type": 0.05,
         "freshness": 0.05,
         "language": 0.05,
