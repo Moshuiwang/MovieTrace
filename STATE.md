@@ -219,6 +219,16 @@
 
 - **P1.22 编号保留**给 episode 级缺口检测（详见 P1.21.6 任务包非目标 § episode）
 
+## Review 跟进项（push 前发现的 minor，非阻塞）
+
+> 2026-05-16 push 前 review 发现，未来任务包可顺手清理。
+
+1. **P1.21.6 测试空白** — `src/movietrace/feishu/_http.py:batch_delete_records` 和 `gap_sync.py:sync_gap_table` step 6（删除追上的行）无单元测试，仅靠真实 smoke 覆盖。建议加 mock 测试覆盖 happy path + chunk 边界。
+2. **weekly_report.py `_lookup_title`** — 第 30-46 行每条 pending series 单独 `sqlite3.connect()`，except 分支不关闭依赖 GC。每周 Top 10 ~10 次连接，可接受。建议用 `with` 或一次连接复用。
+3. **entity_matching.py 死代码** — `match_baseline_items` / `_load_baseline_items` / `main()`（行 121 / 319 / 888）仍引用已 drop 的 `baseline_items` / `match_candidates`。无活跃 CLI 调用但 ADR-0014 措辞"保留 entity_matching.py"不够精确，应明确保留的是辅助函数，不是 Phase 0 main 入口。
+4. **scripts/weekly_feedback.sh 缺 TZ** — 其他两个 `daily_run.sh` / `baseline_run.sh` 已加 `export TZ='Asia/Shanghai'`，本脚本漏。pull.py 内部用 ZoneInfo 安全，但日志文件名 `weekly_feedback_$(date +%Y%m%d_%H%M).log` 会跟随系统 TZ。
+5. **sync_doc 入口校验** — `feishu/sync.py:sync_doc` 在 `folder_token=""` 时透传 `mount_key=""` 给飞书 import_task API，API 会报错但提示不够友好。建议在函数开头 `if not folder_token and not dry_run: raise RuntimeError(...)`。
+
 ## V1 收口任务包（P1.14-P1.17）：全部完成
 
 PR #1 已合入，分支已删除。
