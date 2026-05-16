@@ -6,7 +6,7 @@
 
 ---
 
-**最后更新：** 2026-05-16 18:30 +08
+**最后更新：** 2026-05-16 19:10 +08
 **更新人：** Claude Code CLI（Sonnet 4.6）+ moshuiwang
 **所在分支：** `main`
 
@@ -39,11 +39,21 @@
 | **Phase 1.21.6：A 库缺口表数据质量修正** | ✅ 全部完成 |
 | **Phase 1.21.7：ADR-0007 翻转前遗留 schema 清理** | ✅ 全部完成 |
 | **Phase 1.21.8：飞书集成代码清理批次（review Tier 1）** | ✅ 全部完成 |
-| **Phase 1.23：飞书运营反馈回流（只读）+ V1 观察期周报** | 📋 任务包草案待执行 |
+| **Phase 1.23：飞书运营反馈回流（只读）+ V1 观察期周报** | ✅ 全部完成 |
 
-**测试：** 400 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过；P1.21.7 删除 119 个死代码测试）
+**测试：** 417 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过；P1.21.7 删除 119 个死代码测试，P1.23 新增 17）
 
 ## 最近完成
+
+### P1.23：飞书运营反馈回流（只读）+ V1 观察期周报（2026-05-16 19:10 +08）
+- **feedback/pull.py**：`pull_hot_table`（近 N 天，客户端日期过滤）+ `pull_gap_table`（全量快照）；分页 500/页；3 次重试指数退避
+- **feedback/weekly_report.py**：A-E 五节周报（基本信息/热点统计/缺口统计/关键案例/V2 触发检查）；回填率/采纳率分母为 0 时显示 N/A；ISO 周文件名
+- **CLI**：`pull-feishu-feedback` + `export-feedback-report` 两个子命令
+- **scripts/weekly_feedback.sh**：一键 pull+export；非零退出触发飞书告警；不接 cron
+- **feishu_feedback_spec.md**：运营字段填写规范（选项口径/何时填/不填影响）
+- **feedback_log_template.md**：改写为 AI 自动生成说明
+- **测试**：17 个用例（8 pull + 9 weekly_report）；476 passed 在 worktree
+- **真实 smoke**：拉取 150 hot records + 68 gap records，生成 reports/feedback/feedback_log_2026-W20.md
 
 ### P1.21.7：ADR-0007 翻转前遗留 schema 清理（2026-05-16 18:30 +08）
 - **Migration 016**：新增 `016_drop_legacy_tables.sql`，DROP IF EXISTS 删除 6 张死表（feishu_import_runs / source_records / baseline_items / candidates / candidate_matches / match_candidates）
