@@ -180,8 +180,21 @@ class TestSyncDoc(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False) as f:
             f.write("# Test\n"); tmp = f.name
         try:
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(RuntimeError) as ctx:
                 sync_doc(tmp, "Title")
+            self.assertIn("app_id", str(ctx.exception))
+        finally:
+            os.unlink(tmp)
+
+    def test_raises_without_folder_token(self):
+        from movietrace.feishu.sync import sync_doc
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False) as f:
+            f.write("# Test\n"); tmp = f.name
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                sync_doc(tmp, "Title", app_id="a", app_secret="s")
+            self.assertIn("folder_token", str(ctx.exception))
         finally:
             os.unlink(tmp)
 
@@ -218,7 +231,7 @@ class TestSyncDoc(unittest.TestCase):
                     with patch("movietrace.feishu.sync.request_json") as mock_rj:
                         mock_rj.side_effect = [import_resp, processing, processing, done]
                         with patch("movietrace.feishu.sync.time.sleep"):
-                            result = sync_doc(tmp, "T", app_id="a", app_secret="s")
+                            result = sync_doc(tmp, "T", "folder_xyz", app_id="a", app_secret="s")
             self.assertEqual(result["doc_token"], "done_tok")
             self.assertEqual(mock_rj.call_count, 4)
         finally:
@@ -238,7 +251,7 @@ class TestSyncDoc(unittest.TestCase):
                         mock_rj.side_effect = [import_resp, error_resp]
                         with patch("movietrace.feishu.sync.time.sleep"):
                             with self.assertRaises(RuntimeError) as ctx:
-                                sync_doc(tmp, "T", app_id="a", app_secret="s")
+                                sync_doc(tmp, "T", "folder_xyz", app_id="a", app_secret="s")
             self.assertIn("job_status=3", str(ctx.exception))
         finally:
             os.unlink(tmp)
@@ -255,10 +268,52 @@ class TestSyncDoc(unittest.TestCase):
                     "Grant the app 'drive:drive' scope in the Feishu console."
                 )):
                     with self.assertRaises(RuntimeError) as ctx:
-                        sync_doc(tmp, "T", app_id="a", app_secret="s")
+                        sync_doc(tmp, "T", "folder_xyz", app_id="a", app_secret="s")
             self.assertIn("drive:drive", str(ctx.exception))
         finally:
             os.unlink(tmp)
+
+
+class TestBatchDeleteRecords(unittest.TestCase):
+    """Tests for feishu/_http.py batch_delete_records."""
+
+    def test_empty_list_is_noop(self):
+        from movietrace.feishu._http import batch_delete_records
+        with patch("movietrace.feishu._http.request_json") as mock_rj:
+            batch_delete_records("t", "app", "tbl", [])
+        mock_rj.assert_not_called()
+
+    def test_single_chunk_deletes_all_ids(self):
+        from movietrace.feishu._http import batch_delete_records
+        ids = ["rec_a", "rec_b", "rec_c"]
+        with patch("movietrace.feishu._http.request_json", return_value={"code": 0}) as mock_rj:
+            batch_delete_records("t", "app", "tbl", ids)
+        self.assertEqual(mock_rj.call_count, 1)
+        call_args = mock_rj.call_args
+        sent_records = call_args[1]["payload"]["records"]
+        self.assertEqual(sent_records, ids)
+
+    def test_chunks_large_list_at_500(self):
+        from movietrace.feishu._http import batch_delete_records
+        ids = [f"rec_{i}" for i in range(750)]
+        with patch("movietrace.feishu._http.request_json", return_value={"code": 0}) as mock_rj:
+            batch_delete_records("t", "app", "tbl", ids)
+        self.assertEqual(mock_rj.call_count, 2)
+        chunk1 = mock_rj.call_args_list[0][1]["payload"]["records"]
+        chunk2 = mock_rj.call_args_list[1][1]["payload"]["records"]
+        self.assertEqual(len(chunk1), 500)
+        self.assertEqual(len(chunk2), 250)
+        self.assertEqual(chunk1, ids[:500])
+        self.assertEqual(chunk2, ids[500:])
+
+    def test_raises_on_nonzero_code(self):
+        from movietrace.feishu._http import batch_delete_records
+        ids = ["rec_1"]
+        with patch("movietrace.feishu._http.request_json",
+                   return_value={"code": 1, "msg": "error"}):
+            with self.assertRaises(RuntimeError) as ctx:
+                batch_delete_records("t", "app", "tbl", ids)
+        self.assertIn("batch delete records failed", str(ctx.exception))
 
 
 if __name__ == "__main__":

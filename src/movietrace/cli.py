@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
-from movietrace.config import load_secrets, get_secrets_path
+from movietrace.config import load_secrets, get_secrets_path, get_db_path
 from datetime import date, datetime
 
 from movietrace.db.schema import connect_database
@@ -52,7 +53,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
         from movietrace.pipeline.tmdb_trending import fetch_and_store_tmdb_trending
         tmdb_pages = (cfg.get("source_fetch_limits") or {}).get("tmdb", {}).get("pages_per_endpoint", 1)
         tmdb_result = fetch_and_store_tmdb_trending(
-            db_path="data/movietrace.db",
+            db_path=get_db_path(),
             bearer_token=tmdb_token,
             snapshot_date=date_str,
             pages_per_endpoint=tmdb_pages,
@@ -73,7 +74,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
             trakt_shows = trakt_limit_cfg.get("shows_limit", 20)
             trakt_movies = trakt_limit_cfg.get("movies_limit", 20)
             trakt_result = fetch_and_store_trakt_trending(
-                db_path="data/movietrace.db",
+                db_path=get_db_path(),
                 client_id=trakt_client_id,
                 snapshot_date=date_str,
                 shows_limit=trakt_shows,
@@ -201,7 +202,7 @@ def cmd_validate_feishu(args: argparse.Namespace) -> int:
 
 def cmd_inspect_baseline(args: argparse.Namespace) -> int:
     """Query local baseline data (A库 upstream_programs + canonical_items)."""
-    conn = connect_database("data/movietrace.db")
+    conn = connect_database(get_db_path())
     fmt = args.format or "table"
 
     if args.query:
@@ -418,7 +419,7 @@ def cmd_baseline_track(args: argparse.Namespace) -> int:
                     )
 
         result = run_baseline_tracking(
-            db_path=args.db or "data/movietrace.db",
+            db_path=get_db_path(args.db),
             config=cfg,
             tmdb_token=tmdb_token,
             dry_run=args.dry_run,
@@ -454,7 +455,7 @@ def cmd_export_recommendations(args: argparse.Namespace) -> int:
         from movietrace.reports.export_writer import export_recommendations
 
         result = export_recommendations(
-            db_path=args.db or "data/movietrace.db",
+            db_path=get_db_path(args.db),
             output_dir=args.output_dir,
             days=args.days,
             dry_run=args.dry_run,
@@ -486,7 +487,7 @@ def cmd_export_baseline_updates(args: argparse.Namespace) -> int:
         from movietrace.reports.export_writer import export_baseline_updates
 
         result = export_baseline_updates(
-            db_path=args.db or "data/movietrace.db",
+            db_path=get_db_path(args.db),
             output_dir=args.output_dir,
             days=args.days,
             dry_run=args.dry_run,
@@ -653,53 +654,57 @@ def cmd_notify_feishu(args: argparse.Namespace) -> int:
 
     log_file = args.log_file or ""
 
-    if args.level == "success":
-        run_date = args.date or date.today().isoformat()
+    try:
+        if args.level == "success":
+            run_date = args.date or date.today().isoformat()
 
-        if args.stats_file:
-            with open(args.stats_file) as f:
-                stats = json.load(f)
-        else:
-            stats = {}
+            if args.stats_file:
+                with open(args.stats_file) as f:
+                    stats = json.load(f)
+            else:
+                stats = {}
 
-        doc_url = args.doc_url or ""
-        ok = send_summary(
-            user_open_id, run_date, stats,
-            doc_url=doc_url, log_file=log_file,
-            app_id=app_id, app_secret=app_secret,
-        )
-    else:
-        ok = send_alert(
-            user_open_id,
-            level=args.level,
-            title=args.title or "MovieTrace 运行异常",
-            detail=args.detail or "",
-            log_file=log_file,
-            app_id=app_id, app_secret=app_secret,
-        )
-
-    if ok:
-        print("✓ notify-feishu sent")
-    else:
-        # Try Gmail fallback — credentials live in secrets.json → feishu.gmail
-        gmail_cfg = feishu_secrets.get("gmail", {})
-        if gmail_cfg.get("enabled"):
-            from movietrace.feishu.notify import send_email
-            sent = send_email(
-                smtp_user=gmail_cfg.get("smtp_user", ""),
-                smtp_password=gmail_cfg.get("smtp_password", ""),
-                to=gmail_cfg.get("smtp_user", ""),
-                subject=f"MovieTrace {args.level}: {args.title or 'Alert'}",
-                body=f"Level: {args.level}\nDetail: {args.detail or ''}\nLog: {log_file}",
+            doc_url = args.doc_url or ""
+            ok = send_summary(
+                user_open_id, run_date, stats,
+                doc_url=doc_url, log_file=log_file,
+                app_id=app_id, app_secret=app_secret,
             )
-            if sent:
-                print("✓ Gmail fallback sent")
-                return 0
+        else:
+            ok = send_alert(
+                user_open_id,
+                level=args.level,
+                title=args.title or "MovieTrace 运行异常",
+                detail=args.detail or "",
+                log_file=log_file,
+                app_id=app_id, app_secret=app_secret,
+            )
 
-        print("✗ notify-feishu failed (and no fallback available)")
+        if ok:
+            print("✓ notify-feishu sent")
+        else:
+            # Try Gmail fallback — credentials live in secrets.json → feishu.gmail
+            gmail_cfg = feishu_secrets.get("gmail", {})
+            if gmail_cfg.get("enabled"):
+                from movietrace.feishu.notify import send_email
+                sent = send_email(
+                    smtp_user=gmail_cfg.get("smtp_user", ""),
+                    smtp_password=gmail_cfg.get("smtp_password", ""),
+                    to=gmail_cfg.get("smtp_user", ""),
+                    subject=f"MovieTrace {args.level}: {args.title or 'Alert'}",
+                    body=f"Level: {args.level}\nDetail: {args.detail or ''}\nLog: {log_file}",
+                )
+                if sent:
+                    print("✓ Gmail fallback sent")
+                    return 0
+
+            print("✗ notify-feishu failed (and no fallback available)")
+            return 1
+
+        return 0
+    except Exception as exc:
+        print(f"✗ notify-feishu failed: {exc}")
         return 1
-
-    return 0
 
 
 # ── inspect-updates ─────────────────────────────────────────────────────
@@ -719,7 +724,7 @@ def cmd_inspect_updates(args: argparse.Namespace) -> int:
     fmt = args.format or "table"
 
     updates = query_updates(
-        db_path="data/movietrace.db",
+        db_path=get_db_path(),
         days=days,
         priority=args.priority,
         update_type=getattr(args, "type", None),
@@ -781,7 +786,7 @@ def cmd_fetch_tmdb_trending(args: argparse.Namespace) -> int:
 
         tmdb_token = _load_tmdb_token()
         result = fetch_and_store_tmdb_trending(
-            db_path="data/movietrace.db",
+            db_path=get_db_path(),
             bearer_token=tmdb_token,
             snapshot_date=date_str,
             pages_per_endpoint=pages,
@@ -829,7 +834,7 @@ def cmd_fetch_trakt_trending(args: argparse.Namespace) -> int:
         from movietrace.pipeline.trakt_trending import fetch_and_store_trakt_trending
 
         result = fetch_and_store_trakt_trending(
-            db_path="data/movietrace.db",
+            db_path=get_db_path(),
             client_id=client_id,
             snapshot_date=date_str,
             shows_limit=shows_limit,
@@ -884,7 +889,7 @@ def cmd_sync_feishu_gap_table(args: argparse.Namespace) -> int:
         from movietrace.feishu.gap_sync import compute_current_gaps, sync_gap_table
         from movietrace.db.schema import connect_database
 
-        conn = connect_database(args.db or "data/movietrace.db")
+        conn = connect_database(get_db_path(args.db))
         rows = compute_current_gaps(conn)
         conn.close()
 
@@ -918,7 +923,7 @@ def cmd_sync_feishu_gap_table(args: argparse.Namespace) -> int:
 
 def cmd_inspect_api_usage(args: argparse.Namespace) -> int:
     """Query and display API usage log from local DB."""
-    conn = connect_database("data/movietrace.db")
+    conn = connect_database(get_db_path())
 
     conditions: list[str] = []
     params: list = []
@@ -935,26 +940,26 @@ def cmd_inspect_api_usage(args: argparse.Namespace) -> int:
         conditions.append("service = ?")
         params.append(args.service)
 
-    where = ""
-    prefix = "WHERE"  # for sub-queries: "WHERE x AND y" or "WHERE status='success'"
+    # Use WHERE 1=1 as stable base so all sub-queries can use AND freely.
+    # Condition templates are hardcoded; all user values go through ? placeholders.
+    where = " WHERE 1=1"
     if conditions:
         where = " WHERE " + " AND ".join(conditions)
-        prefix = "AND"
 
     # Summary query
     total = conn.execute(f"select count(*) from api_usage_log{where}", params).fetchone()[0]
     success = conn.execute(
-        f"select count(*) from api_usage_log{where} {prefix} status='success'", params
+        f"select count(*) from api_usage_log{where} AND status='success'", params
     ).fetchone()[0]
     errors = conn.execute(
-        f"select count(*) from api_usage_log{where} {prefix} status IN ('http_error','network_error')",
+        f"select count(*) from api_usage_log{where} AND status IN ('http_error','network_error')",
         params,
     ).fetchone()[0]
     quota = conn.execute(
-        f"select count(*) from api_usage_log{where} {prefix} quota_error=1", params
+        f"select count(*) from api_usage_log{where} AND quota_error=1", params
     ).fetchone()[0]
     rate_limited = conn.execute(
-        f"select count(*) from api_usage_log{where} {prefix} rate_limited=1", params
+        f"select count(*) from api_usage_log{where} AND rate_limited=1", params
     ).fetchone()[0]
 
     fmt = args.format or "table"
@@ -1092,7 +1097,7 @@ def cmd_export_feedback_report(args: argparse.Namespace) -> int:
 
     input_path = args.input or "reports/feedback/feishu_pull_latest.json"
     output_dir = args.output or "reports/feedback"
-    db_path = args.db or "data/movietrace.db"
+    db_path = get_db_path(args.db)
     dry_run = args.dry_run
 
     print("MovieTrace export-feedback-report")
@@ -1129,6 +1134,8 @@ def main() -> None:
         prog="movietrace",
         description="MovieTrace Phase 1 CLI",
     )
+    parser.add_argument("--smoke-test", action="store_true",
+                        help="Use smoke-test Feishu base instead of production")
     sub = parser.add_subparsers(dest="command", required=True)
 
     # daily-discover
@@ -1243,6 +1250,9 @@ def main() -> None:
     p_exp_fb.add_argument("--dry-run", action="store_true")
 
     args = parser.parse_args()
+
+    if args.smoke_test:
+        os.environ["MOVIETRACE_SMOKE"] = "1"
 
     handlers = {
         "daily-discover": cmd_daily_discover,

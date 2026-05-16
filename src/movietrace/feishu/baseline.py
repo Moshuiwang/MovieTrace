@@ -3,10 +3,9 @@ from __future__ import annotations
 import json
 import time
 import urllib.parse
-import urllib.request
 from pathlib import Path
-from typing import Any
 
+from movietrace.feishu._http import request_json as _request_json
 
 OPEN_API_BASE = "https://open.feishu.cn/open-apis"
 
@@ -93,20 +92,3 @@ def fetch_bitable_records(
         if not page_token:
             return records
 
-
-def _request_json(
-    method: str,
-    url: str,
-    *,
-    token: str | None = None,
-    payload: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    headers = {"Content-Type": "application/json; charset=utf-8"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    data = None
-    if payload is not None:
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))

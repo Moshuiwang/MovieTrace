@@ -6,6 +6,8 @@
 PROJECT_DIR="/home/ubuntu/MovieTrace"
 cd "$PROJECT_DIR"
 
+# 防御性时区固定：避免部署到 UTC 服务器 / systemd 清空 TZ 时 RUN_DATE 飘移
+export TZ='Asia/Shanghai'
 LOG_DIR="$PROJECT_DIR/reports/logs"
 mkdir -p "$LOG_DIR"
 

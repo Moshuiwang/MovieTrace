@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import shutil
 import time
+import urllib.error
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -20,13 +21,21 @@ TZ = ZoneInfo("Asia/Shanghai")
 
 
 def _request_with_retry(method: str, url: str, *, token: str, payload: dict | None = None) -> dict:
-    """request_json with 2 retries, exponential backoff 1 s / 2 s."""
+    """request_json with retries on transient errors only.
+
+    Retries up to 2 times (3 total) on network errors and HTTP 5xx.
+    HTTP 4xx (auth, not found, bad request) fails immediately.
+    """
     last_exc: Exception | None = None
     for attempt, wait in enumerate([0, 1, 2]):
         if wait:
             time.sleep(wait)
         try:
             return request_json(method, url, token=token, payload=payload)
+        except urllib.error.HTTPError as exc:
+            if exc.code and 400 <= exc.code < 500:
+                raise  # 4xx is not retryable
+            last_exc = exc
         except Exception as exc:
             last_exc = exc
     raise RuntimeError(f"Feishu request failed after 3 attempts: {last_exc}") from last_exc
