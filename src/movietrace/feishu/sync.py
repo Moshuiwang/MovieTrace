@@ -10,7 +10,9 @@ Table and fields are pre-created via Feishu UI/API; this module does NOT auto-cr
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone as _UTC
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -77,7 +79,7 @@ F = {
 def _to_epoch_ms(dt_str: str, tz=None) -> int | None:
     """Convert 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS' to Feishu epoch ms.
 
-    tz defaults to CST (Asia/Shanghai). Pass _UTC for DB-stored UTC timestamps.
+    tz defaults to CST (Asia/Shanghai). Pass UTC for DB-stored UTC timestamps.
     """
     if not dt_str:
         return None
@@ -220,7 +222,7 @@ def sync_table(
             # event_written_at_utc / created_at are both stored as UTC in the DB
             detected_at = _to_epoch_ms(
                 rec.get("event_written_at_utc") or rec.get("created_at", ""),
-                tz=_UTC,
+                tz=UTC,
             )
             fields: dict = {
                 "发现日期":          _to_epoch_ms(run_date),
