@@ -13,8 +13,8 @@
 4. 若是导入错误，确认 `src/movietrace/<module>/__init__.py` 存在
 
 **禁止：**
-- 测试失败时继续开发新功能（AGENTS.md 第 10 条）
-- 删除失败的测试以"修复"问题（AGENTS.md 第 7 条）
+- 测试失败时继续开发新功能（[`.claude/rules/00-core-behaviors.md`](../../.claude/rules/00-core-behaviors.md) 第 10 条）
+- 删除失败的测试以"修复"问题（[`.claude/rules/00-core-behaviors.md`](../../.claude/rules/00-core-behaviors.md) 第 7 条）
 
 ---
 
@@ -37,7 +37,7 @@
 4. 检查 access token 是否过期（飞书 token 有效期 2 小时）
 
 **禁止：**
-- 静默重试（AGENTS.md 第 9 条：不隐藏失败）
+- 静默重试（[`.claude/rules/00-core-behaviors.md`](../../.claude/rules/00-core-behaviors.md) 第 9 条：不隐藏失败）
 - 任何失败都必须记录时间戳、来源 ID、HTTP 状态码，并向用户报告
 
 ---
@@ -60,7 +60,7 @@
 **排查顺序：**
 1. 检查 `data/movietrace.db` 是否被另一个进程占用（`lsof data/movietrace.db`）
 2. 检查 schema 是否需要迁移（对比 `src/movietrace/db/schema.py` 与实际表结构）
-3. 写入操作必须使用 prepared statements（AGENTS.md 仓库约定），不允许字符串拼接 SQL
+3. 写入操作必须使用 prepared statements（[`.claude/rules/20-python-and-sql.md`](../../.claude/rules/20-python-and-sql.md)），不允许字符串拼接 SQL
 
 ---
 
@@ -68,4 +68,4 @@
 
 - 排查不动产品代码——先复现、定位、报告，再走任务包流程修复
 - 排查记录写到日报或 journal，重大问题升级为 ADR
-- 不清楚时报告"现象 + 已排除 + 下一步"，不靠猜测推进（AGENTS.md 失败信号）
+- 不清楚时报告"现象 + 已排除 + 下一步"，不靠猜测推进（[`.claude/rules/00-core-behaviors.md`](../../.claude/rules/00-core-behaviors.md) § 失败信号）

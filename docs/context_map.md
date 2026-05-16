@@ -13,7 +13,7 @@
 | [`STATE.md`](../STATE.md) | 当前阶段、最近完成、进行中任务、review 跟进项 | **每次会话启动必读**（第 1 步）|
 | [`SCOPE.md`](../SCOPE.md) | V1/V2 范围边界，"做什么不做什么" | 启动必读（防止越界）|
 | [`CLAUDE.md`](../CLAUDE.md) | Claude Code 协作宪法（12 条规则 + 4 易踩坑）| AI 入口 |
-| [`AGENTS.md`](../AGENTS.md) | Codex 协作宪法，与 CLAUDE.md 内容等价 | AI 入口 |
+| [`AGENTS.md`](../AGENTS.md) | 指针入口（→ CLAUDE.md），Codex / Cursor / Cline 等工具读取 | AI 入口 |
 
 **预算：** 启动默认 3 个文件（STATE + SCOPE + 本文件）≈ 600 行。
 

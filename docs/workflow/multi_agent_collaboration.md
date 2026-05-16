@@ -6,6 +6,8 @@
 **状态：** ✅ 已审查，采纳精简版（详见 § 0）  
 **适用项目：** MovieTrace（及其他 solo 开发者 + 多 AI Agent 协作的项目）
 
+> **2026-05-17 注：** 本文撰写时 `AGENTS.md` 是项目宪法、本文档作为"实施细则"。治理体系重构（commit `f86f0f9`）后，`AGENTS.md` 退化为指针，规则中心迁移至 [`CLAUDE.md`](../../CLAUDE.md) 总纲 + [`.claude/rules/`](../../.claude/rules/) 9 个专项。本文档**作为历史 design 参考保留**，内部 "AGENTS.md 第 N 条" 引用语义已迁移至 [`.claude/rules/00-core-behaviors.md`](../../.claude/rules/00-core-behaviors.md) 同编号。
+
 ---
 
 ## 0. Opus Review（2026-05-10）

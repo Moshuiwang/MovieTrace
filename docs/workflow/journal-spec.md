@@ -76,4 +76,4 @@
 
 - **不要重复 STATE.md 的全部内容**——日报是过程，STATE.md 是当前快照
 - **不要重复 ADR**——日报里只写"做了 ADR-NNNN 决策"+ 一句话，详情留在 ADR 文件
-- **失败也要写**——隐藏失败违反 AGENTS.md 第 9 条
+- **失败也要写**——隐藏失败违反 [`.claude/rules/00-core-behaviors.md`](../../.claude/rules/00-core-behaviors.md) 第 9 条
