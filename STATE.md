@@ -215,12 +215,9 @@
 
 ## 进行中任务
 
-- **P1.21.6 A 库缺口表数据质量修正**：任务包 [`docs/tasks/p1.21.6_a_lib_gap_quality_fixes.md`](docs/tasks/p1.21.6_a_lib_gap_quality_fixes.md) 草案就绪，待执行。
-- **P1.21.7 遗留 schema 清理**：任务包 [`docs/tasks/p1.21.7_legacy_schema_cleanup.md`](docs/tasks/p1.21.7_legacy_schema_cleanup.md) 草案就绪，待执行（refactor，drop ADR-0007 翻转前 7 张遗留表 ~2400 行）。
-- **P1.23 飞书运营反馈回流 + 周报**：任务包 [`docs/tasks/p1.23_feedback_loop_pull_feishu.md`](docs/tasks/p1.23_feedback_loop_pull_feishu.md) 草案完成（2026-05-16 09:05 +08）。
-  - 用户已对 4 个产品决策拍板：只读不回写 B 库 / 每周手动跑 / 漏报暂不结构化 / 两张表都拉
-  - 待用户确认任务包后开工
-  - P1.22 编号保留给 episode 级缺口检测（详见 P1.21.6 任务包非目标 § episode）
+无。P1.21.6 / P1.21.7 / P1.21.8 / P1.21.8.hardening / P1.21.9 / P1.23 全部已合入 main。
+
+- **P1.22 编号保留**给 episode 级缺口检测（详见 P1.21.6 任务包非目标 § episode）
 
 ## V1 收口任务包（P1.14-P1.17）：全部完成
 
@@ -266,7 +263,7 @@ PR #1 已合入，分支已删除。
 - **content_updates 语义：** 事件历史表，`content_update_id` 唯一，discovery ID 格式 `discovery:{movie|tv}:{tmdb_id}:{date}`
 - **上下文加载：** 按 `docs/context_map.md` 四层地图加载，历史查 `rg` 不整篇读
 - **FP API 402** 不可用 · **OMDb** 正常
-- **测试：** 451 passed, ~65s, 无 API 消耗
+- **测试：** 441 passed（--ignore=test_flixpatrol_parsing），~83s
 - **CI：** `.github/workflows/ci.yml`（PR + main push）
 - **Phase 1 全部 43 个任务包执行完毕**
 - **P1.17 跳过**（不满足真实运行 3-7 天前置条件）
