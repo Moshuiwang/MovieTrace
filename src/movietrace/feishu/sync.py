@@ -17,12 +17,15 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from movietrace.feishu.baseline import fetch_tenant_access_token
+import time
+
 from movietrace.feishu._http import (
     OPEN_API_BASE,
     request_json,
     batch_create_records,
     batch_update_records,
     unwrap_text_field,
+    upload_media_file,
 )
 
 TZ = ZoneInfo("Asia/Shanghai")
@@ -319,10 +322,10 @@ def _derive_content_type(rec: dict) -> str:
     return "unknown"
 
 
-# ── Doc sync (via Feishu docx v1 REST API) ───────────────────────────────────
+# ── Doc sync (via Feishu drive/v1/import_task) ───────────────────────────────
 
-# Maximum characters per text block (Feishu block content limit)
-_DOCX_BLOCK_MAX_CHARS = 10_000
+_IMPORT_POLL_DELAYS = [1, 2, 4, 8, 16, 30, 30, 30, 30, 30]  # seconds; hard timeout ~155s
+_IMPORT_TIMEOUT_SECONDS = 300  # 5-minute hard cap
 
 
 def sync_doc(
@@ -334,84 +337,98 @@ def sync_doc(
     app_secret: str = "",
     dry_run: bool = False,
 ) -> dict:
-    """Sync latest.md content as a Feishu docx document via REST API.
+    """Import a Markdown file as a Feishu docx via drive/v1/import_task.
 
-    Uses POST /open-apis/docx/v1/documents to create the document, then adds
-    text blocks via POST /open-apis/docx/v1/documents/{doc_id}/blocks/{block_id}/children.
+    Three-step flow:
+      1. Upload .md bytes to drive/v1/medias/upload_all → file_token
+      2. POST drive/v1/import_tasks (mount in folder_token) → ticket
+      3. Poll GET drive/v1/import_tasks/:ticket until job_status == 0
 
-    App needs docx:document:create scope.  If the permission is missing, Feishu returns
-    a non-zero code — this function raises RuntimeError with the code so the caller can
-    report it clearly.
+    App needs 'drive:drive' scope.  Permission errors (99991661/99991663/1061045)
+    raise RuntimeError with an explicit console instruction.
 
     Returns: {"doc_url": str, "doc_token": str}
     """
     path = Path(md_path)
     content = path.read_text(encoding="utf-8")
+    file_data = content.encode("utf-8")
 
     if dry_run:
-        print(f"[DRY-RUN] 将创建飞书文档: {title}")
-        print(f"[DRY-RUN] 内容长度: {len(content)} 字符")
+        print(f"[DRY-RUN] 将导入飞书文档: {title}")
+        print(f"[DRY-RUN] 文件: {md_path} ({len(file_data)} bytes)")
         return {"doc_url": "", "doc_token": "", "dry_run": True}
 
     if not app_id or not app_secret:
-        raise RuntimeError("sync_doc requires app_id and app_secret (docx REST API auth)")
+        raise RuntimeError("sync_doc requires app_id and app_secret")
 
     token = fetch_tenant_access_token(app_id, app_secret)
 
-    # 1. Create document
-    create_url = f"{OPEN_API_BASE}/docx/v1/documents"
-    create_payload: dict = {"title": title}
-    if folder_token:
-        create_payload["folder_token"] = folder_token
+    # Step 1: Upload
+    file_name = path.name if path.name.endswith(".md") else f"{title}.md"
+    print(f"上传文件 {file_name} ({len(file_data)} bytes)...")
+    file_token = upload_media_file(token, file_name, file_data)
 
-    create_resp = request_json("POST", create_url, token=token, payload=create_payload)
-    if create_resp.get("code") != 0:
-        code = create_resp.get("code")
-        msg = create_resp.get("msg", "")
+    # Step 2: Create import task
+    print("创建导入任务...")
+    import_url = f"{OPEN_API_BASE}/drive/v1/import_tasks"
+    import_payload: dict = {
+        "file_extension": "md",
+        "file_token": file_token,
+        "type": "docx",
+        "file_name": title,
+        "point": {
+            "mount_type": 1,
+            "mount_key": folder_token or "",
+        },
+    }
+    import_resp = request_json("POST", import_url, token=token, payload=import_payload)
+    if import_resp.get("code") != 0:
+        code = import_resp.get("code")
+        msg = import_resp.get("msg", "")
         if code in (99991663, 99991661, 1061045):
             raise RuntimeError(
-                f"Feishu docx create permission denied (code={code}): {msg}. "
-                f"Grant the app 'docx:document:create' scope in the Feishu console."
+                f"Feishu import task permission denied (code={code}): {msg}. "
+                "Grant the app 'drive:drive' scope in the Feishu console."
             )
-        raise RuntimeError(f"Feishu docx create failed (code={code}): {msg}")
+        raise RuntimeError(f"Feishu import_task create failed (code={code}): {msg}")
 
-    doc_data = create_resp.get("data", {}).get("document", {})
-    document_id = doc_data.get("document_id", "")
-    doc_url = doc_data.get("url", "") or f"https://bytedance.feishu.cn/docx/{document_id}"
+    ticket = import_resp.get("data", {}).get("ticket", "")
+    if not ticket:
+        raise RuntimeError(f"Feishu import_task returned no ticket: {import_resp}")
+    print(f"导入任务已创建，ticket={ticket}")
 
-    if not document_id:
-        raise RuntimeError(f"Feishu docx create returned no document_id: {create_resp}")
+    # Step 3: Poll until done
+    poll_url = f"{OPEN_API_BASE}/drive/v1/import_tasks/{ticket}"
+    deadline = time.monotonic() + _IMPORT_TIMEOUT_SECONDS
 
-    # 2. Add content as text blocks (split by _DOCX_BLOCK_MAX_CHARS)
-    children_url = (
-        f"{OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/children"
-    )
+    for delay in _IMPORT_POLL_DELAYS:
+        time.sleep(delay)
+        if time.monotonic() > deadline:
+            break
 
-    # Split content into chunks
-    chunks = [
-        content[i : i + _DOCX_BLOCK_MAX_CHARS]
-        for i in range(0, len(content), _DOCX_BLOCK_MAX_CHARS)
-    ] or [""]
+        poll_resp = request_json("GET", poll_url, token=token)
+        if poll_resp.get("code") != 0:
+            code = poll_resp.get("code")
+            msg = poll_resp.get("msg", "")
+            raise RuntimeError(f"Feishu import_task poll failed (code={code}): {msg}")
 
-    for idx, chunk in enumerate(chunks):
-        block_payload = {
-            "children": [
-                {
-                    "block_type": 2,
-                    "text": {
-                        "elements": [{"text_run": {"content": chunk}}],
-                        "style": {},
-                    },
-                }
-            ],
-            "index": idx,
-        }
-        block_resp = request_json("POST", children_url, token=token, payload=block_payload)
-        if block_resp.get("code") != 0:
-            code = block_resp.get("code")
-            msg = block_resp.get("msg", "")
+        result = poll_resp.get("data", {}).get("result", {})
+        job_status = result.get("job_status", -1)
+
+        if job_status == 0:
+            doc_token = result.get("token", "")
+            doc_url = result.get("url", "") or f"https://bytedance.feishu.cn/docx/{doc_token}"
+            print(f"导入完成: {doc_url}")
+            return {"doc_url": doc_url, "doc_token": doc_token}
+
+        if job_status >= 3:
+            job_error_msg = result.get("job_error_msg", "")
             raise RuntimeError(
-                f"Feishu docx add block failed at chunk {idx} (code={code}): {msg}"
+                f"Feishu import_task failed (job_status={job_status}): {job_error_msg}"
             )
 
-    return {"doc_url": doc_url, "doc_token": document_id}
+        print(f"  导入中 (job_status={job_status})，{delay}s 后重试...")
+
+    raise RuntimeError(
+        f"Feishu import_task timed out after {_IMPORT_TIMEOUT_SECONDS}s (ticket={ticket})"
+    )

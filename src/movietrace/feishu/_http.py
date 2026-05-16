@@ -7,10 +7,96 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 import urllib.request
 import urllib.error
 
 OPEN_API_BASE = "https://open.feishu.cn/open-apis"
+
+
+def build_multipart_body(
+    fields: dict[str, "str | tuple[bytes, str, str]"],
+) -> tuple[bytes, str]:
+    """Build a multipart/form-data body (RFC 7578, stdlib only).
+
+    fields values:
+      - str  → plain text part
+      - (data: bytes, filename: str, content_type: str) → file part
+
+    Returns (body_bytes, boundary_string).
+    """
+    boundary = secrets.token_hex(16)
+    sep = f"--{boundary}\r\n".encode()
+    end = f"--{boundary}--\r\n".encode()
+
+    parts: list[bytes] = []
+    for name, value in fields.items():
+        if isinstance(value, tuple):
+            data, filename, ctype = value
+            header = (
+                f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
+                f"Content-Type: {ctype}\r\n\r\n"
+            ).encode("utf-8")
+            parts.append(sep + header + data + b"\r\n")
+        else:
+            header = f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8")
+            parts.append(sep + header + value.encode("utf-8") + b"\r\n")
+
+    return b"".join(parts) + end, boundary
+
+
+def upload_media_file(
+    token: str,
+    file_name: str,
+    file_data: bytes,
+    *,
+    extra: dict | None = None,
+) -> str:
+    """Upload a file via drive/v1/medias/upload_all, return file_token.
+
+    Uses parent_type="ccm_import_open" required for import tasks.
+    extra defaults to {"obj_type": "docx", "file_extension": "md"}.
+    """
+    if extra is None:
+        extra = {"obj_type": "docx", "file_extension": "md"}
+
+    fields: dict[str, "str | tuple[bytes, str, str]"] = {
+        "file_name": file_name,
+        "parent_type": "ccm_import_open",
+        "size": str(len(file_data)),
+        "extra": json.dumps(extra, ensure_ascii=False),
+        "file": (file_data, file_name, "application/octet-stream"),
+    }
+    body, boundary = build_multipart_body(fields)
+
+    url = f"{OPEN_API_BASE}/drive/v1/medias/upload_all"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+    }
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body_err = e.read().decode("utf-8", errors="replace")[:300]
+        body_err = re.sub(r'"access_token"\s*:\s*"[^"]+"', '"access_token":"***"', body_err)
+        raise RuntimeError(f"Feishu upload_all HTTP {e.code}: {body_err}") from e
+
+    if result.get("code") != 0:
+        code = result.get("code")
+        msg = result.get("msg", "")
+        if code in (99991663, 99991661, 1061045):
+            raise RuntimeError(
+                f"Feishu upload permission denied (code={code}): {msg}. "
+                "Grant the app 'drive:drive' scope in the Feishu console."
+            )
+        raise RuntimeError(f"Feishu upload_all failed (code={code}): {msg}")
+
+    file_token = result.get("data", {}).get("file_token", "")
+    if not file_token:
+        raise RuntimeError(f"Feishu upload_all returned no file_token: {result}")
+    return file_token
 
 
 def request_json(
