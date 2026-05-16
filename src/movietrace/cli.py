@@ -15,7 +15,7 @@ import os
 import sys
 from pathlib import Path
 
-from movietrace.config import load_secrets, get_secrets_path
+from movietrace.config import load_secrets, get_secrets_path, get_db_path
 from datetime import date, datetime
 
 from movietrace.db.schema import connect_database
@@ -53,7 +53,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
         from movietrace.pipeline.tmdb_trending import fetch_and_store_tmdb_trending
         tmdb_pages = (cfg.get("source_fetch_limits") or {}).get("tmdb", {}).get("pages_per_endpoint", 1)
         tmdb_result = fetch_and_store_tmdb_trending(
-            db_path="data/movietrace.db",
+            db_path=get_db_path(),
             bearer_token=tmdb_token,
             snapshot_date=date_str,
             pages_per_endpoint=tmdb_pages,
@@ -74,7 +74,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
             trakt_shows = trakt_limit_cfg.get("shows_limit", 20)
             trakt_movies = trakt_limit_cfg.get("movies_limit", 20)
             trakt_result = fetch_and_store_trakt_trending(
-                db_path="data/movietrace.db",
+                db_path=get_db_path(),
                 client_id=trakt_client_id,
                 snapshot_date=date_str,
                 shows_limit=trakt_shows,
@@ -202,7 +202,7 @@ def cmd_validate_feishu(args: argparse.Namespace) -> int:
 
 def cmd_inspect_baseline(args: argparse.Namespace) -> int:
     """Query local baseline data (A库 upstream_programs + canonical_items)."""
-    conn = connect_database("data/movietrace.db")
+    conn = connect_database(get_db_path())
     fmt = args.format or "table"
 
     if args.query:
@@ -419,7 +419,7 @@ def cmd_baseline_track(args: argparse.Namespace) -> int:
                     )
 
         result = run_baseline_tracking(
-            db_path=args.db or "data/movietrace.db",
+            db_path=get_db_path(args.db),
             config=cfg,
             tmdb_token=tmdb_token,
             dry_run=args.dry_run,
@@ -455,7 +455,7 @@ def cmd_export_recommendations(args: argparse.Namespace) -> int:
         from movietrace.reports.export_writer import export_recommendations
 
         result = export_recommendations(
-            db_path=args.db or "data/movietrace.db",
+            db_path=get_db_path(args.db),
             output_dir=args.output_dir,
             days=args.days,
             dry_run=args.dry_run,
@@ -487,7 +487,7 @@ def cmd_export_baseline_updates(args: argparse.Namespace) -> int:
         from movietrace.reports.export_writer import export_baseline_updates
 
         result = export_baseline_updates(
-            db_path=args.db or "data/movietrace.db",
+            db_path=get_db_path(args.db),
             output_dir=args.output_dir,
             days=args.days,
             dry_run=args.dry_run,
@@ -724,7 +724,7 @@ def cmd_inspect_updates(args: argparse.Namespace) -> int:
     fmt = args.format or "table"
 
     updates = query_updates(
-        db_path="data/movietrace.db",
+        db_path=get_db_path(),
         days=days,
         priority=args.priority,
         update_type=getattr(args, "type", None),
@@ -786,7 +786,7 @@ def cmd_fetch_tmdb_trending(args: argparse.Namespace) -> int:
 
         tmdb_token = _load_tmdb_token()
         result = fetch_and_store_tmdb_trending(
-            db_path="data/movietrace.db",
+            db_path=get_db_path(),
             bearer_token=tmdb_token,
             snapshot_date=date_str,
             pages_per_endpoint=pages,
@@ -834,7 +834,7 @@ def cmd_fetch_trakt_trending(args: argparse.Namespace) -> int:
         from movietrace.pipeline.trakt_trending import fetch_and_store_trakt_trending
 
         result = fetch_and_store_trakt_trending(
-            db_path="data/movietrace.db",
+            db_path=get_db_path(),
             client_id=client_id,
             snapshot_date=date_str,
             shows_limit=shows_limit,
@@ -889,7 +889,7 @@ def cmd_sync_feishu_gap_table(args: argparse.Namespace) -> int:
         from movietrace.feishu.gap_sync import compute_current_gaps, sync_gap_table
         from movietrace.db.schema import connect_database
 
-        conn = connect_database(args.db or "data/movietrace.db")
+        conn = connect_database(get_db_path(args.db))
         rows = compute_current_gaps(conn)
         conn.close()
 
@@ -923,7 +923,7 @@ def cmd_sync_feishu_gap_table(args: argparse.Namespace) -> int:
 
 def cmd_inspect_api_usage(args: argparse.Namespace) -> int:
     """Query and display API usage log from local DB."""
-    conn = connect_database("data/movietrace.db")
+    conn = connect_database(get_db_path())
 
     conditions: list[str] = []
     params: list = []
@@ -1097,7 +1097,7 @@ def cmd_export_feedback_report(args: argparse.Namespace) -> int:
 
     input_path = args.input or "reports/feedback/feishu_pull_latest.json"
     output_dir = args.output or "reports/feedback"
-    db_path = args.db or "data/movietrace.db"
+    db_path = get_db_path(args.db)
     dry_run = args.dry_run
 
     print("MovieTrace export-feedback-report")

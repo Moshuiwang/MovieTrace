@@ -13,6 +13,24 @@ DEFAULT_SECRETS_PATH = DEFAULT_SECRETS_DIR / "secrets.json"
 LEGACY_SECRETS_PATH = Path("/tmp/movietrace_phase0_secrets.json")
 SMOKE_TEST_SECRETS_PATH = DEFAULT_SECRETS_DIR / "secrets.smoke-test.json"
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DB_PATH = str(_PROJECT_ROOT / "data" / "movietrace.db")
+SMOKE_DB_PATH = str(_PROJECT_ROOT / "data" / "movietrace_smoke.db")
+
+
+def get_db_path(explicit: str | None = None) -> str:
+    """Resolve the database path.
+
+    When MOVIETRACE_SMOKE=1, defaults to the smoke-test database; otherwise
+    the production database. An explicit path (e.g. from --db CLI flag) always
+    takes precedence.
+    """
+    if explicit:
+        return explicit
+    if os.environ.get("MOVIETRACE_SMOKE") == "1":
+        return SMOKE_DB_PATH
+    return DEFAULT_DB_PATH
+
 
 def get_secrets_path() -> Path:
     """Return the preferred secrets path (new location)."""

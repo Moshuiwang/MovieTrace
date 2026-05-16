@@ -223,5 +223,35 @@ class SmokeOverlayTest(unittest.TestCase):
         self.assertEqual(result["feishu"]["gap_table_id"], "tbleI8J")
 
 
+class GetDbPathTest(unittest.TestCase):
+    def test_returns_default_when_no_env(self):
+        from movietrace.config import get_db_path, DEFAULT_DB_PATH
+        import os
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(get_db_path(), DEFAULT_DB_PATH)
+
+    def test_returns_smoke_when_env_set(self):
+        from movietrace.config import get_db_path, SMOKE_DB_PATH
+        import os
+        with patch.dict(os.environ, {"MOVIETRACE_SMOKE": "1"}):
+            self.assertEqual(get_db_path(), SMOKE_DB_PATH)
+
+    def test_explicit_path_takes_precedence(self):
+        from movietrace.config import get_db_path
+        import os
+        with patch.dict(os.environ, {"MOVIETRACE_SMOKE": "1"}):
+            self.assertEqual(get_db_path("/custom/path.db"), "/custom/path.db")
+
+    def test_explicit_path_without_env(self):
+        from movietrace.config import get_db_path
+        import os
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(get_db_path("/other.db"), "/other.db")
+
+    def test_paths_are_different(self):
+        from movietrace.config import DEFAULT_DB_PATH, SMOKE_DB_PATH
+        self.assertNotEqual(DEFAULT_DB_PATH, SMOKE_DB_PATH)
+
+
 if __name__ == "__main__":
     unittest.main()
