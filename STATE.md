@@ -36,6 +36,8 @@
 | **Phase 1.20：code review 跟进修正** | ✅ 全部完成 |
 | **Phase 1.21：A库缺口快照子表（状态快照）** | ✅ 全部完成 |
 | **Phase 1.21.5：维护批次（review fixes + lark-cli 替换 + migration 015）** | ✅ 全部完成 |
+| **Phase 1.21.6：A 库缺口表数据质量修正** | 📋 任务包草案待执行 |
+| **Phase 1.23：飞书运营反馈回流（只读）+ V1 观察期周报** | 📋 任务包草案待执行 |
 
 **测试：** 507 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
 
@@ -166,7 +168,11 @@
 
 ## 进行中任务
 
-（无。P1.20-A/B 已完成，飞书运营同步代码已实现并清理，待用户决策提交。）
+- **P1.21.6 A 库缺口表数据质量修正**：任务包 [`docs/tasks/p1.21.6_a_lib_gap_quality_fixes.md`](docs/tasks/p1.21.6_a_lib_gap_quality_fixes.md) 草案就绪，待执行。
+- **P1.23 飞书运营反馈回流 + 周报**：任务包 [`docs/tasks/p1.23_feedback_loop_pull_feishu.md`](docs/tasks/p1.23_feedback_loop_pull_feishu.md) 草案完成（2026-05-16 09:05 +08）。
+  - 用户已对 4 个产品决策拍板：只读不回写 B 库 / 每周手动跑 / 漏报暂不结构化 / 两张表都拉
+  - 待用户确认任务包后开工
+  - P1.22 编号保留给 episode 级缺口检测（详见 P1.21.6 任务包非目标 § episode）
 
 ## V1 收口任务包（P1.14-P1.17）：全部完成
 
