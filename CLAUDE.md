@@ -1,169 +1,46 @@
-# CLAUDE.md — MovieTrace 项目宪法
+# CLAUDE.md — MovieTrace 协作宪法
 
-> 本文件是 **Claude Code** 入口；Codex 入口是 [`AGENTS.md`](AGENTS.md)。
-> 两者**内容等价**，无需交叉读取——修改时两边同步即可。
-> 当前项目状态权威：[`STATE.md`](STATE.md)（每次会话先读它）。
+> Solo 开发者 + AI 中文协作。本文件是**总纲**（≤ 60 行）；细则按场景 Read 加载。
+> 状态：[`STATE.md`](STATE.md) · 边界：[`SCOPE.md`](SCOPE.md) · 地图：[`docs/context_map.md`](docs/context_map.md)
+> Codex / 其他工具入口：[`AGENTS.md`](AGENTS.md)（一行指针 → 本文件）
 
----
-
-## 角色与核心判断
-
-- solo 开发者的 AI 协作助手；中文沟通。
-- AI 可提问、整理、建议、实现、验证、复盘；不能替开发者做最终产品判断或架构拍板。
-- 核心原则：不是"AI 能不能写"，而是"现在是否已经清楚到可以让 AI 写"。
+**Boot Order**：STATE → SCOPE → context_map → 当前任务包。历史层先 `rg` 再读片段，不整篇读。
 
 ---
 
-## 项目一句话
+## 行为模式（硬铁律，对每次编辑生效）
 
-**MovieTrace** 自动发现英语影视在 6 个流媒体平台（Netflix / Prime Video / Disney+ / Apple TV+ / HBO·Max / Hulu）的热度变化，标记是否在飞书基线，生成可审核推荐清单。生产商业型严谨度。
-
----
-
-## 项目约束
-
-| 项目项 | 当前约定 |
-| --- | --- |
-| 项目名称 | MovieTrace |
-| 当前阶段 | 见 [`STATE.md`](STATE.md) |
-| 项目类型 | 生产商业型；按较高严谨度推进 |
-| 技术栈 | Python 3.12 + `.venv/` + `.env` + `config.yaml`；依赖见 `requirements.txt` |
-| 框架 | 无；引入任何新依赖前必须有任务包授权 |
-| 数据库 | SQLite（`data/movietrace.db`）；schema 见 `src/movietrace/db/schema.py`；变更须提 migration plan |
-| 目录结构 | `src/movietrace/` 源码 · `tests/` 测试 · `docs/` 文档 · `reports/` 验证报告 · `journal/` 日报 · `scripts/` 验证脚本 |
-| Token 预算 | 启动默认读 STATE + SCOPE + context_map + 当前任务包；历史层先 `rg` 再读片段；禁止每轮刷新同批文档 |
+1. **Critique-First** — 先批判方案、列假设和未知、回答"为什么这里改、改这一处够不够"，再动键盘。无任务包不编码（[`docs/tasks/TEMPLATE.md`](docs/tasks/TEMPLATE.md)）。
+2. **No Speculative Code** — 不写未请求的抽象、不顺手重构邻近代码、不为想象中的未来需求设计。三行重复优于过早抽象。
+3. **不掩盖失败** — 测试/验证失败：先报**现象 → 已排除 → 下一步定位**；禁止删逻辑掩盖问题、删测试以"通过"、静默重试。
+4. **不擅自越界** — 只改任务包允许范围内的文件；不引新依赖；不改技术栈 / 目录 / 数据库 / 架构；模型名与运行环境**每次从 system prompt 自取**，禁止沿用。
+5. **不声明完成** — 未运行验证命令并读取输出，不写"完成"；汇报按 [`docs/workflow/report-format.md`](docs/workflow/report-format.md)。
 
 ---
 
-## 启动顺序（每次会话）
-
-1. [`STATE.md`](STATE.md) — 当前阶段、进行中任务、阻塞项、交接
-2. [`SCOPE.md`](SCOPE.md) — V1/V2 边界，防止越界
-3. [`docs/context_map.md`](docs/context_map.md) — 四层加载地图
-4. 本文件规则
-5. 当前任务包（如有）
-6. **不默认整篇读取**：历史日报、已完成任务包、完整 requirements；查历史先 `rg` 搜索关键词，再打开命中片段
-
----
-
-## 12 条操作规则
-
-1. 中文沟通。
-2. 先确认当前阶段，再决定行动方式。
-3. 编码前必须有明确任务包（模板见 [docs/tasks/TEMPLATE.md](docs/tasks/TEMPLATE.md)）。
-4. 只修改任务包允许范围内的文件。
-5. 不主动引入新依赖。
-6. 不擅自改变技术栈、目录结构、数据库设计或架构边界。
-7. 不删除已有逻辑来掩盖问题。
-8. 不删除或重写无关文件。
-9. 不隐藏失败或不确定点。
-10. 测试失败时，先解释失败，再修复当前任务范围内的问题。
-11. 没有运行验证命令，不声明完成。
-12. 完成后必须汇报修改内容、验证结果和剩余风险（格式见 [docs/workflow/report-format.md](docs/workflow/report-format.md)）。
-13. **写 STATE.md / 日报 / commit 时，必须从 system prompt 自行获取当前模型名和运行环境**（`You are powered by the model ...` + `VSCode Extension Context` 等标签），禁止假设、继承或沿用上一会话的值。
-
----
-
-## 验证规则
-
-- 任务包提供验证命令 → 必须运行并读取输出
-- 任务包没有验证命令 → 应要求补充；纯文档任务可用结构检查、链接检查、人工阅读
-- 核心功能必须有测试或明确人工验证方式
-- Bug 修复必须说明原因，并补充或更新回归验证
-- 测试失败时，禁止继续开发新功能
-- 验证失败时，不能声明完成
-- 失败原因不明时，报告**现象、已排除内容、下一步定位计划**
-
-
----
-
-## 失败信号：何时停止编码
-
-出现下列任一情形，停下来澄清，**不要继续敲键盘**：
-
-- AI 开始猜测需求
-- 单次任务跨越多个目标
-- 修改范围无法说清楚
-- 验证命令不存在或无法运行
-- 代码改动无法解释为什么需要
-- 架构、环境或验收用例还没有确认
-- 测试失败但仍想继续开发新功能
-
----
-
-## 4 个易踩坑
-
-- **`PYTHONPATH=src`** — 运行测试/脚本必须带，src layout。
-- **TMDb Bearer Token** — `~/.config/movietrace/secrets.json` → `tmdb.api_read_access_token`（旧路径 `/tmp/movietrace_phase0_secrets.json` 仍 fallback 兼容）。
-- **FlixPatrol 合规** — 每 URL 每 24h ≤ 1 次、间隔 ≥ 2 秒、UA = `MovieTraceBot/0.1`、仅内部使用。
-- **飞书失败不静默重试** — 记录时间戳、来源 ID、HTTP 状态，向用户报告（规则 9）。
-
----
-
-## 按需加载（在做这件事前先读对应文件）
-
-| 准备做的事 | 先读 |
-|-----------|------|
-| 写新任务包 | [docs/tasks/TEMPLATE.md](docs/tasks/TEMPLATE.md) |
-| 会话收尾 | [docs/workflow/session-checklist.md](docs/workflow/session-checklist.md) |
-| 写日报 | [docs/workflow/journal-spec.md](docs/workflow/journal-spec.md) |
-| 完成任务汇报 | [docs/workflow/report-format.md](docs/workflow/report-format.md) |
-| 写新 ADR | [docs/decisions/README.md](docs/decisions/README.md) |
-| 排查故障 | [docs/workflow/troubleshooting.md](docs/workflow/troubleshooting.md) |
-| 日常运行 | [docs/operations/runbook.md](docs/operations/runbook.md) |
-| 反馈周报指南 | [docs/operations/feedback_report_guide.md](docs/operations/feedback_report_guide.md) |
-| 查历史执行结果 | 先 `rg` 搜索关键词到 `docs/history/phase1_state_archive.md`，再读片段 |
-| 判断任务是否在 V1 范围内 | [SCOPE.md](SCOPE.md) |
-
----
-
-## 常用命令
+## Build / Test / Lint
 
 ```bash
-# 激活环境
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# 全部测试
-PYTHONPATH=src python -m pytest tests/ -v
-
-# 日发现流水线（dry-run）
-PYTHONPATH=src python -m movietrace.cli daily-discover --dry-run
-
-# 基线查询
-PYTHONPATH=src python -m movietrace.cli inspect-baseline
-
-# 初始化/重置数据库
-PYTHONPATH=src python -c "from movietrace.db.schema import initialize_database; initialize_database('data/movietrace.db')"
-
-# git 状态
-git status --short --branch
+source .venv/bin/activate                                          # 环境
+PYTHONPATH=src python -m pytest tests/ -v                          # 全量测试
+PYTHONPATH=src python -m movietrace.cli daily-discover --dry-run   # 日发现 dry-run
+git status --short --branch                                        # 工作树状态
 ```
 
----
-
-## 仓库与代码风格
-
-| 主题 | 约定 |
-| --- | --- |
-| 项目结构 | `docs/` 文档为主 · `src/movietrace/` 源码 · `tests/` 测试 · `scripts/` 验证脚本 |
-| 现有文档 | `STATE.md`、`SCOPE.md`、`docs/requirements.md`、`docs/decisions/`、`docs/tasks/`、`docs/workflow/`、`journal/` |
-| Markdown 风格 | 标题清晰、段落短、列表直接；文件名小写下划线（如 `operating_cost_estimate.md`） |
-| Python 风格 | 4 空格缩进；公共函数类型标注；模块/函数/变量 `snake_case` |
-| 测试命名 | 按行为命名，如 `test_scoring.py`、`test_deduplication.py` |
-| SQL | 必须用 prepared statements，禁止字符串拼接 |
-| 外部 API | 必须记录时间戳和响应状态 |
-| 提交信息 | Conventional Commit，如 `docs: update feasibility plan`、`feat: add scoring configuration` |
-| PR | 摘要 · 关键改动 · 验证结果 · 配置或密钥处理说明 |
-| 安全 | 不提交 API Key、Token、飞书密钥、`.env`；只提交脱敏示例 |
+完整 CLI 与排障：[`docs/context_map.md § 3`](docs/context_map.md) · [`docs/workflow/troubleshooting.md`](docs/workflow/troubleshooting.md)
 
 ---
 
-## 外部参考路径（跨项目模板）
+## Rule Index（按工作上下文按需 Read）
 
-- 提示词模板：`~/ai-dev-workflow/docs/ai/prompt-templates.md`
-- 决策清单：`~/ai-dev-workflow/docs/human/decision-checklists.md`
-- 任务包模板：`~/ai-dev-workflow/docs/templates/task-brief.md`
-- 项目定义模板：`~/ai-dev-workflow/docs/templates/project-brief.md`
-- 方案设计模板：`~/ai-dev-workflow/docs/templates/design-brief.md`
-- 评审复盘模板：`~/ai-dev-workflow/docs/templates/review-retro.md`
+| 场景 | 必读 |
+|---|---|
+| 任何编辑前 | [`.claude/rules/00-core-behaviors.md`](.claude/rules/00-core-behaviors.md) · [`.claude/rules/40-gotchas.md`](.claude/rules/40-gotchas.md) |
+| 改 `src/**` · `scripts/**` | [`.claude/rules/20-python-and-sql.md`](.claude/rules/20-python-and-sql.md) |
+| 改 `src/movietrace/db/**` | [`.claude/rules/21-db-migrations.md`](.claude/rules/21-db-migrations.md) |
+| 改 `src/movietrace/sources/**` | [`.claude/rules/22-sources-compliance.md`](.claude/rules/22-sources-compliance.md) |
+| 改 `src/movietrace/feishu/**` · `feedback/**` | [`.claude/rules/23-feishu-integration.md`](.claude/rules/23-feishu-integration.md) |
+| 改 `tests/**` | [`.claude/rules/30-testing.md`](.claude/rules/30-testing.md) |
+| 验证 / 测试失败处置 | [`.claude/rules/10-validation.md`](.claude/rules/10-validation.md) |
+| 任务包 / 日报 / ADR / 收尾 | [`docs/tasks/TEMPLATE.md`](docs/tasks/TEMPLATE.md) · [`docs/workflow/journal-spec.md`](docs/workflow/journal-spec.md) · [`docs/decisions/README.md`](docs/decisions/README.md) · [`docs/workflow/session-checklist.md`](docs/workflow/session-checklist.md) |
+| 跨项目模板 | [`.claude/rules/90-external-templates.md`](.claude/rules/90-external-templates.md) |

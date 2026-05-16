@@ -7,5 +7,5 @@ data/
 *.sqlite3
 *.db
 source_records/
-.claude/
+.claude/settings.local.json
 .codex/
