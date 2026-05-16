@@ -1,20 +1,15 @@
 from __future__ import annotations
 
-import argparse
 import json
 import re
 import sqlite3
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import unquote
-from zoneinfo import ZoneInfo
-
-from movietrace.db.schema import connect_database
 
 
 CONFIDENCE_ORDER = ("high", "medium", "low", "no_match")
@@ -116,71 +111,6 @@ class MultiSourceSearcher:
         if errors and not results:
             raise RuntimeError(";".join(errors))
         return results
-
-
-def match_baseline_items(
-    db_path: str | Path,
-    searcher: EntitySearcher,
-    report_path: str | Path,
-    *,
-    limit: int | None = None,
-) -> EntityMatchingResult:
-    with connect_database(db_path) as conn:
-        items = _load_baseline_items(conn, limit=limit)
-        conn.execute("delete from match_candidates")
-
-        evaluations: list[MatchEvaluation] = []
-        api_error_count = 0
-        search_cache: dict[str, list[ExternalSearchResult]] = {}
-        for item in items:
-            parsed = parse_title(item.title)
-            source_decisions: dict[str, MatchDecision] = {}
-            try:
-                if parsed.query not in search_cache:
-                    search_cache[parsed.query] = searcher.search(parsed.query, item)
-                search_results = search_cache[parsed.query]
-            except Exception as exc:  # Phase 0 report should preserve API failures.
-                api_error_count += 1
-                decision = MatchDecision(
-                    result=None,
-                    confidence="no_match",
-                    score=0.0,
-                    reason=f"api_error={type(exc).__name__}: {exc}",
-                )
-            else:
-                source_decisions = _source_decisions(item, parsed, search_results)
-                decision = choose_best_match(item, parsed, search_results)
-
-            evaluations.append(
-                MatchEvaluation(
-                    item=item,
-                    parsed=parsed,
-                    decision=decision,
-                    source_decisions=source_decisions,
-                )
-            )
-            _write_match_candidate(conn, item, decision)
-
-        conn.commit()
-
-    confidence_counts: Counter[str] = Counter(
-        evaluation.decision.confidence for evaluation in evaluations
-    )
-    _write_report(
-        Path(report_path),
-        evaluations,
-        confidence_counts,
-        api_error_count=api_error_count,
-    )
-    return EntityMatchingResult(
-        total_items=len(items),
-        matched_items=sum(
-            1 for evaluation in evaluations if evaluation.decision.result is not None
-        ),
-        confidence_counts=confidence_counts,
-        api_error_count=api_error_count,
-    )
-
 
 def parse_title(title: str) -> ParsedTitle:
     original = title.strip()
@@ -314,187 +244,6 @@ def _choose_best_single_source_match(
         score=best.score,
         reason="; ".join(best.reasons),
     )
-
-
-def _load_baseline_items(
-    conn: sqlite3.Connection, *, limit: int | None
-) -> list[BaselineItem]:
-    sql = """
-        select id, title, content_type, content_granularity, season_number,
-               episode_number, year, online_status
-        from baseline_items
-        order by id
-    """
-    params: tuple[Any, ...] = ()
-    if limit is not None:
-        sql += " limit ?"
-        params = (limit,)
-    return [
-        BaselineItem(
-            id=row[0],
-            title=row[1],
-            content_type=row[2],
-            content_granularity=row[3],
-            season_number=row[4],
-            episode_number=row[5],
-            year=row[6],
-            online_status=row[7],
-        )
-        for row in conn.execute(sql, params).fetchall()
-    ]
-
-
-def _write_match_candidate(
-    conn: sqlite3.Connection,
-    item: BaselineItem,
-    decision: MatchDecision,
-) -> None:
-    result = decision.result
-    conn.execute(
-        """
-        insert into match_candidates(
-            baseline_item_id, source, external_id, title, media_type, year,
-            score, confidence, reason, raw_payload_json
-        )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            item.id,
-            result.source if result else "none",
-            result.external_id if result else None,
-            result.title if result else item.title,
-            result.media_type if result else None,
-            result.year if result else None,
-            decision.score,
-            decision.confidence,
-            decision.reason,
-            json.dumps(
-                result.raw_payload if result else {},
-                ensure_ascii=False,
-                sort_keys=True,
-            ),
-        ),
-    )
-
-
-def _write_report(
-    report_path: Path,
-    evaluations: list[MatchEvaluation],
-    confidence_counts: Counter[str],
-    *,
-    api_error_count: int,
-) -> None:
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    total = len(evaluations)
-    lines = [
-        "# MovieTrace 全量实体匹配报告",
-        "",
-        f"生成时间：{_current_report_time()}",
-        "状态：Phase 0 验证产物",
-        "数据来源：本地 SQLite `baseline_items`",
-        "写入范围：本地 `match_candidates`，不写飞书正式表",
-        "",
-        "## 1. 结论摘要",
-        "",
-        f"- 基线记录数：{total}",
-        f"- 匹配候选记录数：{sum(1 for e in evaluations if e.decision.result is not None)}",
-        f"- API 错误数：{api_error_count}",
-        "",
-        "| 置信度 | 数量 | 占比 |",
-        "| --- | ---: | ---: |",
-    ]
-    for confidence in CONFIDENCE_ORDER:
-        count = confidence_counts.get(confidence, 0)
-        lines.append(f"| {confidence} | {count} | {_percent(count, total)} |")
-
-    lines.extend(
-        [
-        "",
-        "## 2. 低置信度和未匹配样本",
-            "",
-            "| baseline_item_id | 本地标题 | 搜索标题 | 置信度 | 外部标题 | 来源 | 年份 | 依据 |",
-            "| ---: | --- | --- | --- | --- | --- | ---: | --- |",
-        ]
-    )
-    risky_rows = [
-        evaluation
-        for evaluation in evaluations
-        if evaluation.decision.confidence in {"low", "no_match"}
-    ][:50]
-    if risky_rows:
-        for evaluation in risky_rows:
-            item = evaluation.item
-            parsed = evaluation.parsed
-            decision = evaluation.decision
-            result = decision.result
-            lines.append(
-                "| "
-                + " | ".join(
-                    [
-                        str(item.id),
-                        _md(item.title),
-                        _md(parsed.query),
-                        decision.confidence,
-                        _md(result.title if result else ""),
-                        result.source if result else "",
-                        str(result.year or "") if result else "",
-                        _md(decision.reason),
-                    ]
-                )
-                + " |"
-            )
-    else:
-        lines.append("|  | 未发现 low / no_match 样本 |  |  |  |  |  |  |")
-
-    lines.extend(
-        [
-            "",
-            "## 3. TMDB / OMDb 全量建议与差异",
-            "",
-            "TMDB ID 与 IMDb ID 属于不同编号体系，不参与冲突判断。差异仅基于标题、类型、年份和来源置信度。",
-            "",
-            "| baseline_item_id | 本地标题 | 搜索标题 | 最终置信度 | 最终候选 | TMDB ID | IMDb ID | TMDB 建议 | OMDb 建议 | 差异 |",
-            "| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-        ]
-    )
-    for evaluation in evaluations:
-        item = evaluation.item
-        parsed = evaluation.parsed
-        decision = evaluation.decision
-        result = decision.result
-        tmdb_decision = evaluation.source_decisions.get("tmdb")
-        omdb_decision = evaluation.source_decisions.get("omdb")
-        lines.append(
-            "| "
-            + " | ".join(
-                [
-                    str(item.id),
-                    _md(item.title),
-                    _md(parsed.query),
-                    decision.confidence,
-                    _md(_decision_summary(decision)),
-                    _md(_source_external_id(tmdb_decision)),
-                    _md(_source_external_id(omdb_decision)),
-                    _md(_decision_summary(tmdb_decision)),
-                    _md(_decision_summary(omdb_decision)),
-                    _md(_source_difference(tmdb_decision, omdb_decision)),
-                ]
-            )
-            + " |"
-        )
-
-    lines.extend(
-        [
-            "",
-            "## 4. 人工复核建议",
-            "",
-            "- 优先抽样复核 high 匹配，目标准确率 >= 95%。",
-            "- 对 low / no_match 样本补充年份、类型或外部 ID 后再重跑。",
-            "- 本报告不代表自动写入 canonical_items 的授权。",
-            "",
-        ]
-    )
-    report_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def _combined_score(
@@ -800,69 +549,6 @@ def _normalize_title(value: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _percent(count: int, total: int) -> str:
-    if total == 0:
-        return "0.0%"
-    return f"{count / total * 100:.1f}%"
-
-
-def _md(value: str) -> str:
-    return value.replace("|", "\\|").replace("\n", " ").strip()
-
-
-def _current_report_time() -> str:
-    return datetime.now(ZoneInfo("Asia/Shanghai")).strftime(
-        "%Y-%m-%d %H:%M:%S Asia/Shanghai"
-    )
-
-
-def _decision_summary(decision: MatchDecision | None) -> str:
-    if decision is None:
-        return "no_decision"
-    result = decision.result
-    if result is None:
-        return f"none no_match {decision.reason}"
-    return (
-        f"{result.title} "
-        f"{result.media_type or ''} "
-        f"{result.year or ''} "
-        f"{decision.confidence}"
-    ).strip()
-
-
-def _source_external_id(decision: MatchDecision | None) -> str:
-    if decision is None or decision.result is None:
-        return ""
-    return decision.result.external_id or ""
-
-
-def _source_difference(
-    tmdb_decision: MatchDecision | None,
-    omdb_decision: MatchDecision | None,
-) -> str:
-    tmdb = tmdb_decision.result if tmdb_decision else None
-    omdb = omdb_decision.result if omdb_decision else None
-    if tmdb is None and omdb is None:
-        return "both_no_match"
-    if tmdb is None:
-        return "omdb_only"
-    if omdb is None:
-        return "tmdb_only"
-
-    differences: list[str] = []
-    if tmdb.media_type != omdb.media_type:
-        differences.append(f"type:{tmdb.media_type}->{omdb.media_type}")
-    if tmdb.year is not None and omdb.year is not None:
-        year_delta = abs(tmdb.year - omdb.year)
-        if year_delta > 1:
-            differences.append(f"year_delta={year_delta}")
-    if _title_similarity(tmdb.title, omdb.title) < 0.82:
-        differences.append("title_diff")
-    if not differences:
-        return "compatible"
-    return ",".join(differences)
-
-
 def _build_searcher_from_secrets(secrets_path: Path | None = None) -> MultiSourceSearcher:
     from movietrace.sources.omdb import OmdbSearchClient
     from movietrace.sources.tmdb import TmdbSearchClient
@@ -883,28 +569,6 @@ def _build_searcher_from_secrets(secrets_path: Path | None = None) -> MultiSourc
     if not searchers:
         raise RuntimeError("No TMDb or Trakt credentials found in secrets file")
     return MultiSourceSearcher(searchers)
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run Phase 0 full entity matching")
-    parser.add_argument("--db", default="data/movietrace.db")
-    parser.add_argument("--report", default="reports/full_entity_matching_report.md")
-    parser.add_argument("--secrets")
-    parser.add_argument("--limit", type=int)
-    args = parser.parse_args()
-
-    result = match_baseline_items(
-        args.db,
-        _build_searcher_from_secrets(Path(args.secrets) if args.secrets else None),
-        args.report,
-        limit=args.limit,
-    )
-    print(
-        "matched "
-        f"{result.matched_items}/{result.total_items}; "
-        f"errors={result.api_error_count}; "
-        f"confidence={dict(result.confidence_counts)}"
-    )
 
 
 # ---------------------------------------------------------------------------

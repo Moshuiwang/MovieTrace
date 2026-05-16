@@ -32,17 +32,16 @@ def _lookup_title(db_path: str | Path | None, tmdb_id: str) -> str:
         return "?"
     try:
         import sqlite3
-        conn = sqlite3.connect(str(db_path))
-        row = conn.execute(
-            """
-            SELECT ci.title FROM canonical_items ci
-            JOIN external_ids ei ON ei.canonical_item_id = ci.id
-            WHERE ei.source = 'tmdb' AND ei.external_id = ?
-            LIMIT 1
-            """,
-            (str(tmdb_id),),
-        ).fetchone()
-        conn.close()
+        with sqlite3.connect(str(db_path)) as conn:
+            row = conn.execute(
+                """
+                SELECT ci.title FROM canonical_items ci
+                JOIN external_ids ei ON ei.canonical_item_id = ci.id
+                WHERE ei.source = 'tmdb' AND ei.external_id = ?
+                LIMIT 1
+                """,
+                (str(tmdb_id),),
+            ).fetchone()
         return row[0] if row else "?"
     except Exception:
         return "?"

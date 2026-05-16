@@ -20,7 +20,10 @@ def get_secrets_path() -> Path:
 
 def load_secrets(path: str | Path | None = None) -> dict:
     """Load secrets JSON. New path (~/.config/movietrace/secrets.json) preferred,
-    falls back to legacy path (/tmp) with deprecation warning."""
+    falls back to legacy path (/tmp) with deprecation warning.
+
+    Raises RuntimeError when no valid secrets file can be loaded.
+    """
     if path:
         resolved = Path(path)
     else:
@@ -30,17 +33,20 @@ def load_secrets(path: str | Path | None = None) -> dict:
         _check_permissions(resolved)
         try:
             return json.loads(resolved.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
             if path is None and LEGACY_SECRETS_PATH.exists():
                 logger.warning("Secrets file %s is invalid JSON, trying legacy path", resolved)
                 _check_permissions(LEGACY_SECRETS_PATH)
                 try:
                     return json.loads(LEGACY_SECRETS_PATH.read_text(encoding="utf-8"))
                 except json.JSONDecodeError:
-                    logger.warning("Legacy secrets file is invalid JSON")
-                    return {}
-            logger.warning("Secrets file %s is invalid JSON", resolved)
-    elif path is None and LEGACY_SECRETS_PATH.exists():
+                    raise RuntimeError(
+                        f"Both secrets files contain invalid JSON: "
+                        f"{resolved} and {LEGACY_SECRETS_PATH}"
+                    ) from exc
+            raise RuntimeError(f"Secrets file {resolved} is invalid JSON") from exc
+
+    if path is None and LEGACY_SECRETS_PATH.exists():
         logger.warning(
             "Secrets at %s not found, falling back to legacy path %s — "
             "please migrate to %s",
@@ -49,14 +55,17 @@ def load_secrets(path: str | Path | None = None) -> dict:
         _check_permissions(LEGACY_SECRETS_PATH)
         try:
             return json.loads(LEGACY_SECRETS_PATH.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            logger.warning("Legacy secrets file is invalid JSON")
-            return {}
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Legacy secrets file {LEGACY_SECRETS_PATH} is invalid JSON"
+            ) from exc
 
-    try:
-        return json.loads(resolved.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    raise RuntimeError(
+        f"No secrets file found at {resolved}. "
+        "Create one with: mkdir -p ~/.config/movietrace && "
+        "echo '{\"tmdb\":{\"api_read_access_token\":\"...\"}}' > ~/.config/movietrace/secrets.json && "
+        "chmod 600 ~/.config/movietrace/secrets.json"
+    )
 
 
 def _check_permissions(path: Path) -> None:

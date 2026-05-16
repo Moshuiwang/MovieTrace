@@ -314,6 +314,8 @@ def sync_doc(
 
     if not app_id or not app_secret:
         raise RuntimeError("sync_doc requires app_id and app_secret")
+    if not folder_token:
+        raise RuntimeError("sync_doc requires folder_token (the Feishu folder to import into)")
 
     token = fetch_tenant_access_token(app_id, app_secret)
 

@@ -653,53 +653,57 @@ def cmd_notify_feishu(args: argparse.Namespace) -> int:
 
     log_file = args.log_file or ""
 
-    if args.level == "success":
-        run_date = args.date or date.today().isoformat()
+    try:
+        if args.level == "success":
+            run_date = args.date or date.today().isoformat()
 
-        if args.stats_file:
-            with open(args.stats_file) as f:
-                stats = json.load(f)
-        else:
-            stats = {}
+            if args.stats_file:
+                with open(args.stats_file) as f:
+                    stats = json.load(f)
+            else:
+                stats = {}
 
-        doc_url = args.doc_url or ""
-        ok = send_summary(
-            user_open_id, run_date, stats,
-            doc_url=doc_url, log_file=log_file,
-            app_id=app_id, app_secret=app_secret,
-        )
-    else:
-        ok = send_alert(
-            user_open_id,
-            level=args.level,
-            title=args.title or "MovieTrace 运行异常",
-            detail=args.detail or "",
-            log_file=log_file,
-            app_id=app_id, app_secret=app_secret,
-        )
-
-    if ok:
-        print("✓ notify-feishu sent")
-    else:
-        # Try Gmail fallback — credentials live in secrets.json → feishu.gmail
-        gmail_cfg = feishu_secrets.get("gmail", {})
-        if gmail_cfg.get("enabled"):
-            from movietrace.feishu.notify import send_email
-            sent = send_email(
-                smtp_user=gmail_cfg.get("smtp_user", ""),
-                smtp_password=gmail_cfg.get("smtp_password", ""),
-                to=gmail_cfg.get("smtp_user", ""),
-                subject=f"MovieTrace {args.level}: {args.title or 'Alert'}",
-                body=f"Level: {args.level}\nDetail: {args.detail or ''}\nLog: {log_file}",
+            doc_url = args.doc_url or ""
+            ok = send_summary(
+                user_open_id, run_date, stats,
+                doc_url=doc_url, log_file=log_file,
+                app_id=app_id, app_secret=app_secret,
             )
-            if sent:
-                print("✓ Gmail fallback sent")
-                return 0
+        else:
+            ok = send_alert(
+                user_open_id,
+                level=args.level,
+                title=args.title or "MovieTrace 运行异常",
+                detail=args.detail or "",
+                log_file=log_file,
+                app_id=app_id, app_secret=app_secret,
+            )
 
-        print("✗ notify-feishu failed (and no fallback available)")
+        if ok:
+            print("✓ notify-feishu sent")
+        else:
+            # Try Gmail fallback — credentials live in secrets.json → feishu.gmail
+            gmail_cfg = feishu_secrets.get("gmail", {})
+            if gmail_cfg.get("enabled"):
+                from movietrace.feishu.notify import send_email
+                sent = send_email(
+                    smtp_user=gmail_cfg.get("smtp_user", ""),
+                    smtp_password=gmail_cfg.get("smtp_password", ""),
+                    to=gmail_cfg.get("smtp_user", ""),
+                    subject=f"MovieTrace {args.level}: {args.title or 'Alert'}",
+                    body=f"Level: {args.level}\nDetail: {args.detail or ''}\nLog: {log_file}",
+                )
+                if sent:
+                    print("✓ Gmail fallback sent")
+                    return 0
+
+            print("✗ notify-feishu failed (and no fallback available)")
+            return 1
+
+        return 0
+    except Exception as exc:
+        print(f"✗ notify-feishu failed: {exc}")
         return 1
-
-    return 0
 
 
 # ── inspect-updates ─────────────────────────────────────────────────────
@@ -935,26 +939,26 @@ def cmd_inspect_api_usage(args: argparse.Namespace) -> int:
         conditions.append("service = ?")
         params.append(args.service)
 
-    where = ""
-    prefix = "WHERE"  # for sub-queries: "WHERE x AND y" or "WHERE status='success'"
+    # Use WHERE 1=1 as stable base so all sub-queries can use AND freely.
+    # Condition templates are hardcoded; all user values go through ? placeholders.
+    where = " WHERE 1=1"
     if conditions:
         where = " WHERE " + " AND ".join(conditions)
-        prefix = "AND"
 
     # Summary query
     total = conn.execute(f"select count(*) from api_usage_log{where}", params).fetchone()[0]
     success = conn.execute(
-        f"select count(*) from api_usage_log{where} {prefix} status='success'", params
+        f"select count(*) from api_usage_log{where} AND status='success'", params
     ).fetchone()[0]
     errors = conn.execute(
-        f"select count(*) from api_usage_log{where} {prefix} status IN ('http_error','network_error')",
+        f"select count(*) from api_usage_log{where} AND status IN ('http_error','network_error')",
         params,
     ).fetchone()[0]
     quota = conn.execute(
-        f"select count(*) from api_usage_log{where} {prefix} quota_error=1", params
+        f"select count(*) from api_usage_log{where} AND quota_error=1", params
     ).fetchone()[0]
     rate_limited = conn.execute(
-        f"select count(*) from api_usage_log{where} {prefix} rate_limited=1", params
+        f"select count(*) from api_usage_log{where} AND rate_limited=1", params
     ).fetchone()[0]
 
     fmt = args.format or "table"

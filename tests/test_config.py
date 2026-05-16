@@ -37,8 +37,8 @@ class ConfigTest(unittest.TestCase):
     def test_load_secrets_file_not_found(self):
         from movietrace.config import load_secrets
 
-        result = load_secrets(self.tmp_path / "nonexistent.json")
-        self.assertEqual(result, {})
+        with self.assertRaises(RuntimeError):
+            load_secrets(self.tmp_path / "nonexistent.json")
 
     def test_load_secrets_invalid_json(self):
         from movietrace.config import load_secrets
@@ -46,8 +46,8 @@ class ConfigTest(unittest.TestCase):
         f = self.tmp_path / "bad.json"
         f.write_text("not json")
 
-        result = load_secrets(f)
-        self.assertEqual(result, {})
+        with self.assertRaises(RuntimeError):
+            load_secrets(f)
 
     def test_load_secrets_falls_back_to_legacy(self):
         from movietrace.config import load_secrets, DEFAULT_SECRETS_PATH, LEGACY_SECRETS_PATH
@@ -81,9 +81,8 @@ class ConfigTest(unittest.TestCase):
         legacy = self._make_secrets({"tmdb": {"api_read_access_token": "legacy_token"}})
 
         with patch("movietrace.config.LEGACY_SECRETS_PATH", legacy):
-            result = load_secrets(explicit)
-
-        self.assertEqual(result, {})
+            with self.assertRaises(RuntimeError):
+                load_secrets(explicit)
 
     def test_get_secrets_path(self):
         from movietrace.config import get_secrets_path
