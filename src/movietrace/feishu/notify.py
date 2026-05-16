@@ -133,7 +133,7 @@ def send_email(
     subject: str,
     body: str,
 ) -> bool:
-    """Send an email via Gmail SMTP. Stub — not yet configured."""
+    """Send an email via Gmail SMTP. Fallback path — disabled by default, enable via secrets.feishu.gmail.enabled."""
     try:
         import smtplib
         from email.mime.text import MIMEText

@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-16 08:55 +08
-**更新人：** Claude Code CLI（Opus 4.7 + Sonnet 4.6 子代理）+ moshuiwang
+**最后更新：** 2026-05-16 14:14 +08
+**更新人：** Claude Code CLI（Sonnet 4.6）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -38,11 +38,21 @@
 | **Phase 1.21.5：维护批次（review fixes + lark-cli 替换 + migration 015）** | ✅ 全部完成 |
 | **Phase 1.21.6：A 库缺口表数据质量修正** | 📋 任务包草案待执行 |
 | **Phase 1.21.7：ADR-0007 翻转前遗留 schema 清理** | 📋 任务包草案待执行 |
+| **Phase 1.21.8：飞书集成代码清理批次（review Tier 1）** | ✅ 全部完成 |
 | **Phase 1.23：飞书运营反馈回流（只读）+ V1 观察期周报** | 📋 任务包草案待执行 |
 
-**测试：** 507 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
+**测试：** 518 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
 
 ## 最近完成
+
+### P1.21.8：飞书集成代码清理批次（2026-05-16 14:14 +08）
+- **sync.py 删 F dict 死代码**：删除 `F = {...}` 字典（50 行）及上方注释块；`F` 无任何外部引用，`sync_table` 直接用中文 field name
+- **sync.py import 顺序修正**：`UTC = timezone.utc` 移至 import 块之后，符合 Python 惯例
+- **export_writer.py need_cache 重构**：列表推导改 for-loop，保留原有 `parts[1] == "tv"` 约束，行为完全等价
+- **export_writer.py 重命名**：`_extract_tmdb_id` → `_extract_tmdb_id_from_discovery_id`，调用方同步更新
+- **notify.py docstring 修正**：`send_email` 从 "Stub — not yet configured" 改为准确描述现有实现
+- **新增 tests/test_sync.py**：11 个 case（`_to_epoch_ms` × 6 + `_derive_content_type` × 5），全量 507 → 518 passed
+- 改动仅限允许范围；无运行时行为变更
 
 ### P1.21.5：维护批次（2026-05-16 凌晨/上午）
 - **lark-cli 全面替换为 Feishu REST**：
@@ -171,6 +181,7 @@
 
 - **P1.21.6 A 库缺口表数据质量修正**：任务包 [`docs/tasks/p1.21.6_a_lib_gap_quality_fixes.md`](docs/tasks/p1.21.6_a_lib_gap_quality_fixes.md) 草案就绪，待执行。
 - **P1.21.7 遗留 schema 清理**：任务包 [`docs/tasks/p1.21.7_legacy_schema_cleanup.md`](docs/tasks/p1.21.7_legacy_schema_cleanup.md) 草案就绪，待执行（refactor，drop ADR-0007 翻转前 7 张遗留表 ~2400 行）。
+- **P1.21.8 飞书集成代码清理批次**：✅ 已完成（2026-05-16 14:14 +08）。
 - **P1.23 飞书运营反馈回流 + 周报**：任务包 [`docs/tasks/p1.23_feedback_loop_pull_feishu.md`](docs/tasks/p1.23_feedback_loop_pull_feishu.md) 草案完成（2026-05-16 09:05 +08）。
   - 用户已对 4 个产品决策拍板：只读不回写 B 库 / 每周手动跑 / 漏报暂不结构化 / 两张表都拉
   - 待用户确认任务包后开工

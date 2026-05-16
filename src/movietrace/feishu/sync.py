@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-
-UTC = timezone.utc
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+UTC = timezone.utc
 
 from movietrace.feishu.baseline import fetch_tenant_access_token
 from movietrace.feishu._http import (
@@ -26,52 +26,6 @@ from movietrace.feishu._http import (
 )
 
 TZ = ZoneInfo("Asia/Shanghai")
-
-# ── Field ID map (table: 发现运行日志, 2026-05-16) ─────────────────────────
-# Field IDs are stable across renames; Chinese names in comments for readability.
-#
-#   fldsqzJdpt       → 标题          (text, primary)
-#   fldQAjQYS3       → 发现日期       (date)
-#   fldhMhFwfV       → content_update_id (text)
-#   fldeHJXf1a       → 类型          (select: TV/Movie)
-#   fld6PkSLo1       → 更新类型       (select: new_discovery/new_season/re_promotion)
-#   fldnywX91r       → 优先级         (select: P0/P1/P2)
-#   fldjqIzdkN       → hot_score     (number)
-#   fld0yUemzc       → 季号          (number)
-#   fldP8KPqVk       → TMDb ID       (text)
-#   fld1f3gP2r       → A库最新季      (text: "S{n}" or "无")
-#   fldL0PhEUG       → 是否低置信度    (select: 是/否)
-#   fldjQdgnUW       → 数据源状态      (text)
-#   fldkSISjWq       → 检测时间       (date: yyyy/MM/dd HH:mm)
-#   fldWcf5728       → 同步时间       (date: yyyy/MM/dd HH:mm)
-#   fldQwImuZb       → 同步批次       (text)
-#   fldvnnoli7       → 运营状态       (select: 待看/确认加入/不加入)
-#   fldaKaqzdO       → 运营备注       (text)
-#   fldeG4aCTn       → 供应商状态      (select: 未提交/已提交/有货/无货)
-#   fldp05S9Pz       → 负责人         (user)
-
-# Re-export for callers that need field IDs directly
-F = {
-    "标题":             "fldsqzJdpt",
-    "发现日期":          "fldQAjQYS3",
-    "content_update_id": "fldhMhFwfV",
-    "类型":             "fldeHJXf1a",
-    "更新类型":          "fld6PkSLo1",
-    "优先级":            "fldnywX91r",
-    "hot_score":        "fldjqIzdkN",
-    "季号":             "fld0yUemzc",
-    "TMDb ID":          "fldP8KPqVk",
-    "A库最新季":         "fld1f3gP2r",
-    "是否低置信度":        "fldL0PhEUG",
-    "数据源状态":         "fldjQdgnUW",
-    "检测时间":          "fldkSISjWq",
-    "同步时间":          "fldWcf5728",
-    "同步批次":          "fldQwImuZb",
-    "运营状态":          "fldvnnoli7",
-    "运营备注":          "fldaKaqzdO",
-    "供应商状态":         "fldeG4aCTn",
-    "负责人":            "fldp05S9Pz",
-}
 
 # ── REST API helpers ──────────────────────────────────────────────────────
 
