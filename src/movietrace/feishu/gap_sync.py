@@ -39,7 +39,7 @@ latest_cache AS (
   SELECT cache_key, response_json
   FROM (
     SELECT cache_key, response_json,
-           ROW_NUMBER() OVER (PARTITION BY cache_key ORDER BY id DESC) AS rn
+           ROW_NUMBER() OVER (PARTITION BY cache_key ORDER BY fetched_at DESC, id DESC) AS rn
     FROM api_cache
     WHERE cache_key LIKE 'tmdb:detail:%:tv'
   )
@@ -167,8 +167,8 @@ def sync_gap_table(
             stats["errors"] += 1
             print(f"  ERROR [{i+1}] {row.get('name', '?')}: {exc}")
 
-    # 4. Batch create (100 per batch) — count only after success
-    batch_size = 100
+    # 4. Batch create (500 per batch, aligns with batch_update_records limit) — count only after success
+    batch_size = 500
     for start in range(0, len(to_create), batch_size):
         batch = to_create[start:start + batch_size]
         try:
@@ -206,7 +206,7 @@ def _build_fields(row: dict, now_ts: int) -> dict:
         "TMDb 已播季":   float(row["tmdb_aired_season"]),
         "缺口数":         float(row["gap_count"]),
         "缺口季":         str(row["gap_seasons"]),
-        "TMDb 状态":     str(row["tmdb_status"]) if row.get("tmdb_status") else "",
+        "TMDb 状态":     row["tmdb_status"],  # already normalized to str in compute_current_gaps
         "hot_score":     float(row["hot_score"]),
         "最近刷新时间":   now_ts,
     }

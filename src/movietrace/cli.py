@@ -588,7 +588,7 @@ def cmd_sync_feishu_table(args: argparse.Namespace) -> int:
 
 
 def cmd_sync_feishu_doc(args: argparse.Namespace) -> int:
-    """Sync latest.md as a Feishu document."""
+    """Sync latest.md as a Feishu document (via docx v1 REST API)."""
     cfg = _load_config()
     fs_cfg = cfg.get("feishu_sync", {})
     if not fs_cfg.get("enabled", True):
@@ -596,6 +596,13 @@ def cmd_sync_feishu_doc(args: argparse.Namespace) -> int:
         return 0
 
     folder_token = fs_cfg.get("doc_folder_token", "")
+
+    secrets = load_secrets()
+    creds = _load_feishu_creds(secrets)
+    if creds is None:
+        print("ERROR: feishu credentials (app_id, app_secret, base_app_token) not found in secrets.json")
+        return 1
+    app_id, app_secret, _app_token = creds
 
     title = args.title or f"MovieTrace 每日发现 {date.today().isoformat()}"
 
@@ -612,6 +619,8 @@ def cmd_sync_feishu_doc(args: argparse.Namespace) -> int:
             md_path=args.source,
             title=title,
             folder_token=folder_token,
+            app_id=app_id,
+            app_secret=app_secret,
             dry_run=args.dry_run,
         )
 
@@ -640,6 +649,12 @@ def cmd_notify_feishu(args: argparse.Namespace) -> int:
         print("ERROR: feishu.notify_user_open_id not found in secrets.json")
         return 1
 
+    creds = _load_feishu_creds(secrets)
+    if creds is None:
+        print("ERROR: feishu credentials (app_id, app_secret, base_app_token) not found in secrets.json")
+        return 1
+    app_id, app_secret, _ = creds
+
     from movietrace.feishu.notify import send_summary, send_alert
 
     log_file = args.log_file or ""
@@ -654,7 +669,11 @@ def cmd_notify_feishu(args: argparse.Namespace) -> int:
             stats = {}
 
         doc_url = args.doc_url or ""
-        ok = send_summary(user_open_id, run_date, stats, doc_url=doc_url, log_file=log_file)
+        ok = send_summary(
+            user_open_id, run_date, stats,
+            doc_url=doc_url, log_file=log_file,
+            app_id=app_id, app_secret=app_secret,
+        )
     else:
         ok = send_alert(
             user_open_id,
@@ -662,6 +681,7 @@ def cmd_notify_feishu(args: argparse.Namespace) -> int:
             title=args.title or "MovieTrace 运行异常",
             detail=args.detail or "",
             log_file=log_file,
+            app_id=app_id, app_secret=app_secret,
         )
 
     if ok:

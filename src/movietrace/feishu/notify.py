@@ -1,43 +1,48 @@
-"""Feishu notification — send summary / alert messages via lark-cli, with Gmail stub."""
+"""Feishu notification — send summary / alert messages via IM REST API, with Gmail stub."""
 
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from zoneinfo import ZoneInfo
+
+from movietrace.feishu.baseline import fetch_tenant_access_token
+from movietrace.feishu._http import OPEN_API_BASE, request_json
 
 TZ = ZoneInfo("Asia/Shanghai")
 
 
-def _lark(*args: str) -> dict:
-    """Run a lark-cli command and return parsed JSON."""
-    cmd = ["lark-cli", *args, "--as", "bot"]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"lark-cli failed (exit={result.returncode}):\n"
-            f"cmd: {' '.join(cmd)}\n"
-            f"stderr: {result.stderr[:500]}"
-        )
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return {"_raw": result.stdout}
+def _send_text_message(
+    token: str, receive_open_id: str, text: str
+) -> dict:
+    """Send a text message via /im/v1/messages, return parsed response."""
+    url = f"{OPEN_API_BASE}/im/v1/messages?receive_id_type=open_id"
+    payload = {
+        "receive_id": receive_open_id,
+        "msg_type": "text",
+        "content": json.dumps({"text": text}, ensure_ascii=False),
+    }
+    return request_json("POST", url, token=token, payload=payload)
 
 
-def send_text(user_open_id: str, text: str) -> bool:
-    """Send a plain text message to a Feishu user via bot."""
+def send_text(
+    user_open_id: str,
+    text: str,
+    *,
+    app_id: str,
+    app_secret: str,
+) -> bool:
+    """Send a plain text message to a Feishu user via app's IM scope."""
     try:
-        result = _lark(
-            "im", "+messages-send",
-            "--user-id", user_open_id,
-            "--text", text,
-        )
-        ok = result.get("ok", False) if isinstance(result, dict) else False
-        if not ok:
-            print(f"WARNING: feishu message send returned ok=false: {result}", file=sys.stderr)
-        return bool(ok)
+        token = fetch_tenant_access_token(app_id, app_secret)
+        result = _send_text_message(token, user_open_id, text)
+        if result.get("code") != 0:
+            print(
+                f"WARNING: feishu message send returned code={result.get('code')} msg={result.get('msg')}",
+                file=sys.stderr,
+            )
+            return False
+        return True
     except Exception as e:
         print(f"ERROR: feishu message send failed: {e}", file=sys.stderr)
         return False
@@ -49,6 +54,9 @@ def send_summary(
     stats: dict,
     doc_url: str = "",
     log_file: str = "",
+    *,
+    app_id: str,
+    app_secret: str,
 ) -> bool:
     """Send a daily summary notification.
 
@@ -85,7 +93,7 @@ def send_summary(
         parts.append(f"本地日志：{log_file}")
 
     text = "\n".join(parts)
-    return send_text(user_open_id, text)
+    return send_text(user_open_id, text, app_id=app_id, app_secret=app_secret)
 
 
 def send_alert(
@@ -94,6 +102,9 @@ def send_alert(
     title: str,
     detail: str = "",
     log_file: str = "",
+    *,
+    app_id: str,
+    app_secret: str,
 ) -> bool:
     """Send a failure/partial-success alert.
 
@@ -110,7 +121,7 @@ def send_alert(
         parts.append(f"本地日志：{log_file}")
 
     text = "\n".join(parts)
-    return send_text(user_open_id, text)
+    return send_text(user_open_id, text, app_id=app_id, app_secret=app_secret)
 
 
 # ── Gmail SMTP (stub) ─────────────────────────────────────────────────────

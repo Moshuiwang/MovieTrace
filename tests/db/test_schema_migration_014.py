@@ -255,7 +255,7 @@ class SchemaMigration014Test(unittest.TestCase):
         ]
         conn.close()
 
-        self.assertEqual(version, 14)
+        self.assertGreaterEqual(version, 14)  # schema_version >= 14 (015+ may be applied)
         self.assertEqual(bare_tmdb_count, 0)
         self.assertNotIn("ux_content_updates_item_type", indexes)
         self.assertIn("ux_content_updates_update_id", indexes)

@@ -6,6 +6,7 @@ to avoid duplicating boilerplate. baseline.py predates this module.
 from __future__ import annotations
 
 import json
+import re
 import urllib.request
 import urllib.error
 
@@ -31,8 +32,10 @@ def request_json(
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Feishu API HTTP {e.code}: {body[:500]}") from e
+        body = e.read().decode("utf-8", errors="replace")[:200]
+        # Mask tokens that might appear in error responses
+        body = re.sub(r'"access_token"\s*:\s*"[^"]+"', '"access_token":"***"', body)
+        raise RuntimeError(f"Feishu API HTTP {e.code}: {body}") from e
 
 
 def batch_create_records(

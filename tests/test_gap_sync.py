@@ -247,3 +247,52 @@ class TestComputeCurrentGaps(unittest.TestCase):
         idx_b = rows.index(row_b)
         self.assertLess(idx_a, idx_b,
                         f"Expected high-hot-score row (idx={idx_a}) before low-hot-score row (idx={idx_b})")
+
+    def test_compute_gaps_tmdb_status_null(self):
+        """vs with tmdb_status=None, gap > 0 → row appears with tmdb_status='' in output."""
+        vs_id, tmdb_id = 20, 20001
+
+        # Insert vs with tmdb_status=None (pass None explicitly)
+        self.conn.execute(
+            """INSERT INTO virtual_series
+               (id, tmdb_tv_id, name, tmdb_status, tmdb_number_of_seasons,
+                local_max_season, poll_priority)
+               VALUES (?, ?, ?, ?, 0, 0, ?)""",
+            (vs_id, tmdb_id, "Null Status Show", None, "urgent"),
+        )
+        prog_id, ci_id = 900, 1000
+        _insert_upstream_program(self.conn, prog_id)
+        _insert_canonical_item(self.conn, ci_id, vs_id, 1)
+        _insert_external_id_upstream(self.conn, ci_id, prog_id)
+        # TMDb: last aired S3, A库 max=1 → gap=2
+        _insert_api_cache(self.conn, tmdb_id, 3)
+        self.conn.commit()
+
+        rows = compute_current_gaps(self.conn)
+
+        self.assertEqual(len(rows), 1, f"Expected 1 gap row, got {len(rows)}")
+        row = rows[0]
+        self.assertEqual(row["vs_id"], vs_id)
+        self.assertEqual(row["gap_count"], 2)
+        self.assertEqual(row["tmdb_status"], "", "tmdb_status=None should be normalized to ''")
+
+    def test_compute_gaps_tmdb_tv_id_null(self):
+        """vs with tmdb_tv_id=None → cache_key lookup fails → tmdb_aired IS NULL → excluded."""
+        # virtual_series.tmdb_tv_id is NOT NULL per schema, so we simulate the case
+        # where there is no api_cache entry matching any valid cache_key — i.e., the vs has
+        # a tmdb_tv_id that has no corresponding cache entry. Rows with tmdb_aired IS NULL
+        # are excluded by the WHERE clause in _GAP_SQL.
+        vs_id, tmdb_id = 21, 21001
+
+        _insert_vs(self.conn, vs_id, tmdb_id, "No Cache Match Show")
+        prog_id, ci_id = 1100, 1200
+        _insert_upstream_program(self.conn, prog_id)
+        _insert_canonical_item(self.conn, ci_id, vs_id, 1)
+        _insert_external_id_upstream(self.conn, ci_id, prog_id)
+        # Intentionally do NOT insert api_cache for tmdb_id=21001, so tmdb_aired IS NULL
+        self.conn.commit()
+
+        rows = compute_current_gaps(self.conn)
+
+        vs_ids = [r["vs_id"] for r in rows]
+        self.assertNotIn(vs_id, vs_ids, "vs with no cache entry should be excluded (tmdb_aired IS NULL)")

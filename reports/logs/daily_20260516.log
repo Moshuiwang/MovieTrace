@@ -79,3 +79,76 @@ Dry-run: False
 耗时: 433s
 退出码: 0 (discover=0 export=0 sync=0)
 状态: ✅ 正常完成
+=== MovieTrace daily-discover ===
+开始: 2026-05-16 08:00:01 +08
+MovieTrace daily-discover for 2026-05-16
+Dry-run: False
+
+[1/5] Fetching TMDb trending... OK (4 items, 1p)
+[2/5] Fetching Trakt trending... OK (3 items, shows=20 movies=20)
+[3/5] Merging + enriching... flixpatrol circuit breaker: HTTP 402 — stopping all FP requests (completed 0/24 calls)
+FlixPatrol API returned no usable rows for 2026-05-16
+TMDb detail failed for 1658982 (tv): HTTP Error 404: Not Found
+OK (merged=171 omdb_hit=155 [FALLBACK])
+[4/5] Scoring + filtering... OK (passed P2+ = 75 of 171)
+[5/5] Writing content_updates... OK (written=0)
+
+Source data:
+  FlixPatrol: fallback from 2026-05-13
+  TMDb: fresh 2026-05-16
+  Trakt: fresh 2026-05-16
+
+✓ Daily discovery complete (P0=1 P1=11 P2=63)
+MovieTrace export-recommendations
+Days: 1
+Output dir: reports
+
+MD:   reports/recommendations_2026-05-16_0801.md
+JSON: reports/recommendations_2026-05-16_0801.json
+Total items: 150
+
+✓ Export complete
+MovieTrace sync-feishu-table
+Source: reports/latest.json
+Table ID: tbl84xx4WNv54An9
+Dry-run: False
+
+读取 150 条记录 from reports/latest.json
+运行日期: 2026-05-16
+Table ID:  tbl84xx4WNv54An9
+获取飞书 token...
+加载 2026-05-16 已有记录...
+  已有记录: 150 条
+同步记录...
+  进度: 10/150 (created=0, updated=10, errors=0)
+  进度: 20/150 (created=0, updated=20, errors=0)
+  进度: 30/150 (created=0, updated=30, errors=0)
+  进度: 40/150 (created=0, updated=40, errors=0)
+  进度: 50/150 (created=0, updated=50, errors=0)
+  进度: 60/150 (created=0, updated=60, errors=0)
+  进度: 70/150 (created=0, updated=70, errors=0)
+  进度: 80/150 (created=0, updated=80, errors=0)
+  进度: 90/150 (created=0, updated=90, errors=0)
+  进度: 100/150 (created=0, updated=100, errors=0)
+  进度: 110/150 (created=0, updated=110, errors=0)
+  进度: 120/150 (created=0, updated=120, errors=0)
+  进度: 130/150 (created=0, updated=130, errors=0)
+  进度: 140/150 (created=0, updated=140, errors=0)
+  进度: 150/150 (created=0, updated=150, errors=0)
+
+同步完成: total=150, created=0, updated=150, errors=0
+✓ sync-feishu-table complete
+MovieTrace sync-feishu-doc
+Source: reports/latest.md
+Title: MovieTrace 每日发现 2026-05-16
+Dry-run: False
+
+✗ sync-feishu-doc failed: [Errno 2] No such file or directory: 'lark-cli'
+ERROR: feishu message send failed: [Errno 2] No such file or directory: 'lark-cli'
+✗ notify-feishu failed (and no fallback available)
+
+=== 运行摘要 ===
+结束: 2026-05-16 08:01:22 +08
+耗时: 81s
+退出码: 0 (discover=0 export=0 sync=0)
+状态: ✅ 正常完成

@@ -6,7 +6,7 @@
 
 ---
 
-**最后更新：** 2026-05-16 04:00 +08
+**最后更新：** 2026-05-16 08:55 +08
 **更新人：** Claude Code CLI（Opus 4.7 + Sonnet 4.6 子代理）+ moshuiwang
 **所在分支：** `main`
 
@@ -35,10 +35,22 @@
 | **Phase 1.19：baseline 报告可观测性修正** | ✅ 已完成 |
 | **Phase 1.20：code review 跟进修正** | ✅ 全部完成 |
 | **Phase 1.21：A库缺口快照子表（状态快照）** | ✅ 全部完成 |
+| **Phase 1.21.5：维护批次（review fixes + lark-cli 替换 + migration 015）** | ✅ 全部完成 |
 
-**测试：** 505 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
+**测试：** 507 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
 
 ## 最近完成
+
+### P1.21.5：维护批次（2026-05-16 凌晨/上午）
+- **lark-cli 全面替换为 Feishu REST**：
+  - `sync_doc` → `/docx/v1/documents` + `/docx/v1/documents/{id}/blocks/{block_id}/children`
+  - `notify` 系列（`send_text`/`send_summary`/`send_alert`）→ `/im/v1/messages?receive_id_type=open_id`
+  - 移除 `subprocess`+lark-cli 依赖；cron 环境下不再因 PATH 问题崩溃
+- **Token 文件缓存**：`~/.cache/movietrace/feishu_token.json`（0600 权限，5 min 过期 skew），`baseline.py` 中 fetch_tenant_access_token 改造完毕，跨 CLI 进程共享，避免一次 baseline_run 里 4 次重复获取
+- **Migration 015**：`api_cache` 加 `UNIQUE INDEX ON cache_key`，去重 40 条重复缓存（pre-fix 由 cartesian product 产生过 gap 表 dupes）
+- **Review 5 个 Should-have**：错误体截短 + access_token mask、batch_size 100→500 对齐、冗余 tmdb_status guard 删除、SQL `ORDER BY fetched_at DESC, id DESC`、test_gap_sync 增加 2 个 None 边界用例
+- 端到端验证：`sync-feishu-doc` 创建文档 OK；`notify-feishu` 发送 OK
+- 测试 505 → 507 passed（+2 个新边界 case）
 
 ### P1.21：A库缺口快照子表（2026-05-16）
 - 任务包：[`docs/tasks/p1.21_a_lib_gap_snapshot_table.md`](docs/tasks/p1.21_a_lib_gap_snapshot_table.md)，决策：[ADR-0013](docs/decisions/0013-baseline-gap-snapshot-table.md)

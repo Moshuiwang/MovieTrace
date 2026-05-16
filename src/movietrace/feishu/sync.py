@@ -2,7 +2,7 @@
 
 Bitable operations use the app credentials from secrets.json (same as baseline.py),
 NOT lark-cli bot identity, to avoid cross-app permission issues.
-Doc sync uses lark-cli (bot identity, which has docx:document:create scope).
+Doc sync uses the Feishu docx v1 REST API (POST /open-apis/docx/v1/documents).
 
 Table and fields are pre-created via Feishu UI/API; this module does NOT auto-create.
 """
@@ -10,7 +10,6 @@ Table and fields are pre-created via Feishu UI/API; this module does NOT auto-cr
 from __future__ import annotations
 
 import json
-import subprocess
 from datetime import datetime, timezone as _UTC
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -318,16 +317,32 @@ def _derive_content_type(rec: dict) -> str:
     return "unknown"
 
 
-# ── Doc sync (via lark-cli) ───────────────────────────────────────────────
+# ── Doc sync (via Feishu docx v1 REST API) ───────────────────────────────────
+
+# Maximum characters per text block (Feishu block content limit)
+_DOCX_BLOCK_MAX_CHARS = 10_000
+
 
 def sync_doc(
     md_path: str,
     title: str,
     folder_token: str = "",
     *,
+    app_id: str = "",
+    app_secret: str = "",
     dry_run: bool = False,
 ) -> dict:
-    """Sync latest.md content as a Feishu document via lark-cli."""
+    """Sync latest.md content as a Feishu docx document via REST API.
+
+    Uses POST /open-apis/docx/v1/documents to create the document, then adds
+    text blocks via POST /open-apis/docx/v1/documents/{doc_id}/blocks/{block_id}/children.
+
+    App needs docx:document:create scope.  If the permission is missing, Feishu returns
+    a non-zero code — this function raises RuntimeError with the code so the caller can
+    report it clearly.
+
+    Returns: {"doc_url": str, "doc_token": str}
+    """
     path = Path(md_path)
     content = path.read_text(encoding="utf-8")
 
@@ -336,34 +351,65 @@ def sync_doc(
         print(f"[DRY-RUN] 内容长度: {len(content)} 字符")
         return {"doc_url": "", "doc_token": "", "dry_run": True}
 
-    cmd = [
-        "lark-cli", "docs", "+create",
-        "--as", "bot",
-        "--title", title,
-        "--markdown", content,
-    ]
+    if not app_id or not app_secret:
+        raise RuntimeError("sync_doc requires app_id and app_secret (docx REST API auth)")
+
+    token = fetch_tenant_access_token(app_id, app_secret)
+
+    # 1. Create document
+    create_url = f"{OPEN_API_BASE}/docx/v1/documents"
+    create_payload: dict = {"title": title}
     if folder_token:
-        cmd.extend(["--folder-token", folder_token])
+        create_payload["folder_token"] = folder_token
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-    if result.returncode != 0:
-        raise RuntimeError(f"lark-cli docs +create failed: {result.stderr[:500]}")
+    create_resp = request_json("POST", create_url, token=token, payload=create_payload)
+    if create_resp.get("code") != 0:
+        code = create_resp.get("code")
+        msg = create_resp.get("msg", "")
+        if code in (99991663, 99991661, 1061045):
+            raise RuntimeError(
+                f"Feishu docx create permission denied (code={code}): {msg}. "
+                f"Grant the app 'docx:document:create' scope in the Feishu console."
+            )
+        raise RuntimeError(f"Feishu docx create failed (code={code}): {msg}")
 
-    stdout = result.stdout.strip()
-    data = None
-    lines = stdout.split("\n")
-    for i, line in enumerate(lines):
-        if line.strip().startswith("{"):
-            candidate = "\n".join(lines[i:])
-            try:
-                data = json.loads(candidate)
-                break
-            except json.JSONDecodeError:
-                continue
-    if data is None:
-        return {"doc_url": "", "doc_token": "", "_raw": stdout}
+    doc_data = create_resp.get("data", {}).get("document", {})
+    document_id = doc_data.get("document_id", "")
+    doc_url = doc_data.get("url", "") or f"https://bytedance.feishu.cn/docx/{document_id}"
 
-    inner = data.get("data", {}) if isinstance(data, dict) else {}
-    doc_url = inner.get("doc_url", "") or inner.get("url", "")
-    doc_token = inner.get("doc_id", "") or inner.get("document_id", "")
-    return {"doc_url": doc_url, "doc_token": doc_token}
+    if not document_id:
+        raise RuntimeError(f"Feishu docx create returned no document_id: {create_resp}")
+
+    # 2. Add content as text blocks (split by _DOCX_BLOCK_MAX_CHARS)
+    children_url = (
+        f"{OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/children"
+    )
+
+    # Split content into chunks
+    chunks = [
+        content[i : i + _DOCX_BLOCK_MAX_CHARS]
+        for i in range(0, len(content), _DOCX_BLOCK_MAX_CHARS)
+    ] or [""]
+
+    for idx, chunk in enumerate(chunks):
+        block_payload = {
+            "children": [
+                {
+                    "block_type": 2,
+                    "text": {
+                        "elements": [{"text_run": {"content": chunk}}],
+                        "style": {},
+                    },
+                }
+            ],
+            "index": idx,
+        }
+        block_resp = request_json("POST", children_url, token=token, payload=block_payload)
+        if block_resp.get("code") != 0:
+            code = block_resp.get("code")
+            msg = block_resp.get("msg", "")
+            raise RuntimeError(
+                f"Feishu docx add block failed at chunk {idx} (code={code}): {msg}"
+            )
+
+    return {"doc_url": doc_url, "doc_token": document_id}
