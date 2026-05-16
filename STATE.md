@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-16 19:10 +08
-**更新人：** Claude Code CLI（Sonnet 4.6）+ moshuiwang
+**最后更新：** 2026-05-16 20:45 +08
+**更新人：** Claude Code CLI（Sonnet 4.6）
 **所在分支：** `main`
 
 ---
@@ -40,10 +40,19 @@
 | **Phase 1.21.7：ADR-0007 翻转前遗留 schema 清理** | ✅ 全部完成 |
 | **Phase 1.21.8：飞书集成代码清理批次（review Tier 1）** | ✅ 全部完成 |
 | **Phase 1.23：飞书运营反馈回流（只读）+ V1 观察期周报** | ✅ 全部完成 |
+| **Phase 1.21.9：sync_doc 改用 drive/v1/import_task** | ✅ 全部完成 |
 
-**测试：** 417 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过；P1.21.7 删除 119 个死代码测试，P1.23 新增 17）
+**测试：** 441 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过；P1.21.7 删除 119 个死代码测试，P1.23 新增 17，P1.21.9 新增 12）
 
 ## 最近完成
+
+### P1.21.9：sync_doc 改用 drive/v1/import_task（2026-05-16 20:45 +08）
+- **_http.py**：新增 `build_multipart_body`（stdlib RFC 7578）和 `upload_media_file` 两个 helper
+- **sync.py**：`sync_doc` 三步改造：upload .md → create import task → poll until done；删除 `_DOCX_BLOCK_MAX_CHARS` 和旧 docx blocks 写入逻辑
+- **权限**：所需 scope 从 `docx:document:create` 改为 `drive:drive`（与 gap_sync 一致）；权限错误码 99991661/99991663/1061045 显式提示控制台申请路径
+- **测试**：12 个新 case（6 build_multipart_body + 6 sync_doc）；test_sync.py 合并 P1.21.8（11 个）+ P1.21.9（12 个）= 23 个
+- **ADR-0015**：`docs/decisions/0015-feishu-doc-import-via-import-tasks.md`
+- 全量 441 passed（--ignore=test_flixpatrol_parsing.py）
 
 ### P1.23：飞书运营反馈回流（只读）+ V1 观察期周报（2026-05-16 19:10 +08）
 - **feedback/pull.py**：`pull_hot_table`（近 N 天，客户端日期过滤）+ `pull_gap_table`（全量快照）；分页 500/页；3 次重试指数退避
