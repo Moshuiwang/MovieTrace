@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-16 08:55 +08
-**更新人：** Claude Code CLI（Opus 4.7 + Sonnet 4.6 子代理）+ moshuiwang
+**最后更新：** 2026-05-16 18:30 +08
+**更新人：** Claude Code CLI（Sonnet 4.6）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -37,12 +37,22 @@
 | **Phase 1.21：A库缺口快照子表（状态快照）** | ✅ 全部完成 |
 | **Phase 1.21.5：维护批次（review fixes + lark-cli 替换 + migration 015）** | ✅ 全部完成 |
 | **Phase 1.21.6：A 库缺口表数据质量修正** | ✅ 全部完成 |
-| **Phase 1.21.7：ADR-0007 翻转前遗留 schema 清理** | 📋 任务包草案待执行 |
+| **Phase 1.21.7：ADR-0007 翻转前遗留 schema 清理** | ✅ 全部完成 |
+| **Phase 1.21.8：飞书集成代码清理批次（review Tier 1）** | ✅ 全部完成 |
 | **Phase 1.23：飞书运营反馈回流（只读）+ V1 观察期周报** | 📋 任务包草案待执行 |
 
-**测试：** 519 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
+**测试：** 400 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过；P1.21.7 删除 119 个死代码测试）
 
 ## 最近完成
+
+### P1.21.7：ADR-0007 翻转前遗留 schema 清理（2026-05-16 18:30 +08）
+- **Migration 016**：新增 `016_drop_legacy_tables.sql`，DROP IF EXISTS 删除 6 张死表（feishu_import_runs / source_records / baseline_items / candidates / candidate_matches / match_candidates）
+- **SCHEMA_SQL 清理**：schema.py 删除 4 张表的 CREATE TABLE，防止新实例误建；SCHEMA_VERSION 15 → 16
+- **死代码删除**：移除 baseline_import.py / baseline_matching.py / canonical_promotion.py / daily_writer.py（均无活跃 CLI 调用）
+- **测试清理**：删除 test_baseline_import.py 等 5 个死代码测试文件、test_entity_matching.py 中 3 个引用死表的方法；519 → 400 passed
+- **cli.py inspect-baseline**：移除对 baseline_items 的查询（表已不存在）
+- **ADR-0014**：新增 `docs/decisions/0014-legacy-schema-cleanup.md` 记录清理决策
+- Smoke：`baseline-track --dry-run` 85 条计划 0 error
 
 ### P1.21.6：A库缺口表数据质量修正（2026-05-16 14:45 +08）
 - **SQL 虚假缺口剔除**：`_GAP_SQL` WHERE 加 `AND COALESCE(alm.a_lib_max_season, 0) > 0`；飞书缺口表行数 142 → 68（真实缺口）
