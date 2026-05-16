@@ -11,6 +11,10 @@ export TZ='Asia/Shanghai'
 LOG_DIR="$PROJECT_DIR/reports/logs"
 mkdir -p "$LOG_DIR"
 
+# 数据库备份（保留最新 30 个）
+source "$PROJECT_DIR/scripts/_backup_db.sh"
+backup_database "data/movietrace.db" 30
+
 LOG_FILE="$LOG_DIR/daily_$(date +%Y%m%d).log"
 START_TIME=$(date '+%Y-%m-%d %H:%M:%S +08')
 RUN_DATE=$(date +%Y-%m-%d)
