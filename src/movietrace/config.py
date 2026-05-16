@@ -11,6 +11,7 @@ logger = logging.getLogger("movietrace.config")
 DEFAULT_SECRETS_DIR = Path.home() / ".config" / "movietrace"
 DEFAULT_SECRETS_PATH = DEFAULT_SECRETS_DIR / "secrets.json"
 LEGACY_SECRETS_PATH = Path("/tmp/movietrace_phase0_secrets.json")
+SMOKE_TEST_SECRETS_PATH = DEFAULT_SECRETS_DIR / "secrets.smoke-test.json"
 
 
 def get_secrets_path() -> Path:
@@ -18,9 +19,44 @@ def get_secrets_path() -> Path:
     return DEFAULT_SECRETS_PATH
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge *override* into *base*. Dicts are merged; scalars/lists replaced."""
+    result = dict(base)
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def _apply_smoke_overlay(secrets: dict) -> dict:
+    """When MOVIETRACE_SMOKE=1, deep-merge secrets.smoke-test.json on top."""
+    if os.environ.get("MOVIETRACE_SMOKE") != "1":
+        return secrets
+    if not SMOKE_TEST_SECRETS_PATH.exists():
+        logger.warning(
+            "MOVIETRACE_SMOKE=1 but %s not found, using production secrets",
+            SMOKE_TEST_SECRETS_PATH,
+        )
+        return secrets
+    try:
+        overlay = json.loads(SMOKE_TEST_SECRETS_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        logger.warning(
+            "Smoke test secrets file %s is invalid JSON, using production secrets",
+            SMOKE_TEST_SECRETS_PATH,
+        )
+        return secrets
+    return _deep_merge(secrets, overlay)
+
+
 def load_secrets(path: str | Path | None = None) -> dict:
     """Load secrets JSON. New path (~/.config/movietrace/secrets.json) preferred,
     falls back to legacy path (/tmp) with deprecation warning.
+
+    When MOVIETRACE_SMOKE=1, additionally loads secrets.smoke-test.json and
+    deep-merges it on top (overriding table IDs for the smoke-test Feishu base).
 
     Raises RuntimeError when no valid secrets file can be loaded.
     """
@@ -32,13 +68,13 @@ def load_secrets(path: str | Path | None = None) -> dict:
     if resolved.exists():
         _check_permissions(resolved)
         try:
-            return json.loads(resolved.read_text(encoding="utf-8"))
+            return _apply_smoke_overlay(json.loads(resolved.read_text(encoding="utf-8")))
         except json.JSONDecodeError as exc:
             if path is None and LEGACY_SECRETS_PATH.exists():
                 logger.warning("Secrets file %s is invalid JSON, trying legacy path", resolved)
                 _check_permissions(LEGACY_SECRETS_PATH)
                 try:
-                    return json.loads(LEGACY_SECRETS_PATH.read_text(encoding="utf-8"))
+                    return _apply_smoke_overlay(json.loads(LEGACY_SECRETS_PATH.read_text(encoding="utf-8")))
                 except json.JSONDecodeError:
                     raise RuntimeError(
                         f"Both secrets files contain invalid JSON: "
@@ -54,7 +90,7 @@ def load_secrets(path: str | Path | None = None) -> dict:
         )
         _check_permissions(LEGACY_SECRETS_PATH)
         try:
-            return json.loads(LEGACY_SECRETS_PATH.read_text(encoding="utf-8"))
+            return _apply_smoke_overlay(json.loads(LEGACY_SECRETS_PATH.read_text(encoding="utf-8")))
         except json.JSONDecodeError as exc:
             raise RuntimeError(
                 f"Legacy secrets file {LEGACY_SECRETS_PATH} is invalid JSON"

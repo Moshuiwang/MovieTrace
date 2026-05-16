@@ -129,5 +129,99 @@ class ConfigPermissionsTest(unittest.TestCase):
                 _check_permissions(self.secrets_file)
 
 
+class DeepMergeTest(unittest.TestCase):
+    def test_merges_nested_dicts(self):
+        from movietrace.config import _deep_merge
+
+        base = {"feishu": {"app_id": "prod_id", "table": "tbl_prod"}}
+        override = {"feishu": {"table": "tbl_test"}}
+        result = _deep_merge(base, override)
+        self.assertEqual(result["feishu"]["app_id"], "prod_id")   # kept
+        self.assertEqual(result["feishu"]["table"], "tbl_test")   # overridden
+
+    def test_adds_new_top_level_keys(self):
+        from movietrace.config import _deep_merge
+
+        base = {"tmdb": {"token": "x"}}
+        override = {"trakt": {"client_id": "y"}}
+        result = _deep_merge(base, override)
+        self.assertIn("tmdb", result)
+        self.assertIn("trakt", result)
+
+    def test_replaces_scalar_values(self):
+        from movietrace.config import _deep_merge
+
+        base = {"key": "old"}
+        override = {"key": "new"}
+        result = _deep_merge(base, override)
+        self.assertEqual(result["key"], "new")
+
+    def test_does_not_mutate_base(self):
+        from movietrace.config import _deep_merge
+
+        base = {"feishu": {"app_id": "prod"}}
+        override = {"feishu": {"app_id": "test"}}
+        _deep_merge(base, override)
+        self.assertEqual(base["feishu"]["app_id"], "prod")  # unchanged
+
+
+class SmokeOverlayTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmpdir_obj = tempfile.TemporaryDirectory()
+        self.tmpdir = Path(self.tmpdir_obj.name)
+        self.prod_file = self.tmpdir / "secrets.json"
+        self.smoke_file = self.tmpdir / "secrets.smoke-test.json"
+
+    def tearDown(self):
+        self.tmpdir_obj.cleanup()
+
+    def _write(self, path: Path, data: dict):
+        import json
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_no_overlay_when_env_not_set(self):
+        from movietrace.config import _apply_smoke_overlay
+        import os
+
+        secrets = {"feishu": {"app_id": "prod"}}
+        with patch.dict(os.environ, {}, clear=True):
+            result = _apply_smoke_overlay(secrets)
+        self.assertEqual(result["feishu"]["app_id"], "prod")
+
+    @patch("movietrace.config.SMOKE_TEST_SECRETS_PATH")
+    def test_warns_when_env_set_but_file_missing(self, mock_path):
+        from movietrace.config import _apply_smoke_overlay
+        import os
+
+        mock_path.exists.return_value = False
+        mock_path.__str__ = lambda s: "/fake/smoke-test.json"
+        secrets = {"feishu": {"app_id": "prod"}}
+        with patch.dict(os.environ, {"MOVIETRACE_SMOKE": "1"}):
+            with self.assertLogs("movietrace.config", level="WARNING") as log_capture:
+                result = _apply_smoke_overlay(secrets)
+        self.assertIn("not found", log_capture.output[0])
+        self.assertEqual(result["feishu"]["app_id"], "prod")  # unchanged
+
+    def test_overrides_table_ids_when_env_set(self):
+        from movietrace.config import _apply_smoke_overlay
+        import os
+
+        prod = {"feishu": {"app_id": "cli_abc", "base_app_token": "P6y3bM",
+                            "discovery_table_id": "tbl84xx", "gap_table_id": "tbl1NNU"}}
+        smoke = {"feishu": {"base_app_token": "WyMAbu",
+                             "discovery_table_id": "tbl16QY", "gap_table_id": "tbleI8J"}}
+        self._write(self.smoke_file, smoke)
+
+        with patch("movietrace.config.SMOKE_TEST_SECRETS_PATH", self.smoke_file):
+            with patch.dict(os.environ, {"MOVIETRACE_SMOKE": "1"}):
+                result = _apply_smoke_overlay(prod)
+
+        self.assertEqual(result["feishu"]["app_id"], "cli_abc")      # from prod
+        self.assertEqual(result["feishu"]["base_app_token"], "WyMAbu")  # overridden
+        self.assertEqual(result["feishu"]["discovery_table_id"], "tbl16QY")
+        self.assertEqual(result["feishu"]["gap_table_id"], "tbleI8J")
+
+
 if __name__ == "__main__":
     unittest.main()

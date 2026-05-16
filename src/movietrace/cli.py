@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -1133,6 +1134,8 @@ def main() -> None:
         prog="movietrace",
         description="MovieTrace Phase 1 CLI",
     )
+    parser.add_argument("--smoke-test", action="store_true",
+                        help="Use smoke-test Feishu base instead of production")
     sub = parser.add_subparsers(dest="command", required=True)
 
     # daily-discover
@@ -1247,6 +1250,9 @@ def main() -> None:
     p_exp_fb.add_argument("--dry-run", action="store_true")
 
     args = parser.parse_args()
+
+    if args.smoke_test:
+        os.environ["MOVIETRACE_SMOKE"] = "1"
 
     handlers = {
         "daily-discover": cmd_daily_discover,
