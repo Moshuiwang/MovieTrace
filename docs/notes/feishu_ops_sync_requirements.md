@@ -1,7 +1,11 @@
-# MovieTrace 飞书运营同步需求草案
+# MovieTrace 飞书运营同步需求（历史草案记录）
 
-状态：需求草案，待 2026-05-15 继续打磨  
-日期：2026-05-14  
+状态：**已落地**（V1 运行观察期）。2026-05-16 起 V1 闭环：飞书三张子表 + sync_doc + notify + 反馈回流。
+原始草案日期：2026-05-14
+落地里程碑：P1.21（A 库缺口子表）/ P1.21.5（lark-cli → REST API）/ P1.21.6（数据质量）/ P1.21.9（sync_doc 改 import_task）/ P1.23（运营反馈回流）
+
+> 当前运行状态见 [`STATE.md`](../../STATE.md)；运营字段填写规范见 [`feishu_feedback_spec.md`](../operations/feishu_feedback_spec.md)；CLI 命令清单见 [`context_map.md`](../context_map.md) § 3。本文件作为产品决策的历史草案保留——记录了"为什么这么做"的判断（推荐边界、范围决策），未来调整时可对照参考；不再作为待执行计划。
+
 背景：MovieTrace 已进入 V1 运行观察期，`daily-discover`、`export-recommendations` 已能生成本地 MD/JSON 报告。运营查看结果仍依赖服务器文件或 GitHub，不利于日常消费和异常响应。
 
 ---

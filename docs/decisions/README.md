@@ -24,6 +24,9 @@
 | [0010](0010-no-real-api-calls-in-automated-tests.md) | 自动化测试不消耗真实外部 API | ✅ Accepted | 2026-05-14 |
 | [0011](0011-secrets-path-migration.md) | Secrets 路径从 /tmp 迁移到 ~/.config/movietrace/ | ✅ Accepted | 2026-05-14 |
 | [0012](0012-content-updates-event-history.md) | content_updates 改为事件历史表 | ✅ Accepted | 2026-05-14 |
+| [0013](0013-baseline-gap-snapshot-table.md) | A 库缺口快照子表（实时从 virtual_series 算缺口）| ✅ Accepted | 2026-05-16 |
+| [0014](0014-legacy-schema-cleanup.md) | ADR-0007 翻转前 6 张遗留表清理（migration 016）| ✅ Accepted | 2026-05-16 |
+| [0015](0015-feishu-doc-import-via-import-tasks.md) | sync_doc 切换 drive/v1/import_task（删 docx-blocks API）| ✅ Accepted | 2026-05-16 |
 
 ---
 

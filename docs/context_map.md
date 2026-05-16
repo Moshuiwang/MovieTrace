@@ -27,7 +27,7 @@
 |------|------|--------|
 | 日常运行 | [`docs/operations/runbook.md`](operations/runbook.md) | CLI 命令、备份、排障 |
 | 飞书运营字段规范 | [`docs/operations/feishu_feedback_spec.md`](operations/feishu_feedback_spec.md) | P1.23 新增：运营怎么填、填了之后怎么影响系统 |
-| 反馈日报自动化说明 | [`docs/operations/feedback_log_template.md`](operations/feedback_log_template.md) | P1.23 起改为 `export-feedback-report` 自动生成；说明字段含义 |
+| 反馈周报使用指南 | [`docs/operations/feedback_report_guide.md`](operations/feedback_report_guide.md) | P1.23 起改为 `export-feedback-report` 自动生成；说明字段含义 |
 | 排查故障 | [`docs/workflow/troubleshooting.md`](workflow/troubleshooting.md) | 排查方法论 |
 | 写日报 | [`docs/workflow/journal-spec.md`](workflow/journal-spec.md) | 日报格式（含 token 字段精确值）|
 | 会话收尾 | [`docs/workflow/session-checklist.md`](workflow/session-checklist.md) | 收尾清单 |

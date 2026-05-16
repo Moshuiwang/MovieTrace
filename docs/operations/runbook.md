@@ -15,7 +15,7 @@ pip install -r requirements.txt
 
 # 确认数据库状态
 sqlite3 data/movietrace.db "select max(version) from schema_migrations;"
-# 预期输出：14
+# 预期输出：16
 
 # 确认 secrets 可用
 cat ~/.config/movietrace/secrets.json 2>/dev/null || cat /tmp/movietrace_phase0_secrets.json 2>/dev/null

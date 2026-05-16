@@ -111,7 +111,7 @@
 | 写新 ADR | [docs/decisions/README.md](docs/decisions/README.md) |
 | 排查故障 | [docs/workflow/troubleshooting.md](docs/workflow/troubleshooting.md) |
 | 日常运行 | [docs/operations/runbook.md](docs/operations/runbook.md) |
-| 运营反馈记录 | [docs/operations/feedback_log_template.md](docs/operations/feedback_log_template.md) |
+| 反馈周报指南 | [docs/operations/feedback_report_guide.md](docs/operations/feedback_report_guide.md) |
 | 查历史执行结果 | 先 `rg` 搜索关键词到 `docs/history/phase1_state_archive.md`，再读片段 |
 | 判断任务是否在 V1 范围内 | [SCOPE.md](SCOPE.md) |
 

@@ -60,7 +60,7 @@
 - **CLI**：`pull-feishu-feedback` + `export-feedback-report` 两个子命令
 - **scripts/weekly_feedback.sh**：一键 pull+export；非零退出触发飞书告警；不接 cron
 - **feishu_feedback_spec.md**：运营字段填写规范（选项口径/何时填/不填影响）
-- **feedback_log_template.md**：改写为 AI 自动生成说明
+- **feedback_report_guide.md**：改写为 AI 自动生成说明
 - **测试**：17 个用例（8 pull + 9 weekly_report）；476 passed 在 worktree
 - **真实 smoke**：拉取 150 hot records + 68 gap records，生成 reports/feedback/feedback_log_2026-W20.md
 
@@ -102,7 +102,7 @@
 - 测试 505 → 507 passed（+2 个新边界 case）
 
 ### P1.21：A库缺口快照子表（2026-05-16）
-- 任务包：[`docs/tasks/p1.21_a_lib_gap_snapshot_table.md`](docs/tasks/p1.21_a_lib_gap_snapshot_table.md)，决策：[ADR-0013](docs/decisions/0013-baseline-gap-snapshot-table.md)
+- 任务包：[`docs/tasks/archive/p1.21_a_lib_gap_snapshot_table.md`](docs/tasks/archive/p1.21_a_lib_gap_snapshot_table.md)，决策：[ADR-0013](docs/decisions/0013-baseline-gap-snapshot-table.md)
 - **问题**：2026-05-15 morning "清扫 151 条 new_season" 后，local_max_season 未回滚，导致 baseline catch-up 第二次跑 detected=0；事件日志驱动的飞书表展现层不可靠
 - **解决**：飞书新增子表 "A库缺口"（`tbl1NNU8kmlLKpLm`），直接从 `virtual_series + canonical_items + api_cache` 实时算缺口，**不依赖 content_updates 事件历史**
 - 行粒度：1 行 = 1 series；upsert by TMDb ID
@@ -152,7 +152,7 @@
 - Smoke：495 tests · dry-run 720 merged 75 P2+ · inspect 12 updates · export OK
 
 ### P1.15（收口文档）
-- 新建 `docs/reviews/v1_closeout_review.md`、`docs/operations/runbook.md`、`docs/operations/feedback_log_template.md`
+- 新建 `docs/reviews/v1_closeout_review.md`、`docs/operations/runbook.md`、`docs/operations/feedback_report_guide.md`
 - `SCOPE.md` 飞书描述修正为当前 MD/JSON 导出
 
 ### 运行观察期需求沉淀（飞书运营同步）
@@ -264,22 +264,37 @@ PR #1 已合入，分支已删除。
 
 ## 给下一个 Agent 的交接
 
-- **真实库 schema version = 14**（migrations 001-014 全部落盘）
-- **备份：** `data/movietrace_backup_20260514_2028.db`
-- **P1.18 catch-up 前备份：** `data/movietrace_backup_20260515_1002_before_baseline_catchup.db`
-- **分支：** `main`（PR #1 已合入）
-- **Secrets：** `~/.config/movietrace/secrets.json`（fallback `/tmp/movietrace_phase0_secrets.json` + warning）
-- **config 模块：** `src/movietrace/config.py` 统一 secrets 入口
-- **content_updates 语义：** 事件历史表，`content_update_id` 唯一，discovery ID 格式 `discovery:{movie|tv}:{tmdb_id}:{date}`
-- **上下文加载：** 按 `docs/context_map.md` 四层地图加载，历史查 `rg` 不整篇读
-- **FP API 402** 不可用 · **OMDb** 正常
-- **测试：** 441 passed（--ignore=test_flixpatrol_parsing），~83s
-- **CI：** `.github/workflows/ci.yml`（PR + main push）
-- **Phase 1 全部 43 个任务包执行完毕**
-- **P1.17 跳过**（不满足真实运行 3-7 天前置条件）
-- **飞书运营同步**：`src/movietrace/feishu/notify.py`、`src/movietrace/feishu/sync.py`、`gap_sync.py` 已实现；CLI `sync-feishu-table`、`sync-feishu-doc`、`notify-feishu`、`sync-feishu-gap-table`；shell 脚本集成；505 tests passed
-	- **飞书多维表格**：base `P6y3bMbAXazlL5sui4Mc6B5znMb`，三个子表：
-		- `tbl84xx4WNv54An9`（"热点发现"）：每日 hot discoveries，append-by-date，150 行
-		- `tbl1NNU8kmlLKpLm`（"A库缺口"）：实时状态快照，upsert by series，142 行
-		- `tblPXLrWEEf4bhtM`（"字段说明"）：字段释义
-	- **共享 HTTP 模块**：`src/movietrace/feishu/_http.py`（`request_json` / `batch_create_records` / `batch_update_records` / `unwrap_text_field`）
+**项目地图**：先读 [`docs/context_map.md`](docs/context_map.md)（5 节：项目状态文档 + 文档地图 + 代码地图 + 脚本地图 + 数据库地图）。
+
+**当前实际状态：**
+
+- **真实库 schema version = 16**（migrations 001-016 全部落盘；016 DROP 了 ADR-0007 翻转前的 6 张遗留表，详见 [ADR-0014](docs/decisions/0014-legacy-schema-cleanup.md)）
+- **测试：** 441 passed（`--ignore=tests/test_flixpatrol_parsing.py`，bs4 未装；~73s）
+- **分支：** `main` 与 `origin/main` 同步（截至 2026-05-16 21:00 +08）
+- **CI：** `.github/workflows/ci.yml`（PR + main push 触发）
+
+**最近的备份**（按需用，旧的可保留）：
+- `data/movietrace_backup_20260514_2028.db`（P1.14 schema 14 升级前）
+- `data/movietrace_backup_20260515_1002_before_baseline_catchup.db`（P1.18 catch-up 前）
+- `data/movietrace_backup_20260516_0326_pre_p121.db`（P1.21 前，A库缺口子表）
+
+**关键约定**（必读，避免重做）：
+
+- **Secrets 路径**：`~/.config/movietrace/secrets.json`（fallback `/tmp/movietrace_phase0_secrets.json`，已加 warning）；统一入口 `src/movietrace/config.py`
+- **content_updates 是事件历史表**（[ADR-0012](docs/decisions/0012-content-updates-event-history.md)）：跨天命中允许重复入库；`content_update_id` 唯一，discovery 格式 `discovery:{movie|tv}:{tmdb_id}:{date}`
+- **飞书 search API 字段访问**：`records/search` 返回的字段 key 是**中文名**（不是 field ID），但写入 path 用 field ID。读路径示例见 `feedback/pull.py`
+- **数据源状态**：FP API 402 持续不可用；OMDb / TMDb / Trakt 正常；脚本依赖 fallback 机制运行
+
+**飞书集成（V1 运营同步层）：**
+
+- 飞书 base `P6y3bMbAXazlL5sui4Mc6B5znMb`，三张子表：
+  - `tbl84xx4WNv54An9`（"热点发现"）：每日 hot discoveries，append-by-date
+  - `tbl1NNU8kmlLKpLm`（"A库缺口"）：实时状态快照，upsert by TMDb ID（P1.21.6 后含已追上行的自动删除）
+  - `tblPXLrWEEf4bhtM`（"字段说明"）：6 条字段释义
+- 共享 REST helper：`src/movietrace/feishu/_http.py`（`request_json` / `batch_create_records` / `batch_update_records` / `batch_delete_records` / `unwrap_text_field` / `build_multipart_body` / `upload_media_file`）
+- CLI：`sync-feishu-table` / `sync-feishu-gap-table` / `sync-feishu-doc`（P1.21.9 后用 `drive/v1/import_task`）/ `notify-feishu` / `pull-feishu-feedback` / `export-feedback-report`
+
+**项目历史：**
+- Phase 1 全部 43 个任务包执行完毕；P1.17 跳过（不满足真实运行 3-7 天前置条件）
+- V1 翻转到"更新追踪 + 中间表"系统（[ADR-0007](docs/decisions/0007-repositioning-to-update-tracking.md)），不再是推荐系统
+- 当前 V1 观察期；运营连续用 1-2 月后用周报数据评估 V2 启动条件
