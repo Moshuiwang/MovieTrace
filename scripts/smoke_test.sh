@@ -27,7 +27,7 @@ echo ""
 # 预处理：初始化烟雾测试数据库（从生产 DB 复制）
 SMOKE_DB="data/movietrace_smoke.db"
 if [ -f "data/movietrace.db" ]; then
-    echo "[0/4] 复制生产数据库到烟雾测试库..."
+    echo "[准备] 复制生产数据库到烟雾测试库..."
     cp data/movietrace.db "$SMOKE_DB"
     echo "  $SMOKE_DB 已就绪"
 else

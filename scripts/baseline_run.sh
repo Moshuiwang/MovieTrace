@@ -12,7 +12,7 @@ LOG_DIR="$PROJECT_DIR/reports/logs"
 mkdir -p "$LOG_DIR"
 
 # 数据库备份（保留最新 30 个）
-source "$PROJECT_DIR/scripts/_backup_db.sh"
+source "$PROJECT_DIR/scripts/_backup_db.sh" 2>/dev/null || true
 backup_database "data/movietrace.db" 30
 
 LOG_FILE="$LOG_DIR/baseline_$(date +%Y%m%d).log"

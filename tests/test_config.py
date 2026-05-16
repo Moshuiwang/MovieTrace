@@ -248,6 +248,12 @@ class GetDbPathTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(get_db_path("/other.db"), "/other.db")
 
+    def test_empty_string_returns_empty_string(self):
+        from movietrace.config import get_db_path, DEFAULT_DB_PATH
+        import os
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(get_db_path(""), "")
+
     def test_paths_are_different(self):
         from movietrace.config import DEFAULT_DB_PATH, SMOKE_DB_PATH
         self.assertNotEqual(DEFAULT_DB_PATH, SMOKE_DB_PATH)

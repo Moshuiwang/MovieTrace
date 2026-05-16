@@ -25,7 +25,7 @@ def get_db_path(explicit: str | None = None) -> str:
     the production database. An explicit path (e.g. from --db CLI flag) always
     takes precedence.
     """
-    if explicit:
+    if explicit is not None:
         return explicit
     if os.environ.get("MOVIETRACE_SMOKE") == "1":
         return SMOKE_DB_PATH
