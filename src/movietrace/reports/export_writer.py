@@ -159,13 +159,13 @@ def _load_content_updates(conn, days: int, *, report_kind: str = "all") -> list[
 
     # For new_discovery TV items without virtual_series, fill tmdb_number_of_seasons
     # from api_cache so the season field can be populated.
-    need_cache = [
-        (i, parts[2])
-        for i, row in enumerate(result)
-        if row["stored_tmdb_number_of_seasons"] is None
-        for parts in [(row["content_update_id"] or "").split(":")]
-        if len(parts) >= 3 and parts[0] == "discovery" and parts[1] == "tv"
-    ]
+    need_cache = []
+    for i, row in enumerate(result):
+        if row["stored_tmdb_number_of_seasons"] is not None:
+            continue
+        parts = (row["content_update_id"] or "").split(":")
+        if len(parts) >= 3 and parts[0] == "discovery" and parts[1] == "tv":
+            need_cache.append((i, parts[2]))
     if need_cache:
         cache_keys = [f"tmdb:detail:{tmdb_id}:tv" for _, tmdb_id in need_cache]
         phs = ",".join("?" for _ in cache_keys)
@@ -378,7 +378,7 @@ def format_json(updates: list[dict]) -> str:
             "hot_score": u.get("hot_score"),
             "title": u.get("title"),
             "series_name": u.get("series_name"),
-            "tmdb_id": u.get("tmdb_tv_id") or _extract_tmdb_id(u.get("content_update_id", "")),
+            "tmdb_id": u.get("tmdb_tv_id") or _extract_tmdb_id_from_discovery_id(u.get("content_update_id", "")),
             "season": raw_season,
             "seasons": source_info.get("seasons"),
             "baseline_local_max_season": blm_value,
@@ -413,7 +413,7 @@ def _baseline_local_max(source_info: dict, update: dict) -> tuple[int | None, bo
     return _to_int(update.get("stored_local_max_season")), True
 
 
-def _extract_tmdb_id(content_update_id: str) -> str | None:
+def _extract_tmdb_id_from_discovery_id(content_update_id: str) -> str | None:
     """Extract TMDb ID from 'discovery:{tv|movie}:{id}:{date}' format IDs."""
     parts = content_update_id.split(":") if content_update_id else []
     if len(parts) >= 3 and parts[0] == "discovery":
