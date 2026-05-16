@@ -36,13 +36,21 @@
 | **Phase 1.20：code review 跟进修正** | ✅ 全部完成 |
 | **Phase 1.21：A库缺口快照子表（状态快照）** | ✅ 全部完成 |
 | **Phase 1.21.5：维护批次（review fixes + lark-cli 替换 + migration 015）** | ✅ 全部完成 |
-| **Phase 1.21.6：A 库缺口表数据质量修正** | 📋 任务包草案待执行 |
+| **Phase 1.21.6：A 库缺口表数据质量修正** | ✅ 全部完成 |
 | **Phase 1.21.7：ADR-0007 翻转前遗留 schema 清理** | 📋 任务包草案待执行 |
 | **Phase 1.23：飞书运营反馈回流（只读）+ V1 观察期周报** | 📋 任务包草案待执行 |
 
-**测试：** 507 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
+**测试：** 508 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
 
 ## 最近完成
+
+### P1.21.6：A库缺口表数据质量修正（2026-05-16 14:45 +08）
+- **SQL 虚假缺口剔除**：`_GAP_SQL` WHERE 加 `AND COALESCE(alm.a_lib_max_season, 0) > 0`；飞书缺口表行数 142 → 68（真实缺口）
+- **追上行删除**：`_http.py` 新增 `batch_delete_records`；`sync_gap_table` step 6 自动删除缺口消失的行（stats.deleted）
+- **字段说明子表**：`tblPXLrWEEf4bhtM` 新增 6 条说明（A库当前最大季/TMDb已播季/缺口数/缺口季/运营状态/数据源状态）
+- **热点发现类型字段选项**：删除 `TV`/`Movie` 大写选项，仅保留 `tv`/`movie`
+- **A库缺口视图**：创建"待补 - 在播中"视图（ID: `vewLMxK9s8`）；filter/sort 需用户在飞书 UI 手工配置（API 不支持 PATCH）
+- 测试：`test_compute_gaps_no_upstream_link_counts_as_zero` 更新（期望改为排除）+ `test_compute_gaps_excludes_a_lib_zero` 新增；507 → 508 passed
 
 ### P1.21.5：维护批次（2026-05-16 凌晨/上午）
 - **lark-cli 全面替换为 Feishu REST**：
