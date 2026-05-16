@@ -1031,6 +1031,99 @@ def cmd_inspect_api_usage(args: argparse.Namespace) -> int:
     return 0
 
 
+# ── pull-feishu-feedback ──────────────────────────────────────────────────
+
+
+def cmd_pull_feishu_feedback(args: argparse.Namespace) -> int:
+    """Pull operator feedback from Feishu bitable tables."""
+    cfg = _load_config()
+    fs_cfg = cfg.get("feishu_sync", {})
+    if not fs_cfg.get("enabled", True):
+        print("feishu_sync is disabled in config.yaml (enabled: false)")
+        return 0
+
+    secrets = load_secrets()
+    creds = _load_feishu_creds(secrets)
+    if creds is None:
+        print("ERROR: feishu credentials (app_id, app_secret, base_app_token) not found in secrets.json")
+        return 1
+    app_id, app_secret, app_token = creds
+
+    feishu_secrets = secrets.get("feishu") or {}
+    hot_table_id = feishu_secrets.get("discovery_table_id", "")
+    gap_table_id = feishu_secrets.get("gap_table_id", "")
+    if not hot_table_id or not gap_table_id:
+        print("ERROR: feishu.discovery_table_id and feishu.gap_table_id required in secrets.json")
+        return 1
+
+    output_dir = args.output or "reports/feedback"
+    days = args.days or 7
+    dry_run = args.dry_run
+
+    print("MovieTrace pull-feishu-feedback")
+    print(f"Days: {days}, Output: {output_dir}, Dry-run: {dry_run}")
+    print()
+
+    try:
+        from movietrace.feedback.pull import pull_all
+        pull_all(
+            app_id=app_id,
+            app_secret=app_secret,
+            app_token=app_token,
+            hot_table_id=hot_table_id,
+            gap_table_id=gap_table_id,
+            days=days,
+            output_dir=output_dir,
+            dry_run=dry_run,
+        )
+        print("\n✓ pull-feishu-feedback complete")
+        return 0
+    except Exception as exc:
+        print(f"\n✗ pull-feishu-feedback failed: {exc}")
+        return 1
+
+
+# ── export-feedback-report ────────────────────────────────────────────────
+
+
+def cmd_export_feedback_report(args: argparse.Namespace) -> int:
+    """Generate weekly markdown report from a Feishu pull JSON."""
+    import json as _json
+
+    input_path = args.input or "reports/feedback/feishu_pull_latest.json"
+    output_dir = args.output or "reports/feedback"
+    db_path = args.db or "data/movietrace.db"
+    dry_run = args.dry_run
+
+    print("MovieTrace export-feedback-report")
+    print(f"Input: {input_path}, Output: {output_dir}, Dry-run: {dry_run}")
+    print()
+
+    try:
+        pull_data = _json.loads(Path(input_path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        print(f"ERROR: input file not found: {input_path}")
+        print("Run 'pull-feishu-feedback' first to generate the data file.")
+        return 1
+    except _json.JSONDecodeError as exc:
+        print(f"ERROR: invalid JSON in {input_path}: {exc}")
+        return 1
+
+    try:
+        from movietrace.feedback.weekly_report import generate_weekly_report
+        generate_weekly_report(
+            pull_data,
+            db_path=db_path,
+            output_dir=output_dir,
+            dry_run=dry_run,
+        )
+        print("\n✓ export-feedback-report complete")
+        return 0
+    except Exception as exc:
+        print(f"\n✗ export-feedback-report failed: {exc}")
+        return 1
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="movietrace",
@@ -1136,6 +1229,19 @@ def main() -> None:
     p_gap.add_argument("--db", help="Database path")
     p_gap.add_argument("--dry-run", action="store_true")
 
+    # pull-feishu-feedback
+    p_pull_fb = sub.add_parser("pull-feishu-feedback", help="Pull operator feedback from Feishu tables")
+    p_pull_fb.add_argument("--days", type=int, default=7, help="Days to cover for hot table (default: 7)")
+    p_pull_fb.add_argument("--output", help="Output directory (default: reports/feedback)")
+    p_pull_fb.add_argument("--dry-run", action="store_true")
+
+    # export-feedback-report
+    p_exp_fb = sub.add_parser("export-feedback-report", help="Generate weekly feedback report from JSON")
+    p_exp_fb.add_argument("--input", help="Input JSON file (default: reports/feedback/feishu_pull_latest.json)")
+    p_exp_fb.add_argument("--output", help="Output directory (default: reports/feedback)")
+    p_exp_fb.add_argument("--db", help="Database path for title lookup (default: data/movietrace.db)")
+    p_exp_fb.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
 
     handlers = {
@@ -1154,6 +1260,8 @@ def main() -> None:
         "inspect-updates": cmd_inspect_updates,
         "inspect-api-usage": cmd_inspect_api_usage,
         "sync-feishu-gap-table": cmd_sync_feishu_gap_table,
+        "pull-feishu-feedback": cmd_pull_feishu_feedback,
+        "export-feedback-report": cmd_export_feedback_report,
     }
 
     handler = handlers.get(args.command)
