@@ -144,23 +144,36 @@ class TestComputeCurrentGaps(unittest.TestCase):
         self.assertEqual(len(rows), 0, f"Expected 0 gap rows for skip vs, got {len(rows)}: {rows}")
 
     def test_compute_gaps_no_upstream_link_counts_as_zero(self):
-        """vs with canonical_item but no upstream external_id → A库 max = 0."""
+        """vs with canonical_item but no upstream external_id → a_lib_max=0 → excluded (filter: a_lib_max > 0)."""
         vs_id, tmdb_id = 4, 44444
 
         _insert_vs(self.conn, vs_id, tmdb_id, "Unlinked Show")
-        # canonical_item exists but NO external_id → a_lib_max = 0
+        # canonical_item exists but NO external_id → a_lib_max = 0 → excluded by SQL filter
         _insert_canonical_item(self.conn, 600, vs_id, 3)
         _insert_api_cache(self.conn, tmdb_id, 3)
         self.conn.commit()
 
-        # gap = 3 - 0 = 3
         rows = compute_current_gaps(self.conn)
 
-        self.assertEqual(len(rows), 1)
-        row = rows[0]
-        self.assertEqual(row["a_lib_max"], 0)
-        self.assertEqual(row["gap_count"], 3)
-        self.assertEqual(row["gap_seasons"], "S1,S2,S3")
+        vs_ids = [r["vs_id"] for r in rows]
+        self.assertNotIn(vs_id, vs_ids,
+                         "vs with a_lib_max=0 (no upstream link) should be excluded as virtual gap")
+
+    def test_compute_gaps_excludes_a_lib_zero(self):
+        """vs with no upstream external_id → a_lib_max=0 → excluded even if TMDb aired S5."""
+        vs_id, tmdb_id = 6, 66666
+
+        _insert_vs(self.conn, vs_id, tmdb_id, "No A-Lib Show")
+        # canonical_item exists but NO external_id from upstream
+        _insert_canonical_item(self.conn, 610, vs_id, 1)
+        _insert_api_cache(self.conn, tmdb_id, 5)
+        self.conn.commit()
+
+        rows = compute_current_gaps(self.conn)
+
+        vs_ids = [r["vs_id"] for r in rows]
+        self.assertNotIn(vs_id, vs_ids,
+                         "a_lib_max=0 row should be excluded; discover via new_discovery not gap table")
 
     def test_compute_gaps_no_api_cache_excluded(self):
         """vs with no api_cache entry → tmdb_aired_season IS NULL → excluded."""

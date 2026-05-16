@@ -19,6 +19,7 @@ from movietrace.feishu._http import (
     request_json,
     batch_create_records,
     batch_update_records,
+    batch_delete_records,
     unwrap_text_field,
 )
 
@@ -75,6 +76,7 @@ LEFT JOIN recent_hot rh  ON rh.vs_id  = vs.id
 WHERE vs.poll_priority != 'skip'
   AND ta.tmdb_aired_season IS NOT NULL
   AND ta.tmdb_aired_season > COALESCE(alm.a_lib_max_season, 0)
+  AND COALESCE(alm.a_lib_max_season, 0) > 0
 ORDER BY COALESCE(rh.hot_score, 0) DESC, gap_count DESC;
 """
 
@@ -187,6 +189,19 @@ def sync_gap_table(
         except Exception as exc:
             print(f"  ERROR batch_update {len(to_update)} records: {exc}")
             stats["errors"] += len(to_update)
+
+    # 6. Delete caught-up rows (in Feishu but no longer in SQL results)
+    tmdb_ids_in_sql = {row["tmdb_tv_id"] for row in rows}
+    caught_up_ids = set(existing_map.keys()) - tmdb_ids_in_sql
+    stats["deleted"] = 0
+    if caught_up_ids:
+        record_ids_to_delete = [existing_map[tid] for tid in caught_up_ids]
+        try:
+            batch_delete_records(token, app_token, table_id, record_ids_to_delete)
+            stats["deleted"] = len(caught_up_ids)
+        except Exception as exc:
+            print(f"  ERROR batch_delete {len(record_ids_to_delete)} caught-up records: {exc}")
+            stats["errors"] += len(record_ids_to_delete)
 
     return stats
 

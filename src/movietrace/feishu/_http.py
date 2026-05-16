@@ -73,6 +73,22 @@ def batch_update_records(
             raise RuntimeError(f"batch update records failed: {resp}")
 
 
+def batch_delete_records(
+    token: str,
+    app_token: str,
+    table_id: str,
+    record_ids: list[str],
+) -> None:
+    """POST /records/batch_delete, raises on code != 0. Chunks to 500."""
+    url = f"{OPEN_API_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_delete"
+    chunk_size = 500
+    for start in range(0, len(record_ids), chunk_size):
+        chunk = record_ids[start : start + chunk_size]
+        resp = request_json("POST", url, token=token, payload={"records": chunk})
+        if resp.get("code") != 0:
+            raise RuntimeError(f"batch delete records failed: {resp}")
+
+
 def unwrap_text_field(value) -> str:
     """Unwrap a Feishu rich-text field value to a plain string.
 

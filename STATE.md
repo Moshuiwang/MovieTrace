@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-16 14:14 +08
-**更新人：** Claude Code CLI（Sonnet 4.6）+ moshuiwang
+**最后更新：** 2026-05-16 08:55 +08
+**更新人：** Claude Code CLI（Opus 4.7 + Sonnet 4.6 子代理）+ moshuiwang
 **所在分支：** `main`
 
 ---
@@ -36,14 +36,21 @@
 | **Phase 1.20：code review 跟进修正** | ✅ 全部完成 |
 | **Phase 1.21：A库缺口快照子表（状态快照）** | ✅ 全部完成 |
 | **Phase 1.21.5：维护批次（review fixes + lark-cli 替换 + migration 015）** | ✅ 全部完成 |
-| **Phase 1.21.6：A 库缺口表数据质量修正** | 📋 任务包草案待执行 |
+| **Phase 1.21.6：A 库缺口表数据质量修正** | ✅ 全部完成 |
 | **Phase 1.21.7：ADR-0007 翻转前遗留 schema 清理** | 📋 任务包草案待执行 |
-| **Phase 1.21.8：飞书集成代码清理批次（review Tier 1）** | ✅ 全部完成 |
 | **Phase 1.23：飞书运营反馈回流（只读）+ V1 观察期周报** | 📋 任务包草案待执行 |
 
-**测试：** 518 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
+**测试：** 519 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
 
 ## 最近完成
+
+### P1.21.6：A库缺口表数据质量修正（2026-05-16 14:45 +08）
+- **SQL 虚假缺口剔除**：`_GAP_SQL` WHERE 加 `AND COALESCE(alm.a_lib_max_season, 0) > 0`；飞书缺口表行数 142 → 68（真实缺口）
+- **追上行删除**：`_http.py` 新增 `batch_delete_records`；`sync_gap_table` step 6 自动删除缺口消失的行（stats.deleted）
+- **字段说明子表**：`tblPXLrWEEf4bhtM` 新增 6 条说明（A库当前最大季/TMDb已播季/缺口数/缺口季/运营状态/数据源状态）
+- **热点发现类型字段选项**：删除 `TV`/`Movie` 大写选项，仅保留 `tv`/`movie`
+- **A库缺口视图**：创建"待补 - 在播中"视图（ID: `vewLMxK9s8`）；filter/sort 需用户在飞书 UI 手工配置（API 不支持 PATCH）
+- 测试：`test_compute_gaps_no_upstream_link_counts_as_zero` 更新（期望改为排除）+ `test_compute_gaps_excludes_a_lib_zero` 新增；518 → 519 passed
 
 ### P1.21.8：飞书集成代码清理批次（2026-05-16 14:14 +08）
 - **sync.py 删 F dict 死代码**：删除 `F = {...}` 字典（50 行）及上方注释块；`F` 无任何外部引用，`sync_table` 直接用中文 field name
@@ -181,7 +188,6 @@
 
 - **P1.21.6 A 库缺口表数据质量修正**：任务包 [`docs/tasks/p1.21.6_a_lib_gap_quality_fixes.md`](docs/tasks/p1.21.6_a_lib_gap_quality_fixes.md) 草案就绪，待执行。
 - **P1.21.7 遗留 schema 清理**：任务包 [`docs/tasks/p1.21.7_legacy_schema_cleanup.md`](docs/tasks/p1.21.7_legacy_schema_cleanup.md) 草案就绪，待执行（refactor，drop ADR-0007 翻转前 7 张遗留表 ~2400 行）。
-- **P1.21.8 飞书集成代码清理批次**：✅ 已完成（2026-05-16 14:14 +08）。
 - **P1.23 飞书运营反馈回流 + 周报**：任务包 [`docs/tasks/p1.23_feedback_loop_pull_feishu.md`](docs/tasks/p1.23_feedback_loop_pull_feishu.md) 草案完成（2026-05-16 09:05 +08）。
   - 用户已对 4 个产品决策拍板：只读不回写 B 库 / 每周手动跑 / 漏报暂不结构化 / 两张表都拉
   - 待用户确认任务包后开工
