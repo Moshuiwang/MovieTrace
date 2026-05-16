@@ -66,18 +66,6 @@ def seeded_db(temp_db):
            values (3, 'tmdb', '88888')"""
     )
 
-    # Seed baseline_items
-    conn.execute(
-        """insert into baseline_items
-           (title, content_type, content_granularity, year, raw_fields_json, match_status)
-           values ('The Crown', 'tv_show', 'series', 2016, '{}', 'matched')"""
-    )
-    conn.execute(
-        """insert into baseline_items
-           (title, content_type, content_granularity, year, raw_fields_json, match_status)
-           values ('Breaking Bad', 'tv_show', 'series', 2008, '{}', 'matched')"""
-    )
-
     # Seed flixpatrol_top10 with synthetic data
     fp_data = [
         ("fp_1", "The Crown", "tv_show", "netflix", "united-states", "2026-05-11", 1, 0, 10, 30, 65495, "tt4786824"),
@@ -121,24 +109,6 @@ class TestEndToEndPipeline:
         passed = result.get("candidates", [])
         # At least some candidates should pass P2 threshold
         assert len(passed) >= 0  # Acceptable even if none pass
-
-    def test_baseline_matching_with_synthetic_data(self, seeded_db):
-        """Baseline matching module loads and handles empty candidates gracefully."""
-        from movietrace.pipeline.baseline_matching import run_baseline_matching
-        result = run_baseline_matching(db_path=seeded_db)
-        # Candidates table may be empty (new flow writes to content_updates).
-        # Either no_candidates or successful match is acceptable.
-        assert isinstance(result, dict)
-        assert "total" in result
-
-    def test_report_generation_with_synthetic_data(self, seeded_db):
-        """Daily report generates with synthetic data."""
-        from movietrace.pipeline.baseline_matching import run_baseline_matching
-        from movietrace.reports.daily_writer import generate_daily_report
-
-        run_baseline_matching(db_path=seeded_db)
-        report = generate_daily_report(date(2026, 5, 11), db_path=seeded_db)
-        assert "# MovieTrace" in report
 
     def test_export_dry_run_with_synthetic_data(self, seeded_db):
         """Export recommendations dry-run works with synthetic data."""

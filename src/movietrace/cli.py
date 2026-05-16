@@ -234,9 +234,6 @@ def cmd_inspect_baseline(args: argparse.Namespace) -> int:
             "select count(*) from content_updates where update_type = 'new_season'"
         ).fetchone()[0]
 
-        # Legacy baseline_items stats
-        bl_total = conn.execute("select count(*) from baseline_items").fetchone()[0]
-
         print("A库（upstream_programs）:")
         print(f"  总节目数: {up_total}")
         print(f"  上架中 (online_flag=1): {up_online}")
@@ -247,9 +244,6 @@ def cmd_inspect_baseline(args: argparse.Namespace) -> int:
         print(f"  canonical_items: {ci_total} (TV: {ci_tv}, Movie: {ci_movie})")
         print(f"  virtual_series: {vs_total}")
         print(f"  content_updates (new_season): {cu_new_season}")
-        print()
-        print("Legacy（baseline_items）:")
-        print(f"  baseline_items: {bl_total} (历史飞书导入，保留不动)")
         print()
         print("Phase 1.5 Status: 全部任务包已完成")
         print("  Next: Phase 1.6 (首次真实运行 + 验收)")

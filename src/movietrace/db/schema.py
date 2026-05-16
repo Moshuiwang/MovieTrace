@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 
 SCHEMA_SQL = """
@@ -15,27 +15,6 @@ create table if not exists schema_migrations (
     applied_at text not null default current_timestamp
 );
 
-create table if not exists feishu_import_runs (
-    id integer primary key autoincrement,
-    base_app_token text not null,
-    table_id text not null,
-    table_name text,
-    record_count integer not null default 0,
-    started_at text not null default current_timestamp,
-    finished_at text,
-    status text not null default 'running',
-    note text
-);
-
-create table if not exists source_records (
-    id integer primary key autoincrement,
-    source text not null,
-    source_record_id text,
-    source_run_id integer references feishu_import_runs(id),
-    raw_payload_json text not null,
-    payload_hash text not null,
-    collected_at text not null default current_timestamp
-);
 
 create table if not exists canonical_items (
     id integer primary key autoincrement,
@@ -70,29 +49,6 @@ create table if not exists external_ids (
 create unique index if not exists ux_external_ids_source_id
 on external_ids(source, external_id);
 
-create table if not exists baseline_items (
-    id integer primary key autoincrement,
-    local_content_id text,
-    feishu_record_id text,
-    canonical_item_id integer references canonical_items(id),
-    title text not null,
-    original_title text,
-    content_type text,
-    content_granularity text,
-    season_number integer,
-    episode_number integer,
-    year integer,
-    online_status text,
-    source_note text,
-    raw_fields_json text not null,
-    match_status text not null default 'unmatched',
-    match_confidence text,
-    imported_at text not null default current_timestamp
-);
-
-create index if not exists idx_baseline_items_title
-on baseline_items(title);
-
 create table if not exists content_updates (
     id integer primary key autoincrement,
     content_update_id text not null,
@@ -105,21 +61,6 @@ create table if not exists content_updates (
     source_summary_json text,
     created_at text not null default current_timestamp,
     updated_at text not null default current_timestamp
-);
-
-create table if not exists match_candidates (
-    id integer primary key autoincrement,
-    baseline_item_id integer not null references baseline_items(id) on delete cascade,
-    source text not null,
-    external_id text,
-    title text not null,
-    media_type text,
-    year integer,
-    score real not null,
-    confidence text not null,
-    reason text,
-    raw_payload_json text,
-    created_at text not null default current_timestamp
 );
 
 create table if not exists api_cache (
@@ -180,4 +121,5 @@ def initialize_database(path: str | Path) -> None:
         _apply_migration(conn, 13, _load_migration_sql("013_tmdb_namespace_cleanup.sql"))
         _apply_migration(conn, 14, _load_migration_sql("014_content_updates_event_history.sql"))
         _apply_migration(conn, 15, _load_migration_sql("015_api_cache_unique_key.sql"))
+        _apply_migration(conn, 16, _load_migration_sql("016_drop_legacy_tables.sql"))
         conn.commit()
