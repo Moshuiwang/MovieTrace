@@ -122,7 +122,7 @@ def sync_gap_table(
 
     Upsert key: TMDb ID (unique per virtual_series).
     On create: 运营状态 defaults to "待补", 系统提示 defaults to "-".
-    On update: 运营状态 and 备注 are NOT overwritten (preserve human edits).
+    On update: 因 _build_fields 本身不输出 运营状态 / 备注 字段，update 自然不会覆盖人工编辑。
 
     Returns stats dict: total, created, updated, errors.
     """
@@ -155,7 +155,7 @@ def sync_gap_table(
             fields = _build_fields(row, now_ts)
 
             if tmdb_id in existing_map:
-                # Do NOT include 运营状态 / 备注 in update — preserve human edits
+                # _build_fields 不输出 运营状态 / 备注 字段 → update 自然保留人工编辑
                 to_update.append((existing_map[tmdb_id], fields))
             else:
                 # New row — set defaults
