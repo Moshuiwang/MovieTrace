@@ -37,6 +37,7 @@
 | **Phase 1.21：A库缺口快照子表（状态快照）** | ✅ 全部完成 |
 | **Phase 1.21.5：维护批次（review fixes + lark-cli 替换 + migration 015）** | ✅ 全部完成 |
 | **Phase 1.21.6：A 库缺口表数据质量修正** | 📋 任务包草案待执行 |
+| **Phase 1.21.7：ADR-0007 翻转前遗留 schema 清理** | 📋 任务包草案待执行 |
 | **Phase 1.23：飞书运营反馈回流（只读）+ V1 观察期周报** | 📋 任务包草案待执行 |
 
 **测试：** 507 passed（全量，含 flixpatrol_parsing 因缺 bs4 跳过）
@@ -169,6 +170,7 @@
 ## 进行中任务
 
 - **P1.21.6 A 库缺口表数据质量修正**：任务包 [`docs/tasks/p1.21.6_a_lib_gap_quality_fixes.md`](docs/tasks/p1.21.6_a_lib_gap_quality_fixes.md) 草案就绪，待执行。
+- **P1.21.7 遗留 schema 清理**：任务包 [`docs/tasks/p1.21.7_legacy_schema_cleanup.md`](docs/tasks/p1.21.7_legacy_schema_cleanup.md) 草案就绪，待执行（refactor，drop ADR-0007 翻转前 7 张遗留表 ~2400 行）。
 - **P1.23 飞书运营反馈回流 + 周报**：任务包 [`docs/tasks/p1.23_feedback_loop_pull_feishu.md`](docs/tasks/p1.23_feedback_loop_pull_feishu.md) 草案完成（2026-05-16 09:05 +08）。
   - 用户已对 4 个产品决策拍板：只读不回写 B 库 / 每周手动跑 / 漏报暂不结构化 / 两张表都拉
   - 待用户确认任务包后开工
