@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -74,7 +74,7 @@ def generate_weekly_report(
 
     # Dates
     report_date = now.strftime("%Y-%m-%d")
-    start_date = (now.date() - __import__("datetime").timedelta(days=range_days - 1)).strftime("%Y-%m-%d")
+    start_date = (now.date() - timedelta(days=range_days - 1)).strftime("%Y-%m-%d")
 
     # ── Section B: Hot table stats ──────────────────────────────────────────
 

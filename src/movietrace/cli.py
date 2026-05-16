@@ -582,7 +582,7 @@ def cmd_sync_feishu_table(args: argparse.Namespace) -> int:
 
 
 def cmd_sync_feishu_doc(args: argparse.Namespace) -> int:
-    """Sync latest.md as a Feishu document (via docx v1 REST API)."""
+    """Sync latest.md as a Feishu document (via drive/v1/import_task)."""
     cfg = _load_config()
     fs_cfg = cfg.get("feishu_sync", {})
     if not fs_cfg.get("enabled", True):
