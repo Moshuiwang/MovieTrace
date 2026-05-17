@@ -415,7 +415,7 @@ def _sync_doc_to_wiki(
 
     print(f"准备导入到知识库 (space_id={space_id})...")
 
-    import_url = f"{OPEN_API_BASE}/wiki/v2/spaces/{space_id}/docs/import_docx"
+    import_url = f"{OPEN_API_BASE}/wiki/v2/spaces/{space_id}/pages/import_docx"
 
     # wiki 导入使用 multipart/form-data
     file_name = Path(md_path).name if Path(md_path).name.endswith(".md") else f"{title}.md"
