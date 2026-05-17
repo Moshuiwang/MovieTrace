@@ -4,7 +4,7 @@
 feishu_sync:
   enabled: true
   table_name: "每日发现"
-  doc_folder_token: "VSVufHjq7lvIwYd7RdVcCdULnrh"
+  doc_folder_token: "G4GhwnNyFiRllQkj5QsciriBnkc"
   # notify_user_open_id and gmail credentials go in secrets.json → feishu section
 
 baseline_tracking:
