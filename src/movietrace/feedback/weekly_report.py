@@ -243,14 +243,16 @@ def generate_weekly_report(
         "|------|---------|--------|-----------|",
     ]
     _db_conn = sqlite3.connect(str(db_path)) if db_path else None
-    for r in pending_sorted:
-        title = r.get("name") or _lookup_title(_db_conn, r.get("tmdb_id", ""))
-        lines.append(
-            f"| {title} | {r.get('tmdb_id', '?')} | {r.get('gap_seasons', '?')} "
-            f"| {r.get('hot_score', '?')} |"
-        )
-    if _db_conn is not None:
-        _db_conn.close()
+    try:
+        for r in pending_sorted:
+            title = r.get("name") or _lookup_title(_db_conn, r.get("tmdb_id", ""))
+            lines.append(
+                f"| {title} | {r.get('tmdb_id', '?')} | {r.get('gap_seasons', '?')} "
+                f"| {r.get('hot_score', '?')} |"
+            )
+    finally:
+        if _db_conn is not None:
+            _db_conn.close()
     lines.append("")
 
     lines += [

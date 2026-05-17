@@ -542,6 +542,14 @@ def _load_feishu_creds(secrets: dict) -> tuple[str, str, str] | None:
     return app_id, app_secret, app_token
 
 
+def _build_discovery_table_url(secrets: dict, app_token: str) -> str:
+    """Build the Feishu bitable URL for the discovery table, or empty string if not configured."""
+    table_id = (secrets.get("feishu") or {}).get("discovery_table_id", "")
+    if not table_id or not app_token:
+        return ""
+    return f"https://my.feishu.cn/base/{app_token}?table={table_id}"
+
+
 # ── sync-feishu-table ─────────────────────────────────────────────────────
 
 
@@ -808,13 +816,7 @@ def cmd_notify_feishu(args: argparse.Namespace) -> int:
 
             doc_url = args.doc_url or ""
 
-            # Construct table URL from secrets if not provided
-            table_url = getattr(args, "table_url", "") or ""
-            if not table_url and app_token:
-                feishu_sec = secrets.get("feishu", {})
-                disc_table_id = feishu_sec.get("discovery_table_id", "")
-                if disc_table_id:
-                    table_url = f"https://my.feishu.cn/base/{app_token}?table={disc_table_id}"
+            table_url = getattr(args, "table_url", "") or _build_discovery_table_url(secrets, app_token)
 
             if discover_stats:
                 ok = send_card(

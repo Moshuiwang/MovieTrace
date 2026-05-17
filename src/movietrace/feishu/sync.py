@@ -10,10 +10,17 @@ Table and fields are pre-created via Feishu UI/API; this module does NOT auto-cr
 from __future__ import annotations
 
 import json
-import math
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from movietrace.pipeline.scoring import (
+    compute_flixpatrol_score,
+    compute_imdb_rating_score,
+    compute_tmdb_popularity_score,
+    compute_tmdb_rating_score,
+    compute_trakt_score,
+)
 
 UTC = timezone.utc
 
@@ -36,62 +43,38 @@ TZ = ZoneInfo("Asia/Shanghai")
 def _score_breakdown_from_raw(ss: dict) -> dict:
     """Reconstruct score_breakdown from raw source_summary sub-fields.
 
-    Used as fallback when source_summary_json was written before P1.24 added
-    score_breakdown. Replicates the same formulas as pipeline/scoring.py.
+    Fallback for records written before P1.24 added score_breakdown.
+    Delegates to pipeline/scoring.py so formula changes stay in one place.
     """
     tmdb = ss.get("tmdb") or {}
     trakt = ss.get("trakt") or {}
     imdb = ss.get("imdb") or {}
     fp = ss.get("fp")
 
-    # FP score: best rank + days bonus (matches compute_flixpatrol_score)
-    fp_score = 0.0
-    if isinstance(fp, dict) and fp.get("ranking") is not None:
-        rank_score = max(0, 100 - (int(fp["ranking"]) - 1) * 10)
-        days_bonus = min(fp.get("days_total") or 0, 30) / 30 * 20
-        fp_score = round(min(100, rank_score + days_bonus), 1)
+    fp_items = [fp] if isinstance(fp, dict) else []
 
-    # TMDb popularity score
-    pop = tmdb.get("popularity")
-    tmdb_pop = round(min(100, (float(pop) / 1000) * 100), 1) if pop else None
+    ext_data: dict = {}
+    if tmdb.get("popularity") is not None:
+        ext_data["tmdb_popularity"] = tmdb["popularity"]
+    if tmdb.get("vote_average") is not None:
+        ext_data["tmdb_vote_average"] = tmdb["vote_average"]
+    if tmdb.get("vote_count") is not None:
+        ext_data["tmdb_vote_count"] = tmdb["vote_count"]
+    if trakt.get("watchers") is not None:
+        ext_data["trakt_watchers"] = trakt["watchers"]
+    if imdb.get("rating") is not None:
+        ext_data["imdb_rating"] = imdb["rating"]
+    if imdb.get("votes") is not None:
+        votes_str = str(imdb["votes"]).replace(",", "")
+        ext_data["imdb_votes"] = int(votes_str) if votes_str.isdigit() else None
 
-    # Trakt score (watchers / 5000)
-    watchers = trakt.get("watchers")
-    trakt_s = round(min(100, (float(watchers) / 5000) * 100), 1) if watchers else None
-
-    # TMDb rating score
-    vote_avg = tmdb.get("vote_average")
-    vote_count = tmdb.get("vote_count")
-    tmdb_rating = None
-    if vote_avg is not None and vote_count is not None:
-        try:
-            raw = float(vote_avg) * math.log10(int(vote_count) + 1)
-            tmdb_rating = round(min(100, (raw / 30) * 100), 1)
-        except (ValueError, TypeError):
-            pass
-
-    # IMDb rating score (rating × log10(votes+1), normalized /40)
-    imdb_score = None
-    rating = imdb.get("rating")
-    votes = imdb.get("votes")
-    if rating is not None and votes is not None:
-        try:
-            raw = float(rating) * math.log10(int(str(votes).replace(",", "")) + 1)
-            imdb_score = round(min(100, (raw / 40) * 100), 1)
-        except (ValueError, TypeError):
-            pass
-    if imdb_score is None and vote_avg is not None and vote_count is not None:
-        try:
-            raw = float(vote_avg) * math.log10(int(vote_count) + 1)
-            imdb_score = round(min(100, (raw / 40) * 100), 1)
-        except (ValueError, TypeError):
-            pass
+    imdb_score, _ = compute_imdb_rating_score(ext_data)
 
     return {
-        "flixpatrol_score": fp_score,
-        "tmdb_popularity_score": tmdb_pop,
-        "trakt_score": trakt_s,
-        "tmdb_rating_score": tmdb_rating,
+        "flixpatrol_score": compute_flixpatrol_score(fp_items),
+        "tmdb_popularity_score": compute_tmdb_popularity_score(ext_data),
+        "trakt_score": compute_trakt_score(ext_data),
+        "tmdb_rating_score": compute_tmdb_rating_score(ext_data),
         "imdb_rating_score": imdb_score,
     }
 
