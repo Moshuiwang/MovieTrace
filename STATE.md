@@ -48,11 +48,16 @@ PYTHONPATH=src python -m movietrace.cli sync-feishu-table
 
 ## Review 跟进项（push 前发现的 minor，非阻塞）
 
-1. **P1.21.6 测试空白** — `feishu/_http.py:batch_delete_records` + `gap_sync.py:sync_gap_table` step 6 仅靠真实 smoke 覆盖
-2. **`weekly_report.py:_lookup_title`** — 每条 pending series 单独 `sqlite3.connect()`，建议用 `with` 复用单连接
-3. **`entity_matching.py` 死代码** — `match_baseline_items` / `_load_baseline_items` / `main()` 仍引用已 drop 的 `baseline_items` / `match_candidates`
-4. **`scripts/weekly_feedback.sh` 缺 TZ** — 漏 `export TZ='Asia/Shanghai'`
-5. **`sync_doc` 入口校验** — `folder_token=""` 且非 dry-run 时建议直接 raise
+1. **P1.21.6 测试空白** — `batch_delete_records` 已补 4 个单测 ✓；`sync_gap_table` step 6 仍无自动化覆盖（需飞书）
+2. ~~`weekly_report.py:_lookup_title` per-row sqlite connect~~ **已修复** ✓ (541ef70)
+3. ~~`entity_matching.py` 死代码 `__main__` 调用未定义 `main()`~~ **已删除** ✓ (541ef70)
+4. ~~`scripts/weekly_feedback.sh` 缺 TZ~~ **已修复** ✓
+5. ~~`sync_doc` 入口校验~~ **已修复** ✓
+
+## 待办（TODO）
+
+- [ ] **TODO-1**：完整走一次真实环境的 `daily_discover`（即 P1.24 E2E smoke，见上方"P1.24 后续真实执行步骤"）
+- [ ] **TODO-2**：push main 到 origin（当前领先 5 个 commit，含 P1.24 + review 修复）
 
 ## 当前数据画像
 
