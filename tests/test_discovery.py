@@ -644,7 +644,9 @@ class TestComputeRowDuration:
         result = compute_row_duration_hours(c_dict, None, None)
         assert result == 0.0
 
-    def test_tv_a_lib_empty_returns_number_of_episodes(self):
+    def test_tv_a_lib_empty_sums_aired_episode_counts(self):
+        """a_lib_max=0 → 累加 S1..last_aired_season 的已播集数。
+        对最新季用 last_episode_to_air.episode_number(已播,排除未播)。"""
         from movietrace.pipeline.discovery import compute_row_duration_hours
         from unittest.mock import MagicMock
 
@@ -652,15 +654,25 @@ class TestComputeRowDuration:
             "media_type": "tv",
             "tmdb_id": 1,
             "tmdb_data": {
-                "last_episode_to_air": {"season_number": 5},
-                "number_of_episodes": 100,
+                # last_aired = S3E5;S3 整季计划 10 集,但只播了 5 集
+                "last_episode_to_air": {"season_number": 3, "episode_number": 5},
+                "number_of_episodes": 100,  # 用不到了(含未播,故意写偏)
             },
         }
         conn = MagicMock()
-        # Mock _query_a_lib_max_season to return 0 (A 库无该剧)
+        tmdb_client = MagicMock()
+
+        def season_detail_side_effect(c, cli, tv_id, s_n):
+            return ({"episode_count": 10}, False)  # 每季都"满"10 集
+
         with patch("movietrace.pipeline.discovery._query_a_lib_max_season", return_value=0):
-            result = compute_row_duration_hours(c_dict, conn, None)
-        assert result == 100.0
+            with patch(
+                "movietrace.pipeline.discovery.get_tmdb_season_detail_with_cache",
+                side_effect=season_detail_side_effect,
+            ):
+                result = compute_row_duration_hours(c_dict, conn, tmdb_client)
+        # 期望:S1(10)+ S2(10)+ S3(5,只播 5 集)= 25
+        assert result == 25.0
 
     def test_tv_a_lib_has_seasons_calculates_delta(self):
         from movietrace.pipeline.discovery import compute_row_duration_hours
@@ -670,32 +682,61 @@ class TestComputeRowDuration:
             "media_type": "tv",
             "tmdb_id": 1,
             "tmdb_data": {
-                "last_episode_to_air": {"season_number": 6},
+                # last_aired = S6E24(S6 全季已播完)
+                "last_episode_to_air": {"season_number": 6, "episode_number": 24},
                 "number_of_episodes": 100,
             },
         }
         conn = MagicMock()
         tmdb_client = MagicMock()
 
-        # Mock: A 库最高季是 5
+        def season_detail_side_effect(c, cli, tv_id, s_n):
+            if s_n == 6:
+                return ({"episode_count": 24}, False)
+            elif s_n == 5:
+                return ({"episode_count": 20}, False)
+            return (None, False)
+
         with patch("movietrace.pipeline.discovery._query_a_lib_max_season", return_value=5):
-            # Mock: 新季 S6 有 24 集
-            with patch("movietrace.pipeline.tmdb_detail_cache.get_tmdb_season_detail_with_cache") as mock_get:
-                def season_detail_side_effect(c, cli, tv_id, s_n):
-                    if s_n == 6:
-                        return ({"episode_count": 24}, False)
-                    elif s_n == 5:
-                        return ({"episode_count": 20}, False)
-                    return (None, False)
-
-                mock_get.side_effect = season_detail_side_effect
-
+            with patch(
+                "movietrace.pipeline.discovery.get_tmdb_season_detail_with_cache",
+                side_effect=season_detail_side_effect,
+            ):
                 # Mock: A 库 S5 有 18 集(缺 2 集)
                 with patch("movietrace.pipeline.discovery._query_a_lib_episode_count", return_value=18):
                     result = compute_row_duration_hours(c_dict, conn, tmdb_client)
-
         # 期望: S6 的 24 集 + S5 缺的 2 集 = 26
         assert result == 26.0
+
+    def test_tv_a_lib_empty_excludes_unaired_in_current_season(self):
+        """回归:a_lib_max=0 + 最新季有未播集 → 只算已播,不能用 number_of_episodes。"""
+        from movietrace.pipeline.discovery import compute_row_duration_hours
+        from unittest.mock import MagicMock
+
+        c_dict = {
+            "media_type": "tv",
+            "tmdb_id": 1,
+            "tmdb_data": {
+                # S22 在播,只播到 E5(还有 17 集未播)
+                "last_episode_to_air": {"season_number": 22, "episode_number": 5},
+                # 假设 S1-S21 各 22 集,S22 计划 22 集 → 462 含未播
+                "number_of_episodes": 462,
+            },
+        }
+        conn = MagicMock()
+        tmdb_client = MagicMock()
+
+        def season_detail_side_effect(c, cli, tv_id, s_n):
+            return ({"episode_count": 22}, False)
+
+        with patch("movietrace.pipeline.discovery._query_a_lib_max_season", return_value=0):
+            with patch(
+                "movietrace.pipeline.discovery.get_tmdb_season_detail_with_cache",
+                side_effect=season_detail_side_effect,
+            ):
+                result = compute_row_duration_hours(c_dict, conn, tmdb_client)
+        # 期望:21 季完整 × 22 集 + S22 已播 5 集 = 467
+        assert result == 21 * 22 + 5
 
 
 # ── P1.24-C: Soap降权tests ────────────────────────────────────────────────

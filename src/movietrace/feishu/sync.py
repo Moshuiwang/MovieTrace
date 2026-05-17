@@ -198,8 +198,8 @@ def sync_table(
         dry_run=False,
     )
     if field_result.get("created"):
-        created_names = [f.get("field_name") or f[0] if isinstance(f, (tuple, list)) else f for f in field_result["created"]]
-        print(f"  新建 {len(created_names)} 个字段: {', '.join(str(n) for n in created_names)}")
+        created_names = [f.get("field_name", "?") for f in field_result["created"]]
+        print(f"  新建 {len(created_names)} 个字段: {', '.join(created_names)}")
     if field_result.get("renamed"):
         renamed_count = len(field_result.get("renamed", []))
         if renamed_count > 0:
