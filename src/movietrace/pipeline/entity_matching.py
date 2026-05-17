@@ -949,5 +949,3 @@ def match_upstream_program(
     }
 
 
-if __name__ == "__main__":
-    main()

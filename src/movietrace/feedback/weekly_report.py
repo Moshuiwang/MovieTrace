@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -26,22 +27,20 @@ def _pct(num: int, denom: int) -> str:
     return f"{num / denom * 100:.1f}%"
 
 
-def _lookup_title(db_path: str | Path | None, tmdb_id: str) -> str:
+def _lookup_title(conn: sqlite3.Connection | None, tmdb_id: str) -> str:
     """Try to look up a title from B-library by tmdb_id. Returns '?' on miss."""
-    if not tmdb_id or not db_path:
+    if not tmdb_id or conn is None:
         return "?"
     try:
-        import sqlite3
-        with sqlite3.connect(str(db_path)) as conn:
-            row = conn.execute(
-                """
-                SELECT ci.title FROM canonical_items ci
-                JOIN external_ids ei ON ei.canonical_item_id = ci.id
-                WHERE ei.source = 'tmdb' AND ei.external_id = ?
-                LIMIT 1
-                """,
-                (str(tmdb_id),),
-            ).fetchone()
+        row = conn.execute(
+            """
+            SELECT ci.title FROM canonical_items ci
+            JOIN external_ids ei ON ei.canonical_item_id = ci.id
+            WHERE ei.source = 'tmdb' AND ei.external_id = ?
+            LIMIT 1
+            """,
+            (str(tmdb_id),),
+        ).fetchone()
         return row[0] if row else "?"
     except Exception:
         return "?"
@@ -243,12 +242,15 @@ def generate_weekly_report(
         "| 标题 | TMDb ID | 缺口季 | hot_score |",
         "|------|---------|--------|-----------|",
     ]
+    _db_conn = sqlite3.connect(str(db_path)) if db_path else None
     for r in pending_sorted:
-        title = r.get("name") or _lookup_title(db_path, r.get("tmdb_id", ""))
+        title = r.get("name") or _lookup_title(_db_conn, r.get("tmdb_id", ""))
         lines.append(
             f"| {title} | {r.get('tmdb_id', '?')} | {r.get('gap_seasons', '?')} "
             f"| {r.get('hot_score', '?')} |"
         )
+    if _db_conn is not None:
+        _db_conn.close()
     lines.append("")
 
     lines += [
