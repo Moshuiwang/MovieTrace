@@ -104,14 +104,16 @@ def create_table_field(token: str, app_token: str, table_id: str, field_name: st
     return resp.get("data", {})
 
 
-def rename_table_field(token: str, app_token: str, table_id: str, field_id: str, new_name: str) -> dict:
+def rename_table_field(token: str, app_token: str, table_id: str, field_id: str, new_name: str, field_type: int = 2) -> dict:
     """PUT /bitable/v1/apps/{app}/tables/{table}/fields/{field_id}.
 
-    body: {"field_name": new_name}
+    body: {"field_name": new_name, "type": field_type}
+    飞书 PUT field API 要求同时传 type，否则返回 99992402。
     """
     url = f"{OPEN_API_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/fields/{field_id}"
     payload = {
         "field_name": new_name,
+        "type": field_type,
     }
 
     resp = request_json("PUT", url, token=token, payload=payload)
@@ -203,7 +205,7 @@ def ensure_table_fields(
             result["renamed"].append({"old_name": old_name, "new_name": new_name, "field_id": field_id})
         else:
             try:
-                rename_table_field(token, app_token, table_id, field_id, new_name)
+                rename_table_field(token, app_token, table_id, field_id, new_name, old_field.get("type", 2))
                 result["renamed"].append({"old_name": old_name, "new_name": new_name})
                 # 更新 field_by_name 映射
                 del field_by_name[old_name]
