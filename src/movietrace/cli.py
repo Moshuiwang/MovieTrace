@@ -591,6 +591,9 @@ def cmd_sync_feishu_doc(args: argparse.Namespace) -> int:
         return 0
 
     folder_token = fs_cfg.get("doc_folder_token", "")
+    if not folder_token:
+        print("ERROR: feishu_sync.doc_folder_token not found in config.yaml")
+        return 1
 
     secrets = load_secrets()
     creds = _load_feishu_creds(secrets)
