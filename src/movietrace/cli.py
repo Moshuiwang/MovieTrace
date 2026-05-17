@@ -595,6 +595,8 @@ def cmd_sync_feishu_doc(args: argparse.Namespace) -> int:
         print("ERROR: feishu_sync.doc_folder_token not found in config.yaml")
         return 1
 
+    target_type = fs_cfg.get("doc_import_type", "auto")
+
     secrets = load_secrets()
     creds = _load_feishu_creds(secrets)
     if creds is None:
@@ -607,6 +609,7 @@ def cmd_sync_feishu_doc(args: argparse.Namespace) -> int:
     print("MovieTrace sync-feishu-doc")
     print(f"Source: {args.source}")
     print(f"Title: {title}")
+    print(f"Target type: {target_type}")
     print(f"Dry-run: {args.dry_run}")
     print()
 
@@ -620,6 +623,7 @@ def cmd_sync_feishu_doc(args: argparse.Namespace) -> int:
             app_id=app_id,
             app_secret=app_secret,
             dry_run=args.dry_run,
+            target_type=target_type,
         )
 
         if result.get("dry_run"):

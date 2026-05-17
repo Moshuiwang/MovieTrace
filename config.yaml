@@ -5,6 +5,7 @@ feishu_sync:
   enabled: true
   table_name: "每日发现"
   doc_folder_token: "G4GhwnNyFiRllQkj5QsciriBnkc"
+  doc_import_type: "wiki"  # 导入目标类型: 'wiki' (知识库) 或 'drive' (文件夹)
   # notify_user_open_id and gmail credentials go in secrets.json → feishu section
 
 baseline_tracking:
