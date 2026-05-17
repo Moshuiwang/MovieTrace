@@ -54,10 +54,6 @@ PYTHONPATH=src python -m movietrace.cli sync-feishu-table
 4. ~~`scripts/weekly_feedback.sh` 缺 TZ~~ **已修复** ✓
 5. ~~`sync_doc` 入口校验~~ **已修复** ✓
 
-## 待办（TODO）
-
-- [ ] **TODO-1**：完整走一次真实环境的 `daily_discover`（即 P1.24 E2E smoke，见上方"P1.24 后续真实执行步骤"）
-- [ ] **TODO-2**：push main 到 origin（当前领先 5 个 commit，含 P1.24 + review 修复）
 
 ## 当前数据画像
 
