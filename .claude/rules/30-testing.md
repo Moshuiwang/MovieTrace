@@ -1,6 +1,8 @@
 ---
 name: testing
 description: 测试命名规则、PYTHONPATH=src 要求、测试失败处置、回归测试要求、可选依赖处理。
+paths:
+  - "tests/**"
 include: ["tests/**"]
 ---
 

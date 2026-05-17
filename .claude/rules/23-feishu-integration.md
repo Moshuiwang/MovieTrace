@@ -1,6 +1,9 @@
 ---
 name: feishu-integration
 description: 飞书集成不静默重试、字段 ID 与中文 field name 分流、Token 文件缓存、批量 API 偏好、常见错误码。
+paths:
+  - "src/movietrace/feishu/**"
+  - "feedback/**"
 include: ["src/movietrace/feishu/**", "src/movietrace/feedback/**"]
 ---
 
