@@ -144,6 +144,26 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
                 print(f"  {src_label}: {status}")
     print()
     print(f"✓ Daily discovery complete (P0={stats.get('P0',0)} P1={stats.get('P1',0)} P2={stats.get('P2',0)})")
+
+    if getattr(args, "stats_out", None):
+        discover_out = {
+            "tmdb_fetched": tmdb_result.get("inserted", 0),
+            "trakt_fetched": trakt_result.get("inserted", 0),
+            "flixpatrol_fetched": 0,
+            "total_merged": stats.get("total_merged", 0),
+            "total_passed": stats.get("total_passed", 0),
+            "written": stats.get("written", 0),
+            "priority": {
+                "P0": stats.get("P0", 0),
+                "P1": stats.get("P1", 0),
+                "P2": stats.get("P2", 0),
+            },
+            "source_status": stats.get("source_status", {}),
+        }
+        with open(args.stats_out, "w") as _f:
+            json.dump(discover_out, _f, ensure_ascii=False, indent=2)
+        print(f"Discover stats: {args.stats_out}")
+
     return 0
 
 
@@ -572,6 +592,17 @@ def cmd_sync_feishu_table(args: argparse.Namespace) -> int:
         else:
             print(f"\n同步完成: total={stats['total']}, created={stats['created']}, updated={stats['updated']}, errors={stats['errors']}")
 
+        if getattr(args, "stats_out", None):
+            sync_out = {
+                "total": stats.get("total", 0),
+                "created": stats.get("created", 0),
+                "updated": stats.get("updated", 0),
+                "errors": stats.get("errors", 0),
+            }
+            with open(args.stats_out, "w") as _f:
+                json.dump(sync_out, _f, ensure_ascii=False, indent=2)
+            print(f"Sync stats: {args.stats_out}")
+
         print("✓ sync-feishu-table complete")
         return 0 if stats.get("errors", 0) == 0 else 1
     except Exception as exc:
@@ -666,9 +697,9 @@ def cmd_notify_feishu(args: argparse.Namespace) -> int:
     if creds is None:
         print("ERROR: feishu credentials (app_id, app_secret, base_app_token) not found in secrets.json")
         return 1
-    app_id, app_secret, _ = creds
+    app_id, app_secret, app_token = creds
 
-    from movietrace.feishu.notify import send_summary, send_alert
+    from movietrace.feishu.notify import send_summary, send_alert, send_card
 
     log_file = args.log_file or ""
 
@@ -676,19 +707,55 @@ def cmd_notify_feishu(args: argparse.Namespace) -> int:
         if args.level == "success":
             run_date = args.date or date.today().isoformat()
 
+            discover_stats: dict = {}
+            if getattr(args, "discover_stats_file", None):
+                try:
+                    with open(args.discover_stats_file) as f:
+                        discover_stats = json.load(f)
+                except Exception as e:
+                    print(f"WARNING: could not read discover stats: {e}")
+
+            sync_stats: dict = {}
             if args.stats_file:
-                with open(args.stats_file) as f:
-                    stats = json.load(f)
-            else:
-                stats = {}
+                try:
+                    with open(args.stats_file) as f:
+                        sync_stats = json.load(f)
+                except Exception as e:
+                    print(f"WARNING: could not read sync stats: {e}")
+
+            top_items: list = []
+            if getattr(args, "report_file", None):
+                try:
+                    with open(args.report_file) as f:
+                        report = json.load(f)
+                    top_items = sorted(report, key=lambda x: x.get("hot_score", 0), reverse=True)
+                except Exception as e:
+                    print(f"WARNING: could not read report file: {e}")
 
             doc_url = args.doc_url or ""
-            ok = send_summary(
-                receive_id, run_date, stats,
-                doc_url=doc_url, log_file=log_file,
-                app_id=app_id, app_secret=app_secret,
-                receive_id_type=receive_id_type,
-            )
+
+            # Construct table URL from secrets if not provided
+            table_url = getattr(args, "table_url", "") or ""
+            if not table_url and app_token:
+                feishu_sec = secrets.get("feishu", {})
+                disc_table_id = feishu_sec.get("discovery_table_id", "")
+                if disc_table_id:
+                    table_url = f"https://my.feishu.cn/base/{app_token}?table={disc_table_id}"
+
+            if discover_stats:
+                ok = send_card(
+                    receive_id, run_date, discover_stats, sync_stats, top_items,
+                    doc_url=doc_url, table_url=table_url, log_file=log_file,
+                    app_id=app_id, app_secret=app_secret,
+                    receive_id_type=receive_id_type,
+                )
+            else:
+                ok = send_summary(
+                    receive_id, run_date, sync_stats,
+                    doc_url=doc_url, log_file=log_file,
+                    app_id=app_id, app_secret=app_secret,
+                    receive_id_type=receive_id_type,
+                )
         else:
             ok = send_alert(
                 receive_id,
@@ -1163,6 +1230,7 @@ def main() -> None:
     p_discover.add_argument("--date", help="Date in YYYY-MM-DD format")
     p_discover.add_argument("--dry-run", action="store_true", help="Skip write to DB")
     p_discover.add_argument("--force-fp-movies", action="store_true", help="Force FP movie fetch regardless of weekly schedule")
+    p_discover.add_argument("--stats-out", help="Write discover pipeline stats JSON to this path")
 
     # validate-feishu
     sub.add_parser("validate-feishu", help="Validate Feishu API connectivity")
@@ -1227,6 +1295,7 @@ def main() -> None:
     p_sync.add_argument("--source", default="reports/latest.json", help="JSON source path")
     p_sync.add_argument("--date", help="Run date YYYY-MM-DD (default: today)")
     p_sync.add_argument("--dry-run", action="store_true")
+    p_sync.add_argument("--stats-out", help="Write sync stats JSON to this path")
 
     # sync-feishu-doc
     p_doc = sub.add_parser("sync-feishu-doc", help="Sync Markdown report as Feishu doc")
@@ -1240,8 +1309,11 @@ def main() -> None:
     p_notify.add_argument("--title", help="Notification title (for error/warning)")
     p_notify.add_argument("--detail", help="Error detail")
     p_notify.add_argument("--date", help="Run date YYYY-MM-DD")
+    p_notify.add_argument("--discover-stats-file", help="JSON file with discover pipeline stats")
     p_notify.add_argument("--stats-file", help="JSON file with sync stats")
+    p_notify.add_argument("--report-file", help="JSON report file for top items (latest.json)")
     p_notify.add_argument("--doc-url", help="Feishu doc URL to include")
+    p_notify.add_argument("--table-url", help="Feishu bitable URL to include")
     p_notify.add_argument("--log-file", help="Local log file path")
 
     # inspect-api-usage

@@ -15,10 +15,7 @@ TZ = ZoneInfo("Asia/Shanghai")
 def _send_text_message(
     token: str, receive_id: str, text: str, receive_id_type: str = "open_id"
 ) -> dict:
-    """Send a text message via /im/v1/messages, return parsed response.
-
-    receive_id_type: 'open_id' (user) or 'chat_id' (group)
-    """
+    """Send a text message via /im/v1/messages, return parsed response."""
     url = f"{OPEN_API_BASE}/im/v1/messages?receive_id_type={receive_id_type}"
     payload = {
         "receive_id": receive_id,
@@ -36,10 +33,7 @@ def send_text(
     app_secret: str,
     receive_id_type: str = "open_id",
 ) -> bool:
-    """Send a plain text message to a Feishu user or group.
-
-    receive_id_type: 'open_id' for user, 'chat_id' for group
-    """
+    """Send a plain text message to a Feishu user or group."""
     try:
         token = fetch_tenant_access_token(app_id, app_secret)
         result = _send_text_message(token, receive_id, text, receive_id_type=receive_id_type)
@@ -55,6 +49,187 @@ def send_text(
         return False
 
 
+# ── Interactive card (success notification) ───────────────────────────────
+
+
+def _build_card(
+    run_date: str,
+    discover_stats: dict,
+    sync_stats: dict,
+    top_items: list,
+    doc_url: str = "",
+    table_url: str = "",
+    log_file: str = "",
+) -> dict:
+    """Build Feishu interactive card JSON for daily summary."""
+    has_errors = sync_stats.get("errors", 0) > 0
+    header_color = "red" if has_errors else "green"
+
+    elements: list[dict] = []
+
+    # ── Section 1: data collection & pipeline ──────────────────────────────
+    source_status = discover_stats.get("source_status", {})
+    fp_info = source_status.get("flixpatrol", {})
+    tmdb_info = source_status.get("tmdb", {})
+    trakt_info = source_status.get("trakt", {})
+
+    def _src_tag(info: dict, fetched: int) -> str:
+        if info.get("status") == "fallback":
+            return f"⚠️ 缓存({info.get('snapshot_date', '?')})"
+        if info.get("status") == "failed_no_fallback":
+            return "❌ 失败"
+        return f"{fetched} 条 ✅"
+
+    tmdb_fetched = discover_stats.get("tmdb_fetched", 0)
+    trakt_fetched = discover_stats.get("trakt_fetched", 0)
+    fp_fetched = discover_stats.get("flixpatrol_fetched", 0)
+
+    total_merged = discover_stats.get("total_merged", 0)
+    total_passed = discover_stats.get("total_passed", 0)
+    written = discover_stats.get("written", 0)
+
+    src_lines = (
+        f"TMDb {_src_tag(tmdb_info, tmdb_fetched)}  ·  "
+        f"Trakt {_src_tag(trakt_info, trakt_fetched)}  ·  "
+        f"FlixPatrol {_src_tag(fp_info, fp_fetched)}"
+    )
+    pipeline_line = (
+        f"合并去重 **{total_merged}** 条  →  通过 P2+ **{total_passed}** 条  →  本次新写入 **{written}** 条"
+    )
+    elements.append({
+        "tag": "div",
+        "text": {"tag": "lark_md", "content": f"**📡 数据采集**\n{src_lines}\n\n{pipeline_line}"},
+    })
+    elements.append({"tag": "hr"})
+
+    # ── Section 2: priority distribution ──────────────────────────────────
+    prio = discover_stats.get("priority", {})
+    p0 = prio.get("P0", 0)
+    p1 = prio.get("P1", 0)
+    p2 = prio.get("P2", 0)
+    total_prio = p0 + p1 + p2
+    prio_text = (
+        f"**📊 发现结果**\n"
+        f"P0 **{p0}** 条  ·  P1 **{p1}** 条  ·  P2 **{p2}** 条  ·  合计 **{total_prio}** 条"
+    )
+    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": prio_text}})
+    elements.append({"tag": "hr"})
+
+    # ── Section 3: Feishu table sync ──────────────────────────────────────
+    s_total = sync_stats.get("total", 0)
+    s_created = sync_stats.get("created", 0)
+    s_updated = sync_stats.get("updated", 0)
+    s_errors = sync_stats.get("errors", 0)
+    err_tag = f"  🔴 错误 {s_errors}" if s_errors else ""
+    sync_text = (
+        f"**🔄 多维表格同步**\n"
+        f"总计 {s_total}  ·  新建 **{s_created}**  ·  更新 **{s_updated}**{err_tag}"
+    )
+    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": sync_text}})
+
+    # ── Section 4: top P0/P1 items ────────────────────────────────────────
+    important = [item for item in top_items if item.get("priority") in ("P0", "P1")]
+    if important:
+        elements.append({"tag": "hr"})
+        lines = ["**🎯 重点内容（P0 / P1）**"]
+        for item in important[:10]:
+            pri = item.get("priority", "")
+            title = item.get("title", "")
+            score = item.get("hot_score", 0)
+            lines.append(f"[{pri}] {title}  →  {score:.1f} 分")
+        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "\n".join(lines)}})
+
+    # ── Section 5: warnings ───────────────────────────────────────────────
+    warnings: list[str] = []
+    if fp_info.get("status") == "fallback":
+        warnings.append(f"FlixPatrol：API 402，使用 {fp_info.get('snapshot_date', '?')} 缓存")
+    if fp_info.get("status") == "failed_no_fallback":
+        warnings.append("FlixPatrol：无可用数据（无缓存）")
+    if s_errors:
+        warnings.append(f"多维表格同步错误 {s_errors} 条")
+    if warnings:
+        elements.append({"tag": "hr"})
+        warn_body = "\n".join(f"· {w}" for w in warnings)
+        elements.append({
+            "tag": "div",
+            "text": {"tag": "lark_md", "content": f"**⚠️ 异常提醒**\n{warn_body}"},
+        })
+
+    # ── Action buttons ────────────────────────────────────────────────────
+    actions: list[dict] = []
+    if doc_url:
+        actions.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "查看今日文档"},
+            "url": doc_url,
+            "type": "default",
+        })
+    if table_url:
+        actions.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "打开多维表格"},
+            "url": table_url,
+            "type": "default",
+        })
+    if actions:
+        elements.append({"tag": "action", "actions": actions})
+
+    if log_file:
+        elements.append({
+            "tag": "note",
+            "elements": [{"tag": "plain_text", "content": f"日志：{log_file}"}],
+        })
+
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": f"MovieTrace · {run_date}"},
+            "template": header_color,
+        },
+        "elements": elements,
+    }
+
+
+def send_card(
+    receive_id: str,
+    run_date: str,
+    discover_stats: dict,
+    sync_stats: dict,
+    top_items: list,
+    doc_url: str = "",
+    table_url: str = "",
+    log_file: str = "",
+    *,
+    app_id: str,
+    app_secret: str,
+    receive_id_type: str = "open_id",
+) -> bool:
+    """Send daily summary as a Feishu interactive card."""
+    try:
+        token = fetch_tenant_access_token(app_id, app_secret)
+        card = _build_card(run_date, discover_stats, sync_stats, top_items, doc_url, table_url, log_file)
+        url = f"{OPEN_API_BASE}/im/v1/messages?receive_id_type={receive_id_type}"
+        payload = {
+            "receive_id": receive_id,
+            "msg_type": "interactive",
+            "content": json.dumps(card, ensure_ascii=False),
+        }
+        result = request_json("POST", url, token=token, payload=payload)
+        if result.get("code") != 0:
+            print(
+                f"WARNING: feishu card send returned code={result.get('code')} msg={result.get('msg')}",
+                file=sys.stderr,
+            )
+            return False
+        return True
+    except Exception as e:
+        print(f"ERROR: feishu card send failed: {e}", file=sys.stderr)
+        return False
+
+
+# ── Text fallback (used for error/warning alerts and when no discover_stats) ──
+
+
 def send_summary(
     receive_id: str,
     run_date: str,
@@ -66,12 +241,7 @@ def send_summary(
     app_secret: str,
     receive_id_type: str = "open_id",
 ) -> bool:
-    """Send a daily summary notification.
-
-    receive_id_type: 'open_id' for user, 'chat_id' for group
-    stats should contain: total, created, updated, errors, and optionally
-    new_discovery, new_season, p0_count, p1_count, p2_count, source_status.
-    """
+    """Send a daily summary as plain text (fallback when card not available)."""
     total = stats.get("total", 0)
     created = stats.get("created", 0)
     updated = stats.get("updated", 0)
@@ -80,21 +250,11 @@ def send_summary(
     parts.append(f"同步结果：{'成功' if errors == 0 else '部分成功'}")
     parts.append(f"同步条数：{total} (新增 {created}, 更新 {updated}, 错误 {errors})")
 
-    nd = stats.get("new_discovery")
-    ns = stats.get("new_season")
-    if nd is not None or ns is not None:
-        parts.append(f"新增发现：{nd or 0}")
-        parts.append(f"新季更新：{ns or 0}")
-
     p0 = stats.get("p0_count")
     p1 = stats.get("p1_count")
     p2 = stats.get("p2_count")
     if p0 is not None:
         parts.append(f"优先级：P0={p0} / P1={p1 or 0} / P2={p2 or 0}")
-
-    src = stats.get("source_status", "")
-    if src:
-        parts.append(f"数据源：{src}")
 
     if doc_url:
         parts.append(f"飞书文档：{doc_url}")
@@ -116,11 +276,7 @@ def send_alert(
     app_secret: str,
     receive_id_type: str = "open_id",
 ) -> bool:
-    """Send a failure/partial-success alert.
-
-    level: 'error' or 'warning'.
-    receive_id_type: 'open_id' for user, 'chat_id' for group
-    """
+    """Send a failure/partial-success alert as plain text."""
     emoji = "❌" if level == "error" else "⚠️"
     parts = [
         f"{emoji} MovieTrace 运行告警 - {title}",
@@ -144,7 +300,7 @@ def send_email(
     subject: str,
     body: str,
 ) -> bool:
-    """Send an email via Gmail SMTP. Fallback path — disabled by default, enable via secrets.feishu.gmail.enabled."""
+    """Send an email via Gmail SMTP. Fallback — disabled by default, enable via secrets.feishu.gmail.enabled."""
     try:
         import smtplib
         from email.mime.text import MIMEText

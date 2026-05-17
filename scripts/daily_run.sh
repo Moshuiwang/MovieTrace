@@ -16,6 +16,8 @@ source "$PROJECT_DIR/scripts/_backup_db.sh" 2>/dev/null || true
 backup_database "data/movietrace.db" 30
 
 LOG_FILE="$LOG_DIR/daily_$(date +%Y%m%d).log"
+DISCOVER_STATS="$LOG_DIR/discover_stats_$(date +%Y%m%d).json"
+SYNC_STATS="$LOG_DIR/sync_stats_$(date +%Y%m%d).json"
 START_TIME=$(date '+%Y-%m-%d %H:%M:%S +08')
 RUN_DATE=$(date +%Y-%m-%d)
 
@@ -26,7 +28,7 @@ RUN_DATE=$(date +%Y-%m-%d)
     source .venv/bin/activate
 
     # commit 模式：写入热点发现 content_updates；baseline tracking 由 baseline_run.sh 独立执行。
-    PYTHONPATH=src python -m movietrace.cli daily-discover 2>&1
+    PYTHONPATH=src python -m movietrace.cli daily-discover --stats-out "$DISCOVER_STATS" 2>&1
     DISCOVER_EXIT=$?
 
     # 导出最近 1 天结果到 latest.md / latest.json（固定文件名，每日覆盖）
@@ -41,27 +43,50 @@ RUN_DATE=$(date +%Y-%m-%d)
     SYNC_EXIT=0
     DOC_EXIT=0
     NOTIFY_EXIT=0
+    DOC_URL=""
     if [ "$DISCOVER_EXIT" -eq 0 ] && [ "$EXPORT_EXIT" -eq 0 ]; then
-        PYTHONPATH=src python -m movietrace.cli sync-feishu-table --source reports/latest.json --date "$RUN_DATE" 2>&1
+        PYTHONPATH=src python -m movietrace.cli sync-feishu-table \
+            --source reports/latest.json --date "$RUN_DATE" \
+            --stats-out "$SYNC_STATS" 2>&1
         SYNC_EXIT=$?
 
-        PYTHONPATH=src python -m movietrace.cli sync-feishu-doc --source reports/latest.md --title "MovieTrace 每日发现 $RUN_DATE" 2>&1
+        # 捕获 sync-feishu-doc 输出以提取文档 URL，同时保留日志输出
+        _DOC_OUTPUT=$(PYTHONPATH=src python -m movietrace.cli sync-feishu-doc \
+            --source reports/latest.md --title "MovieTrace 每日发现 $RUN_DATE" 2>&1)
         DOC_EXIT=$?
+        echo "$_DOC_OUTPUT"
+        DOC_URL=$(echo "$_DOC_OUTPUT" | grep "^Doc URL:" | awk '{print $3}')
 
         if [ "$SYNC_EXIT" -eq 0 ]; then
-            PYTHONPATH=src python -m movietrace.cli notify-feishu --level success --date "$RUN_DATE" --log-file "$LOG_FILE" 2>&1
+            PYTHONPATH=src python -m movietrace.cli notify-feishu \
+                --level success --date "$RUN_DATE" \
+                --discover-stats-file "$DISCOVER_STATS" \
+                --stats-file "$SYNC_STATS" \
+                --report-file reports/latest.json \
+                --doc-url "$DOC_URL" \
+                --log-file "$LOG_FILE" 2>&1
         else
-            PYTHONPATH=src python -m movietrace.cli notify-feishu --level error --title "每日同步 - 飞书表格写入失败" --detail "sync-feishu-table exit=$SYNC_EXIT" --log-file "$LOG_FILE" 2>&1
+            PYTHONPATH=src python -m movietrace.cli notify-feishu \
+                --level error \
+                --title "每日同步 - 飞书表格写入失败" \
+                --detail "sync-feishu-table exit=$SYNC_EXIT" \
+                --log-file "$LOG_FILE" 2>&1
         fi
         NOTIFY_EXIT=$?
     fi
 
     # 失败告警（discover 或 export 失败时）
     if [ "$DISCOVER_EXIT" -ne 0 ]; then
-        PYTHONPATH=src python -m movietrace.cli notify-feishu --level error --title "每日运行失败" --detail "daily-discover exit=$DISCOVER_EXIT" --log-file "$LOG_FILE" 2>&1
+        PYTHONPATH=src python -m movietrace.cli notify-feishu \
+            --level error --title "每日运行失败" \
+            --detail "daily-discover exit=$DISCOVER_EXIT" \
+            --log-file "$LOG_FILE" 2>&1
         NOTIFY_EXIT=$?
     elif [ "$EXPORT_EXIT" -ne 0 ]; then
-        PYTHONPATH=src python -m movietrace.cli notify-feishu --level error --title "每日运行 - 导出失败" --detail "export-recommendations exit=$EXPORT_EXIT" --log-file "$LOG_FILE" 2>&1
+        PYTHONPATH=src python -m movietrace.cli notify-feishu \
+            --level error --title "每日运行 - 导出失败" \
+            --detail "export-recommendations exit=$EXPORT_EXIT" \
+            --log-file "$LOG_FILE" 2>&1
         NOTIFY_EXIT=$?
     fi
 
