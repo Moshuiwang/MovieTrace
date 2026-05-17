@@ -290,13 +290,14 @@ def sync_doc(
     app_id: str = "",
     app_secret: str = "",
     dry_run: bool = False,
+    target_type: str = "auto",
 ) -> dict:
-    """Import a Markdown file as a Feishu docx via drive/v1/import_task.
+    """Import a Markdown file as a Feishu docx via drive/v1/import_task or wiki/v2 API.
 
-    Three-step flow:
-      1. Upload .md bytes to drive/v1/medias/upload_all → file_token
-      2. POST drive/v1/import_tasks (mount in folder_token) → ticket
-      3. Poll GET drive/v1/import_tasks/:ticket until job_status == 0
+    Two modes:
+      - drive (folder): via drive/v1/import_task (current behavior)
+      - wiki: via wiki/v2/spaces/{space_id}/docs/import_docx
+      - auto: detect based on token format
 
     App needs 'drive:drive' scope.  Permission errors (99991661/99991663/1061045)
     raise RuntimeError with an explicit console instruction.
@@ -315,16 +316,30 @@ def sync_doc(
     if not app_id or not app_secret:
         raise RuntimeError("sync_doc requires app_id and app_secret")
     if not folder_token:
-        raise RuntimeError("sync_doc requires folder_token (the Feishu folder to import into)")
+        raise RuntimeError("sync_doc requires folder_token (the Feishu folder/space to import into)")
 
     token = fetch_tenant_access_token(app_id, app_secret)
 
-    # Step 1: Upload
+    # Auto-detect target type based on token format
+    if target_type == "auto":
+        target_type = "wiki" if len(folder_token) == 28 else "drive"
+
+    if target_type == "wiki":
+        return _sync_doc_to_wiki(token, md_path, title, folder_token, file_data)
+    else:
+        return _sync_doc_to_drive(token, md_path, title, folder_token, file_data)
+
+
+
+def _sync_doc_to_drive(
+    token: str, md_path: str, title: str, folder_token: str, file_data: bytes
+) -> dict:
+    """Import via drive/v1/import_task (文件夹导入)."""
+    path = Path(md_path)
     file_name = path.name if path.name.endswith(".md") else f"{title}.md"
     print(f"上传文件 {file_name} ({len(file_data)} bytes)...")
     file_token = upload_media_file(token, file_name, file_data)
 
-    # Step 2: Create import task
     print("创建导入任务...")
     import_url = f"{OPEN_API_BASE}/drive/v1/import_tasks"
     import_payload: dict = {
@@ -353,7 +368,6 @@ def sync_doc(
         raise RuntimeError(f"Feishu import_task returned no ticket: {import_resp}")
     print(f"导入任务已创建，ticket={ticket}")
 
-    # Step 3: Poll until done
     poll_url = f"{OPEN_API_BASE}/drive/v1/import_tasks/{ticket}"
     deadline = time.monotonic() + _IMPORT_TIMEOUT_SECONDS
 
@@ -388,3 +402,58 @@ def sync_doc(
     raise RuntimeError(
         f"Feishu import_task timed out after {_IMPORT_TIMEOUT_SECONDS}s (ticket={ticket})"
     )
+
+
+def _sync_doc_to_wiki(
+    token: str, md_path: str, title: str, space_id: str, file_data: bytes
+) -> dict:
+    """Import via wiki/v2/spaces API (知识库导入)."""
+    import urllib.request
+    import urllib.error
+    import re
+    from movietrace.feishu._http import build_multipart_body
+
+    print(f"准备导入到知识库 (space_id={space_id})...")
+
+    import_url = f"{OPEN_API_BASE}/wiki/v2/spaces/{space_id}/docs/import_docx"
+
+    # wiki 导入使用 multipart/form-data
+    file_name = Path(md_path).name if Path(md_path).name.endswith(".md") else f"{title}.md"
+    fields: dict[str, "str | tuple[bytes, str, str]"] = {
+        "file": (file_data, file_name, "text/markdown"),
+        "title": title,
+    }
+    body, boundary = build_multipart_body(fields)
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+    }
+    req = urllib.request.Request(import_url, data=body, headers=headers, method="POST")
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            resp_json = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body_err = e.read().decode("utf-8", errors="replace")[:300]
+        body_err = re.sub(r'"access_token"\s*:\s*"[^"]+"', '"access_token":"***"', body_err)
+        raise RuntimeError(f"Feishu wiki import HTTP {e.code}: {body_err}") from e
+
+    if resp_json.get("code") != 0:
+        code = resp_json.get("code")
+        msg = resp_json.get("msg", "")
+        if code in (99991663, 99991661, 1061045):
+            raise RuntimeError(
+                f"Feishu wiki import permission denied (code={code}): {msg}. "
+                "Grant the app 'wiki:wiki' scope in the Feishu console."
+            )
+        raise RuntimeError(f"Feishu wiki import failed (code={code}): {msg}")
+
+    result = resp_json.get("data", {})
+    doc_token = result.get("obj_token", "")
+    doc_url = result.get("url", "")
+    if not doc_url and doc_token:
+        doc_url = f"https://bytedance.feishu.cn/wiki/{doc_token}"
+
+    print(f"导入完成: {doc_url}")
+    return {"doc_url": doc_url, "doc_token": doc_token}
