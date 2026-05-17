@@ -299,8 +299,8 @@ class TestComputeHotScore:
         }
         score, _ = compute_hot_score(candidate, DEFAULT_WEIGHTS)
         # FP: 100 + 10/30*20 ≈ 106.7 → 100, plat:100, content:80, lang:100
-        # = 100*0.30 + 100*0.10 + 80*0.05 + 100*0.05 = 30+10+4+5 = 49
-        assert 45 <= score <= 55
+        # = 100*0.10 + 100*0.15 + 80*0.05 + 100*0.05 = 10+15+4+5 = 34
+        assert 30 <= score <= 40
 
     def test_empty_fp_items_returns_low_score(self):
         candidate = {
