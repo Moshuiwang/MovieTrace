@@ -13,12 +13,15 @@ TZ = ZoneInfo("Asia/Shanghai")
 
 
 def _send_text_message(
-    token: str, receive_open_id: str, text: str
+    token: str, receive_id: str, text: str, receive_id_type: str = "open_id"
 ) -> dict:
-    """Send a text message via /im/v1/messages, return parsed response."""
-    url = f"{OPEN_API_BASE}/im/v1/messages?receive_id_type=open_id"
+    """Send a text message via /im/v1/messages, return parsed response.
+
+    receive_id_type: 'open_id' (user) or 'chat_id' (group)
+    """
+    url = f"{OPEN_API_BASE}/im/v1/messages?receive_id_type={receive_id_type}"
     payload = {
-        "receive_id": receive_open_id,
+        "receive_id": receive_id,
         "msg_type": "text",
         "content": json.dumps({"text": text}, ensure_ascii=False),
     }
@@ -26,16 +29,20 @@ def _send_text_message(
 
 
 def send_text(
-    user_open_id: str,
+    receive_id: str,
     text: str,
     *,
     app_id: str,
     app_secret: str,
+    receive_id_type: str = "open_id",
 ) -> bool:
-    """Send a plain text message to a Feishu user via app's IM scope."""
+    """Send a plain text message to a Feishu user or group.
+
+    receive_id_type: 'open_id' for user, 'chat_id' for group
+    """
     try:
         token = fetch_tenant_access_token(app_id, app_secret)
-        result = _send_text_message(token, user_open_id, text)
+        result = _send_text_message(token, receive_id, text, receive_id_type=receive_id_type)
         if result.get("code") != 0:
             print(
                 f"WARNING: feishu message send returned code={result.get('code')} msg={result.get('msg')}",
@@ -49,7 +56,7 @@ def send_text(
 
 
 def send_summary(
-    user_open_id: str,
+    receive_id: str,
     run_date: str,
     stats: dict,
     doc_url: str = "",
@@ -57,9 +64,11 @@ def send_summary(
     *,
     app_id: str,
     app_secret: str,
+    receive_id_type: str = "open_id",
 ) -> bool:
     """Send a daily summary notification.
 
+    receive_id_type: 'open_id' for user, 'chat_id' for group
     stats should contain: total, created, updated, errors, and optionally
     new_discovery, new_season, p0_count, p1_count, p2_count, source_status.
     """
@@ -93,11 +102,11 @@ def send_summary(
         parts.append(f"本地日志：{log_file}")
 
     text = "\n".join(parts)
-    return send_text(user_open_id, text, app_id=app_id, app_secret=app_secret)
+    return send_text(receive_id, text, app_id=app_id, app_secret=app_secret, receive_id_type=receive_id_type)
 
 
 def send_alert(
-    user_open_id: str,
+    receive_id: str,
     level: str,
     title: str,
     detail: str = "",
@@ -105,10 +114,12 @@ def send_alert(
     *,
     app_id: str,
     app_secret: str,
+    receive_id_type: str = "open_id",
 ) -> bool:
     """Send a failure/partial-success alert.
 
     level: 'error' or 'warning'.
+    receive_id_type: 'open_id' for user, 'chat_id' for group
     """
     emoji = "❌" if level == "error" else "⚠️"
     parts = [
@@ -121,7 +132,7 @@ def send_alert(
         parts.append(f"本地日志：{log_file}")
 
     text = "\n".join(parts)
-    return send_text(user_open_id, text, app_id=app_id, app_secret=app_secret)
+    return send_text(receive_id, text, app_id=app_id, app_secret=app_secret, receive_id_type=receive_id_type)
 
 
 # ── Gmail SMTP (stub) ─────────────────────────────────────────────────────

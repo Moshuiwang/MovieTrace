@@ -644,13 +644,24 @@ def cmd_sync_feishu_doc(args: argparse.Namespace) -> int:
 
 def cmd_notify_feishu(args: argparse.Namespace) -> int:
     """Send a notification via Feishu bot."""
-    secrets = load_secrets()
-    feishu_secrets = secrets.get("feishu") or {}
-    user_open_id = feishu_secrets.get("notify_user_open_id", "")
-    if not user_open_id:
-        print("ERROR: feishu.notify_user_open_id not found in secrets.json")
-        return 1
+    cfg = _load_config()
+    fs_cfg = cfg.get("feishu_sync", {})
 
+    # 优先使用外部群，否则使用个人通知
+    notify_chat_id = fs_cfg.get("notify_chat_id", "")
+    if notify_chat_id:
+        receive_id = notify_chat_id
+        receive_id_type = "chat_id"
+    else:
+        secrets = load_secrets()
+        feishu_secrets = secrets.get("feishu") or {}
+        receive_id = feishu_secrets.get("notify_user_open_id", "")
+        receive_id_type = "open_id"
+        if not receive_id:
+            print("ERROR: feishu_sync.notify_chat_id 或 feishu.notify_user_open_id 未配置")
+            return 1
+
+    secrets = load_secrets()
     creds = _load_feishu_creds(secrets)
     if creds is None:
         print("ERROR: feishu credentials (app_id, app_secret, base_app_token) not found in secrets.json")
@@ -673,18 +684,20 @@ def cmd_notify_feishu(args: argparse.Namespace) -> int:
 
             doc_url = args.doc_url or ""
             ok = send_summary(
-                user_open_id, run_date, stats,
+                receive_id, run_date, stats,
                 doc_url=doc_url, log_file=log_file,
                 app_id=app_id, app_secret=app_secret,
+                receive_id_type=receive_id_type,
             )
         else:
             ok = send_alert(
-                user_open_id,
+                receive_id,
                 level=args.level,
                 title=args.title or "MovieTrace 运行异常",
                 detail=args.detail or "",
                 log_file=log_file,
                 app_id=app_id, app_secret=app_secret,
+                receive_id_type=receive_id_type,
             )
 
         if ok:
