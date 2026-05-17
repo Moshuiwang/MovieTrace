@@ -77,7 +77,7 @@ rg -n "virtual_series|canonical_items|OMDb" docs/history/phase1_state_archive.md
 | `config.py` | 加载 `~/.config/movietrace/secrets.json` 和 `config.yaml` |
 | `__init__.py` | 包初始化 |
 
-**16 个 CLI 子命令（来源：`cli.py` 中 `sub.add_parser`）：**
+**17 个 CLI 子命令（来源：`cli.py` 中 `sub.add_parser`）：**
 
 | 命令 | 用途 | 调度 |
 |------|------|------|
@@ -98,6 +98,7 @@ rg -n "virtual_series|canonical_items|OMDb" docs/history/phase1_state_archive.md
 | `check-feishu-schema` | 验证飞书表字段名/类型 | 一次性 |
 | `pull-feishu-feedback` | P1.23：拉飞书"热点发现 + A库缺口"两张表运营回填到本地 JSON（只读）| 每周日手动 |
 | `export-feedback-report` | P1.23：把 pull JSON 转为 A-E 五节 ISO 周报 Markdown | 跟着 pull |
+| `setup-feishu-fields` | P1.24：幂等创建/重命名飞书发现运行日志表字段（在 sync 主流程中也会自动 ensure） | 首次部署或手动 |
 
 ### 子包
 
@@ -107,7 +108,7 @@ rg -n "virtual_series|canonical_items|OMDb" docs/history/phase1_state_archive.md
 | `sources/` | 外部数据源客户端（无业务逻辑）| `tmdb.py`（trending/detail/search）· `trakt.py`（trending/search）· `omdb.py`（评分补充）· `flixpatrol.py`（HTML 解析）· `flixpatrol_api.py`（付费 API，目前 402）· `http.py`（公共 UA / 重试 / 配额）|
 | `pipeline/` | 业务流水线 | `discovery.py`（每日热点主链路）· `baseline_tracking.py`（A 库基线新季）· `scoring.py`（hot_score 0-100 加权）· `multi_source_merge.py`（多源候选合并）· `entity_matching.py`（A 库↔TMDb 匹配 + baseline_quality_issues 写入）· `virtual_series.py`（TV 系列聚合 + poll_priority 推导）· `poll_scheduler.py`（A 库 TV 轮询计划生成）· `tmdb_detail_cache.py`（24h api_cache 复用）· `tmdb_trending.py` / `trakt_trending.py`（写各自快照表）· `omdb_enrichment.py`（OMDb 评分补充）· `source_fetch_status.py`（source_fetch_runs 状态机）|
 | `reports/` | 报告生成 | `export_writer.py`（MD + JSON 双写）· `inspect_renderer.py`（CLI 查询渲染）|
-| `feishu/` | 飞书集成（V1 运营同步层） | `baseline.py`（tenant token + 文件缓存）· `_http.py`（共享 REST helpers：request_json / batch_create / batch_update / batch_delete / multipart / upload_media_file）· `sync.py`（热点发现子表 upsert + sync_doc 导入文档）· `gap_sync.py`（A 库缺口子表 upsert + 追上行删除）· `notify.py`（IM 消息）|
+| `feishu/` | 飞书集成（V1 运营同步层） | `baseline.py`（tenant token + 文件缓存）· `_http.py`（共享 REST helpers：request_json / batch_create / batch_update / batch_delete / multipart / upload_media_file）· `sync.py`（热点发现子表 upsert + sync_doc 导入文档；P1.24 起内嵌 ensure_table_fields + 8 新字段映射）· `gap_sync.py`（A 库缺口子表 upsert + 追上行删除）· `notify.py`（IM 消息）· `schema_setup.py`（P1.24：幂等创建/重命名 bitable 字段，权限不足直接 raise） |
 | `feedback/` | P1.23 运营反馈回流 | `pull.py`（飞书两张表 paginated 拉取 + 重试）· `weekly_report.py`（A-E 五节周报生成器）|
 | `logging/` | 日志辅助 | （早期 phase 产物，目前最小化使用） |
 
@@ -133,6 +134,7 @@ rg -n "virtual_series|canonical_items|OMDb" docs/history/phase1_state_archive.md
 |------|------|------|
 | `import_upstream_data.py` | 从 A 库快照（CSV/JSON）导入 `upstream_programs` + `upstream_episodes` | 在每次 A 库更新时手动跑 |
 | `p1.5_e_match_all.py` | P1.5 阶段：A 库全量实体匹配 → canonical_items + external_ids | 历史一次性 |
+| `p1_24_backfill_in_play_season.py` | P1.24：扫历史 content_updates 行，从 api_cache 提 `last_episode_to_air` 合入 source_summary（零 TMDb 调用） | 一次性，rename "季号" 后跑 |
 | `p1_5_c_backfill_virtual_series.py` | P1.5 阶段：从 canonical_items 回填 virtual_series | 历史一次性 |
 | `sup_a_flixpatrol_check.py` / `sup_c_flixpatrol_matching.py` / `sup_g_flixpatrol_api_check.py` | FlixPatrol 接入验证（Phase 0+） | 历史一次性 |
 | `verify_source_db.py` | A 库源 DB 字段一致性检查 | 偶尔用 |

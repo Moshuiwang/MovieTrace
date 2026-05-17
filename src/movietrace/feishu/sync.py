@@ -27,6 +27,7 @@ from movietrace.feishu._http import (
     unwrap_text_field,
     upload_media_file,
 )
+from movietrace.feishu.schema_setup import ensure_table_fields
 
 TZ = ZoneInfo("Asia/Shanghai")
 
@@ -141,6 +142,21 @@ def sync_table(
     print("获取飞书 token...")
     token = fetch_tenant_access_token(app_id, app_secret)
 
+    # P1.24: 幂等保证字段存在(首次跑创建 8 新字段 + rename 季号)
+    print("ensure 飞书字段(P1.24)...")
+    field_result = ensure_table_fields(
+        app_id=app_id, app_secret=app_secret,
+        app_token=app_token, table_id=table_id,
+        dry_run=False,
+    )
+    if field_result.get("created"):
+        created_names = [f.get("field_name") or f[0] if isinstance(f, (tuple, list)) else f for f in field_result["created"]]
+        print(f"  新建 {len(created_names)} 个字段: {', '.join(str(n) for n in created_names)}")
+    if field_result.get("renamed"):
+        renamed_count = len(field_result.get("renamed", []))
+        if renamed_count > 0:
+            print(f"  重命名 {renamed_count} 个字段")
+
     # 2. Fetch existing records for this date
     print(f"加载 {run_date} 已有记录...")
     existing_lookup = _list_records_for_date(token, app_token, table_id, run_date)
@@ -181,6 +197,16 @@ def sync_table(
                 rec.get("event_written_at_utc") or rec.get("created_at", ""),
                 tz=UTC,
             )
+            # P1.24: 解析 source_summary_json
+            source_summary_str = rec.get("source_summary_json", "") or ""
+            ss: dict = {}
+            if source_summary_str:
+                try:
+                    ss = json.loads(source_summary_str) if isinstance(source_summary_str, str) else (source_summary_str or {})
+                except (ValueError, TypeError):
+                    ss = {}
+            sb = ss.get("score_breakdown") or {}
+
             fields: dict = {
                 "发现日期":          _to_epoch_ms(run_date),
                 "content_update_id": snapshot_key,
@@ -189,7 +215,6 @@ def sync_table(
                 "更新类型":          str(rec.get("update_type", "")),
                 "优先级":            str(rec.get("priority", "")),
                 "hot_score":        float(rec.get("hot_score") or 0),
-                "季号":             int(rec.get("season") or 0),
                 "TMDb ID":          str(rec.get("tmdb_id") or rec.get("tmdb_tv_id") or ""),
                 "A库最新季":         f"S{rec['upstream_max_season']}" if rec.get("upstream_max_season") is not None else "无",
                 "是否低置信度":        "是" if rec.get("match_confidence_low") else "否",
@@ -199,6 +224,43 @@ def sync_table(
             }
             if detected_at is not None:
                 fields["检测时间"] = detected_at
+
+            # P1.24: 扩展 8 个新字段 + 运营备注 (update 时不写，见下方 create-only 逻辑)
+            # 计算"在播最新季"(仅 TV，Movie 留空)
+            last_aired = None
+            if ss.get("last_episode_to_air"):
+                last_aired = ss["last_episode_to_air"].get("season_number")
+
+            # 取 imdb_id (从 source_summary 或 rec 顶层)
+            imdb_id = ss.get("imdb_id") or rec.get("imdb_id") or ""
+
+            # 计算 tmdb_id 和 content_type 用于 TMDb URL
+            tmdb_id_val = rec.get("tmdb_id") or rec.get("tmdb_tv_id") or ""
+            content_type_val = _derive_content_type(rec)
+
+            # 构建 P1.24 新字段
+            fields_extra = {
+                "在播最新季": int(last_aired) if last_aired else None,
+                "单行时长(h)": float(ss.get("row_duration_hours") or 0),
+                "IMDb 链接": _build_imdb_url(imdb_id),
+                "TMDb 链接": _build_tmdb_url(tmdb_id_val, content_type_val),
+                "FP 热度分": float(sb.get("flixpatrol_score") or 0),
+                "IMDb 评分": float(sb.get("imdb_rating_score") or 0),
+                "TMDb 评分": float(sb.get("tmdb_rating_score") or 0),
+                "TMDb 热度分": float(sb.get("tmdb_popularity_score") or 0),
+                "Trakt 热度分": float(sb.get("trakt_score") or 0),
+            }
+
+            # 只添加非空、非零的字段值到 fields
+            for k, v in fields_extra.items():
+                if v is not None and v != "":
+                    # 对于数字类型的 0，仍需要传递（用于表示"无数据"状态）
+                    # 但对于空字符串 URL，不传递
+                    if isinstance(v, (dict, str)):
+                        if v:  # 只传非空的 dict 和 str
+                            fields[k] = v
+                    else:  # 数字和其他类型
+                        fields[k] = v
 
             ut = rec.get("update_type", "")
             if ut == "new_discovery":
@@ -220,6 +282,9 @@ def sync_table(
             else:
                 fields["运营状态"] = "待看"
                 fields["供应商状态"] = "未提交"
+                # P1.24: Soap 降权时自动填入运营备注(create-only，不覆盖人工编辑)
+                if ss.get("ops_note"):
+                    fields["运营备注"] = ss["ops_note"]
                 # 负责人 omitted: user field cannot accept empty string
                 to_create.append({"fields": fields})
                 stats["created"] += 1
@@ -260,6 +325,37 @@ def sync_table(
     stats["source_status"] = ", ".join(f"{k}={v}" for k, v in source_statuses.items())
 
     return stats
+
+
+def _build_imdb_url(imdb_id: str | None) -> dict | str:
+    """Build Feishu URL field value for IMDb.
+
+    Returns {"link": "https://...", "text": "..."} for Feishu URL type 15,
+    or empty string if no IMDb ID.
+    """
+    if not imdb_id:
+        return ""
+    imdb_id_str = str(imdb_id).strip()
+    if not imdb_id_str:
+        return ""
+    url = f"https://www.imdb.com/title/{imdb_id_str}/"
+    return {"link": url, "text": imdb_id_str}
+
+
+def _build_tmdb_url(tmdb_id: str | None, content_type: str) -> dict | str:
+    """Build Feishu URL field value for TMDb.
+
+    content_type: "tv" or "movie".
+    Returns {"link": "https://...", "text": "..."} or empty string.
+    """
+    if not tmdb_id:
+        return ""
+    tmdb_id_str = str(tmdb_id).strip()
+    if not tmdb_id_str:
+        return ""
+    path = "tv" if content_type in ("tv", "show") else "movie"
+    url = f"https://www.themoviedb.org/{path}/{tmdb_id_str}"
+    return {"link": url, "text": tmdb_id_str}
 
 
 def _derive_content_type(rec: dict) -> str:

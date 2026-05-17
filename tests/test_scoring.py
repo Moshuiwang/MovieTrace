@@ -366,3 +366,12 @@ class TestMapPriority:
 
     def test_p3_at_0(self):
         assert map_priority(0) == "P3"
+
+
+# ── P1.24 Soap support tests ────────────────────────────────────────────
+
+
+class TestSoapGenreId:
+    def test_soap_genre_id_constant(self):
+        from movietrace.pipeline.scoring import SOAP_GENRE_ID
+        assert SOAP_GENRE_ID == 10766

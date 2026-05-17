@@ -6,26 +6,45 @@
 
 ---
 
-**最后更新：** 2026-05-17 00:08 +08 · Claude Code CLI（Opus 4.7） · 分支 `main`（worktree `.claude/worktrees/docs-governance`）
-**测试：** 441 passed（`--ignore=tests/test_flixpatrol_parsing.py`；~73s）
-**Schema：** version 16（migrations 001-016 全部落盘）
+**最后更新：** 2026-05-17 16:45 +08 · Claude Code CLI（Opus 4.7 + 5 个 Haiku 4.5 subagent） · 分支 `worktree-feishu-card-notify`
+**测试：** 534 passed（`--ignore=tests/test_flixpatrol_parsing.py`；~70s）
+**Schema：** version 16（migrations 001-016 全部落盘，P1.24 不动 schema）
 
 ---
 
 ## 现在停在哪儿
 
-Phase 0 → 1.23 全部完成；V1 运行观察期。P1.17 跳过（前置未满足）；P1.22 编号预留给 V2 episode 级缺口检测。
+Phase 0 → 1.24 全部完成代码层；**P1.24 真实 E2E smoke 待用户许可执行**（写飞书 + 调 TMDb）。P1.17 跳过（前置未满足）；P1.22 编号预留给 V2 episode 级缺口检测。
 
 **近 7 天关键变更：**
+- 2026-05-17 **P1.24 飞书发现运行日志字段增强**（8 新字段 + 季号 rename + Soap 降权 + 历史回填脚本）— 任务包 [`docs/tasks/p1.24-feishu-fields-enhancement.md`](docs/tasks/p1.24-feishu-fields-enhancement.md)；7 个原子子任务 A→B→(C/D/E)→G→F 全部完成；测试 441→534（+93）
 - 2026-05-16 P1.21.9 `sync_doc` → `drive/v1/import_task`（[ADR-0015](docs/decisions/0015-feishu-doc-import-via-import-tasks.md)）
 - 2026-05-16 P1.23 飞书运营反馈回流（只读）+ V1 观察期周报 A-E 节生成
-- 2026-05-16 P1.21.7 legacy schema 清理（migration 016 删 6 张死表，[ADR-0014](docs/decisions/0014-legacy-schema-cleanup.md)）
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** 无
+- **进行中：** 无（P1.24 代码就绪，待真实 E2E smoke）
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
-- **待用户决策：** 无
+- **待用户决策：** 是否触发真实 `setup-feishu-fields` + 首次跑 `backfill_in_play_season.py`（都已 dry-run 验证；真实跑会写飞书表 + 改 ~138 行 content_updates）
+
+## P1.24 后续真实执行步骤（待用户许可）
+
+```bash
+# 主目录（非 worktree）
+cd /home/ubuntu/MovieTrace
+source .venv/bin/activate
+
+# 1) 真实建飞书字段（幂等）
+PYTHONPATH=src python -m movietrace.cli setup-feishu-fields
+
+# 2) 真实回填历史"在播最新季"（零 TMDb 调用）
+PYTHONPATH=src python scripts/p1_24_backfill_in_play_season.py --days 30
+
+# 3) 真实 sync 把回填后的 source_summary 写到飞书
+PYTHONPATH=src python -m movietrace.cli sync-feishu-table
+
+# 4) 下次 daily-discover 自然带新 8 字段进飞书
+```
 
 ## Review 跟进项（push 前发现的 minor，非阻塞）
 

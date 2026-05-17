@@ -610,6 +610,80 @@ def cmd_sync_feishu_table(args: argparse.Namespace) -> int:
         return 1
 
 
+# ── setup-feishu-fields ──────────────────────────────────────────────────────
+
+
+def cmd_setup_feishu_fields(args: argparse.Namespace) -> int:
+    """幂等创建 P1.24 飞书发现运行日志表字段。"""
+    secrets = load_secrets()
+    creds = _load_feishu_creds(secrets)
+    if creds is None:
+        print("ERROR: feishu credentials (app_id, app_secret, base_app_token) not found in secrets.json")
+        return 1
+    app_id, app_secret, app_token = creds
+
+    feishu_secrets = secrets.get("feishu") or {}
+    table_id = feishu_secrets.get("discovery_table_id", "")
+    if not table_id:
+        print("ERROR: feishu.discovery_table_id not found in secrets.json")
+        return 1
+
+    print("MovieTrace setup-feishu-fields (P1.24)")
+    print(f"Table ID: {table_id}")
+    print(f"Dry-run: {args.dry_run}")
+    print()
+
+    try:
+        from movietrace.feishu.schema_setup import ensure_table_fields
+
+        result = ensure_table_fields(
+            app_id=app_id,
+            app_secret=app_secret,
+            app_token=app_token,
+            table_id=table_id,
+            dry_run=args.dry_run,
+        )
+
+        created = result.get("created", [])
+        existed = result.get("existed", [])
+        renamed = result.get("renamed", [])
+        errors = result.get("errors", [])
+
+        if args.dry_run:
+            print("[DRY-RUN] Plan:")
+        else:
+            print("Result:")
+
+        if created:
+            print(f"  Created: {len(created)} fields")
+            for f in created:
+                print(f"    - {f.get('field_name')} (type {f.get('field_type')})")
+
+        if existed:
+            print(f"  Existed: {len(existed)} fields")
+
+        if renamed:
+            print(f"  Renamed: {len(renamed)} fields")
+            for r in renamed:
+                print(f"    - {r.get('old_name')} → {r.get('new_name')}")
+
+        if errors:
+            print(f"  Errors: {len(errors)}")
+            for e in errors:
+                print(f"    - {e}")
+
+        print()
+        if errors:
+            print("✗ setup-feishu-fields failed with errors")
+            return 1
+        else:
+            print("✓ setup-feishu-fields complete")
+            return 0
+    except Exception as exc:
+        print(f"✗ setup-feishu-fields failed: {exc}")
+        return 1
+
+
 # ── sync-feishu-doc ────────────────────────────────────────────────────────
 
 
@@ -1297,6 +1371,10 @@ def main() -> None:
     p_sync.add_argument("--dry-run", action="store_true")
     p_sync.add_argument("--stats-out", help="Write sync stats JSON to this path")
 
+    # setup-feishu-fields (P1.24-D)
+    p_setup = sub.add_parser("setup-feishu-fields", help="Create/rename Feishu discovery table fields (P1.24)")
+    p_setup.add_argument("--dry-run", action="store_true", help="Print plan without calling Feishu API")
+
     # sync-feishu-doc
     p_doc = sub.add_parser("sync-feishu-doc", help="Sync Markdown report as Feishu doc")
     p_doc.add_argument("--source", default="reports/latest.md", help="Markdown source path")
@@ -1355,6 +1433,7 @@ def main() -> None:
         "export-recommendations": cmd_export_recommendations,
         "export-baseline-updates": cmd_export_baseline_updates,
         "sync-feishu-table": cmd_sync_feishu_table,
+        "setup-feishu-fields": cmd_setup_feishu_fields,
         "sync-feishu-doc": cmd_sync_feishu_doc,
         "notify-feishu": cmd_notify_feishu,
         "fetch-tmdb-trending": cmd_fetch_tmdb_trending,

@@ -219,6 +219,21 @@ class TmdbDetailClient:
         imdb = result.get("imdb_id")
         return str(imdb) if imdb else None
 
+    def get_tv_season_details(self, tmdb_tv_id: str | int, season_number: int) -> dict:
+        """GET /tv/{id}/season/{n} — returns season details dict (episode_count, episodes[], etc.)."""
+        payload = get_json(
+            f"{self.base_url}/tv/{tmdb_tv_id}/season/{season_number}",
+            params={"language": "en-US"},
+            headers={
+                "Authorization": f"Bearer {self.bearer_token}",
+                "Accept": "application/json",
+            },
+            log_context=self._log_ctx(f"/tv/{tmdb_tv_id}/season/{season_number}", "tmdb_detail.get_tv_season_details"),
+        )
+        if isinstance(payload, dict):
+            return payload
+        return {}
+
 
 class TmdbTrendingClient:
     """TMDb trending / popular endpoint client (P1.7-B)."""

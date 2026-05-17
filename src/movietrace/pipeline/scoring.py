@@ -35,6 +35,8 @@ DEFAULT_WEIGHTS: dict = {
     "freshness": {"full_score_days": 90, "half_score_days": 180},
 }
 
+SOAP_GENRE_ID = 10766  # TMDb genre: Soap; 命中即降权 P3(P1.24)
+
 
 def load_weights_config(path: str = DEFAULT_CONFIG_PATH) -> dict:
     config_path = Path(path)

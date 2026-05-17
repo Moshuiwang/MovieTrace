@@ -384,9 +384,40 @@ def run_discovery(
         # Sort by hot_score desc
         scored.sort(key=lambda x: x.get("hot_score", 0), reverse=True)
 
-        # Step 5: Threshold filter
+        # P1.24-B: Compute row_duration_hours (缺失集时长计算)
+        tmdb_client_for_seasons = None
+        if tmdb_token:
+            from movietrace.sources.tmdb import TmdbDetailClient
+            tmdb_client_for_seasons = TmdbDetailClient(
+                tmdb_token, db_path=db_path, request_date=snapshot_date,
+            )
+
+        for c in scored:
+            if tmdb_client_for_seasons:
+                try:
+                    c["row_duration_hours"] = compute_row_duration_hours(c, conn, tmdb_client_for_seasons)
+                except Exception as exc:
+                    logger.warning("compute_row_duration_hours failed for %s: %s", c.get("tmdb_id"), exc)
+                    c["row_duration_hours"] = 0.0
+            else:
+                c["row_duration_hours"] = 0.0
+
+        # P1.24-C: Soap 自动降权
+        from movietrace.pipeline.scoring import SOAP_GENRE_ID
+
+        for c in scored:
+            genres = (c.get("tmdb_data") or {}).get("genres") or []
+            genre_ids = [g.get("id") for g in genres if isinstance(g, dict)]
+            if SOAP_GENRE_ID in genre_ids:
+                c["priority"] = "P3"
+                c["is_soap"] = True
+                c["ops_note"] = "TMDb 标识为 Soap,自动降权"
+            else:
+                c["is_soap"] = False
+
+        # Step 5: Threshold filter (with Soap bypass)
         threshold = (cfg.get("priority_thresholds") or {}).get("P2", 50)
-        passed = [s for s in scored if s.get("hot_score", 0) >= threshold]
+        passed = [s for s in scored if s.get("hot_score", 0) >= threshold or s.get("is_soap")]
 
         stats = _compute_discovery_stats(scored, passed, enrich_stats, fp_stats)
         stats["source_status"] = source_status
@@ -548,6 +579,17 @@ def _build_source_summary(c_dict: dict, source_status: dict | None = None) -> di
 
     if source_status:
         summary["source_data_status"] = source_status
+
+    # P1.24: 字段扩展
+    summary["imdb_id"] = c_dict.get("imdb_id") or None
+    summary["last_episode_to_air"] = (tmdb_data or {}).get("last_episode_to_air") if tmdb_data else None
+    summary["genres"] = [g.get("id") for g in (tmdb_data or {}).get("genres", []) if isinstance(g, dict)] if tmdb_data else []
+    summary["score_breakdown"] = c_dict.get("score_breakdown") or {}
+    summary["row_duration_hours"] = float(c_dict.get("row_duration_hours") or 0)
+    if c_dict.get("ops_note"):
+        summary["ops_note"] = c_dict["ops_note"]
+    if c_dict.get("is_soap"):
+        summary["is_soap"] = True
 
     return summary
 
@@ -773,3 +815,110 @@ def _resolve_omdb_keys(secrets: dict) -> list[str]:
 
 
 from movietrace.config import load_secrets as _load_secrets
+
+
+# ── P1.24-B: Row duration & Soap support ────────────────────────────────────
+
+
+def _query_a_lib_max_season(conn: sqlite3.Connection, tmdb_id: int | str) -> int:
+    """Query A 库 (upstream) 已有的最高 season_number for a TMDb TV ID.
+
+    返回 0 表示 A 库无该剧。逻辑:
+    - 通过 external_ids (source='tmdb', external_id='tv:{id}') → canonical_items.virtual_series_id
+    - → 所有同 virtual_series_id 的 canonical_items 里、source='upstream' 的 max(season_number)
+    """
+    row = conn.execute(
+        """select coalesce(max(ci2.season_number), 0)
+           from external_ids ei
+           join canonical_items ci on ci.id = ei.canonical_item_id
+           join canonical_items ci2 on ci2.virtual_series_id = ci.virtual_series_id
+           join external_ids ei2 on ei2.canonical_item_id = ci2.id and ei2.source = 'upstream'
+           where ei.source = 'tmdb' and ei.external_id = ?""",
+        (f"tv:{tmdb_id}",),
+    ).fetchone()
+    return int(row[0] if row else 0)
+
+
+def _query_a_lib_episode_count(conn: sqlite3.Connection, tmdb_id: int | str, season_number: int) -> int:
+    """Count upstream_episodes for the specified TMDb TV+season.
+
+    通过 virtual_series_id 关联到 upstream_programs 和 upstream_episodes。
+    """
+    row = conn.execute(
+        """select count(ue.id)
+           from upstream_episodes ue
+           join upstream_programs up on up.id = ue.fk_program_content_id
+           join external_ids eup on eup.source = 'upstream' and eup.external_id = cast(up.id as text)
+           join canonical_items ci_season on ci_season.id = eup.canonical_item_id
+                                          and ci_season.season_number = ?
+           join external_ids ei on ei.canonical_item_id = ci_season.id
+                                and ei.source = 'tmdb' and ei.external_id = ?""",
+        (int(season_number), f"tv:{tmdb_id}"),
+    ).fetchone()
+    return int(row[0] if row else 0)
+
+
+def compute_row_duration_hours(c_dict: dict, conn: sqlite3.Connection, tmdb_client) -> float:
+    """计算单行时长(h) = 缺失集累加 × 1h; Movie 固定 2h。
+
+    Args:
+        c_dict: _candidate_to_dict 输出的 dict (含 tmdb_id / media_type / tmdb_data)
+        conn: sqlite3 连接
+        tmdb_client: TmdbDetailClient 实例 (for get_tv_season_details)
+
+    Returns:
+        float: 时长(小时)；无法定位时返回 0.0
+    """
+    media_type = c_dict.get("media_type", "movie")
+
+    # Movie → 固定 2.0
+    if media_type == "movie":
+        return 2.0
+
+    tmdb_id = c_dict.get("tmdb_id")
+    if not tmdb_id:
+        return 0.0
+
+    tmdb_data = c_dict.get("tmdb_data") or {}
+    last_aired_season = (tmdb_data.get("last_episode_to_air") or {}).get("season_number")
+    if not last_aired_season:
+        return 0.0
+
+    # 查 A 库最高季
+    from movietrace.pipeline.tmdb_detail_cache import get_tmdb_season_detail_with_cache
+
+    a_lib_max = _query_a_lib_max_season(conn, tmdb_id)
+
+    if a_lib_max == 0:
+        # A 库无该剧 → 返回 TMDb 整剧已播总集数
+        total = tmdb_data.get("number_of_episodes", 0)
+        return float(total)
+
+    total = 0
+
+    # 1) a_lib_max+1 ... last_aired_season 的整季集数累加
+    for s in range(a_lib_max + 1, last_aired_season + 1):
+        season_detail, _ = get_tmdb_season_detail_with_cache(conn, tmdb_client, tmdb_id, s)
+        if season_detail:
+            # 优先用 episode_count；否则数 episodes 列表长度
+            ep_count = season_detail.get("episode_count")
+            if ep_count:
+                total += int(ep_count)
+            else:
+                episodes = season_detail.get("episodes", [])
+                total += len(episodes) if isinstance(episodes, list) else 0
+
+    # 2) a_lib_max 季内可能的缺集 (A 库未补齐)
+    a_lib_eps_in_max = _query_a_lib_episode_count(conn, tmdb_id, a_lib_max)
+    season_detail_max, _ = get_tmdb_season_detail_with_cache(conn, tmdb_client, tmdb_id, a_lib_max)
+    if season_detail_max:
+        tmdb_eps_in_max = season_detail_max.get("episode_count", 0)
+        if isinstance(tmdb_eps_in_max, str):
+            tmdb_eps_in_max = int(tmdb_eps_in_max) if tmdb_eps_in_max.isdigit() else 0
+        else:
+            tmdb_eps_in_max = int(tmdb_eps_in_max) if tmdb_eps_in_max else 0
+
+        if a_lib_eps_in_max < tmdb_eps_in_max:
+            total += (tmdb_eps_in_max - a_lib_eps_in_max)
+
+    return float(total)

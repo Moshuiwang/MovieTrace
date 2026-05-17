@@ -58,7 +58,15 @@ class TestBuildSourceSummary:
     def test_no_data_returns_empty_sections(self):
         c_dict = {}
         summary = _build_source_summary(c_dict)
-        assert summary == {}
+        # P1.24: 扩展了 summary 的字段，包含 imdb_id, last_episode_to_air, genres, score_breakdown, row_duration_hours
+        assert summary.get("imdb_id") is None
+        assert summary.get("last_episode_to_air") is None
+        assert summary.get("genres") == []
+        assert summary.get("score_breakdown") == {}
+        assert summary.get("row_duration_hours") == 0.0
+        # ops_note 和 is_soap 仅在有数据时才存在
+        assert "ops_note" not in summary
+        assert "is_soap" not in summary
 
 
 # ── _build_reason_text tests ────────────────────────────────────────────
@@ -606,5 +614,177 @@ class TestDryRunNoBusinessWrites:
             # auto_registered must be 0 (no writes happened)
             assert stats.get("auto_registered", 0) == 0
             assert isinstance(stats, dict)
+        finally:
+            os.unlink(db_path)
+
+
+# ── P1.24-B: Row duration tests ────────────────────────────────────────────
+
+
+class TestComputeRowDuration:
+    def test_movie_returns_2(self):
+        from movietrace.pipeline.discovery import compute_row_duration_hours
+        c_dict = {"media_type": "movie"}
+        result = compute_row_duration_hours(c_dict, None, None)
+        assert result == 2.0
+
+    def test_tv_no_tmdb_id_returns_0(self):
+        from movietrace.pipeline.discovery import compute_row_duration_hours
+        c_dict = {"media_type": "tv"}
+        result = compute_row_duration_hours(c_dict, None, None)
+        assert result == 0.0
+
+    def test_tv_no_last_aired_season_returns_0(self):
+        from movietrace.pipeline.discovery import compute_row_duration_hours
+        c_dict = {
+            "media_type": "tv",
+            "tmdb_id": 1,
+            "tmdb_data": {"last_episode_to_air": None},
+        }
+        result = compute_row_duration_hours(c_dict, None, None)
+        assert result == 0.0
+
+    def test_tv_a_lib_empty_returns_number_of_episodes(self):
+        from movietrace.pipeline.discovery import compute_row_duration_hours
+        from unittest.mock import MagicMock
+
+        c_dict = {
+            "media_type": "tv",
+            "tmdb_id": 1,
+            "tmdb_data": {
+                "last_episode_to_air": {"season_number": 5},
+                "number_of_episodes": 100,
+            },
+        }
+        conn = MagicMock()
+        # Mock _query_a_lib_max_season to return 0 (A 库无该剧)
+        with patch("movietrace.pipeline.discovery._query_a_lib_max_season", return_value=0):
+            result = compute_row_duration_hours(c_dict, conn, None)
+        assert result == 100.0
+
+    def test_tv_a_lib_has_seasons_calculates_delta(self):
+        from movietrace.pipeline.discovery import compute_row_duration_hours
+        from unittest.mock import MagicMock
+
+        c_dict = {
+            "media_type": "tv",
+            "tmdb_id": 1,
+            "tmdb_data": {
+                "last_episode_to_air": {"season_number": 6},
+                "number_of_episodes": 100,
+            },
+        }
+        conn = MagicMock()
+        tmdb_client = MagicMock()
+
+        # Mock: A 库最高季是 5
+        with patch("movietrace.pipeline.discovery._query_a_lib_max_season", return_value=5):
+            # Mock: 新季 S6 有 24 集
+            with patch("movietrace.pipeline.tmdb_detail_cache.get_tmdb_season_detail_with_cache") as mock_get:
+                def season_detail_side_effect(c, cli, tv_id, s_n):
+                    if s_n == 6:
+                        return ({"episode_count": 24}, False)
+                    elif s_n == 5:
+                        return ({"episode_count": 20}, False)
+                    return (None, False)
+
+                mock_get.side_effect = season_detail_side_effect
+
+                # Mock: A 库 S5 有 18 集(缺 2 集)
+                with patch("movietrace.pipeline.discovery._query_a_lib_episode_count", return_value=18):
+                    result = compute_row_duration_hours(c_dict, conn, tmdb_client)
+
+        # 期望: S6 的 24 集 + S5 缺的 2 集 = 26
+        assert result == 26.0
+
+
+# ── P1.24-C: Soap降权tests ────────────────────────────────────────────────
+
+
+class TestSoapGenreDowngrade:
+    def test_soap_genre_forces_p3(self):
+        from movietrace.pipeline.discovery import run_discovery
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+
+            def mock_merge(*args, **kwargs):
+                from movietrace.pipeline.multi_source_merge import MergedCandidate
+                return [
+                    MergedCandidate(
+                        title="Test Soap",
+                        tmdb_id=1,
+                        imdb_id="tt0000001",
+                        media_type="tv",
+                        fp_items=[],
+                        tmdb_data={
+                            "popularity": 50,
+                            "vote_average": 7,
+                            "vote_count": 100,
+                            "genres": [{"id": 10766, "name": "Soap"}],
+                        },
+                        trakt_data=None,
+                        source_flags={"tmdb"},
+                    ),
+                ]
+
+            with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                       return_value={"planned_calls": 0, "actual_calls": 0}):
+                with patch("movietrace.pipeline.multi_source_merge.merge_three_sources", side_effect=mock_merge):
+                    result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
+
+            candidates = result.get("candidates", [])
+            # 应该有 1 个候选，且被 Soap 降权到 P3
+            assert len(candidates) >= 1
+            soap_candidate = candidates[0]
+            assert soap_candidate.get("is_soap") == True
+            assert soap_candidate.get("priority") == "P3"
+            assert "Soap" in soap_candidate.get("ops_note", "")
+        finally:
+            os.unlink(db_path)
+
+    def test_non_soap_keeps_original_priority(self):
+        from movietrace.pipeline.discovery import run_discovery
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+
+            def mock_merge(*args, **kwargs):
+                from movietrace.pipeline.multi_source_merge import MergedCandidate
+                return [
+                    MergedCandidate(
+                        title="Test Drama",
+                        tmdb_id=2,
+                        imdb_id="tt0000002",
+                        media_type="tv",
+                        fp_items=[{"ranking": 1, "platform": "netflix", "days_total": 10}],  # 高排名 → 高评分
+                        tmdb_data={
+                            "popularity": 500,
+                            "vote_average": 8,
+                            "vote_count": 1000,
+                            "genres": [{"id": 18, "name": "Drama"}],
+                        },
+                        trakt_data={"watchers": 5000, "rating": 8.5, "votes": 1000},
+                        source_flags={"tmdb", "trakt", "flixpatrol"},
+                    ),
+                ]
+
+            with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                       return_value={"planned_calls": 0, "actual_calls": 0}):
+                with patch("movietrace.pipeline.multi_source_merge.merge_three_sources", side_effect=mock_merge):
+                    result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
+
+            candidates = result.get("candidates", [])
+            assert len(candidates) >= 1, f"Expected at least 1 candidate, got {len(candidates)}"
+            drama_candidate = candidates[0]
+            assert drama_candidate.get("is_soap") == False
+            # 不应被降权，应保持原来评分计算的 priority（不是 P3）
+            assert drama_candidate.get("priority") in ["P0", "P1", "P2"], f"Got priority {drama_candidate.get('priority')}"
         finally:
             os.unlink(db_path)
