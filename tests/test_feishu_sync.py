@@ -183,8 +183,8 @@ class TestSyncTableFieldsExtension:
         fields = batch_records[0]["fields"]
         assert "在播最新季" in fields
         assert fields["在播最新季"] == 22
-        assert "单行时长(h)" in fields
-        assert fields["单行时长(h)"] == 3.5
+        assert "预估时长" in fields
+        assert fields["预估时长"] == 3.5
         assert "FP 热度分" in fields
         assert fields["FP 热度分"] == 45.5
         assert "IMDb 评分" in fields

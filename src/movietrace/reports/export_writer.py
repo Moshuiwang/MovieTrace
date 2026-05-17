@@ -178,6 +178,24 @@ def _load_content_updates(conn, days: int, *, report_kind: str = "all") -> list[
             if tmdb_id in cache_map:
                 result[i]["stored_tmdb_number_of_seasons"] = cache_map[tmdb_id]
 
+    # For movie records, backfill imdb_id from api_cache (TMDb detail response includes it).
+    need_imdb = []
+    for i, row in enumerate(result):
+        parts = (row["content_update_id"] or "").split(":")
+        if len(parts) >= 3 and parts[0] == "discovery" and parts[1] == "movie":
+            need_imdb.append((i, parts[2]))
+    if need_imdb:
+        imdb_keys = [f"tmdb:detail:{tmdb_id}:movie" for _, tmdb_id in need_imdb]
+        phs = ",".join("?" for _ in imdb_keys)
+        imdb_rows = conn.execute(
+            f"select cache_key, json_extract(response_json, '$.imdb_id') from api_cache where cache_key in ({phs})",
+            imdb_keys,
+        ).fetchall()
+        imdb_map = {r[0].split(":")[2]: r[1] for r in imdb_rows if r[1]}
+        for i, tmdb_id in need_imdb:
+            if tmdb_id in imdb_map:
+                result[i]["imdb_id"] = imdb_map[tmdb_id]
+
     return result
 
 
@@ -395,6 +413,8 @@ def format_json(updates: list[dict]) -> str:
             "source_data_status": source_info.get("source_data_status"),
             "created_at": u.get("created_at"),
             "upstream_max_season": upstream,
+            "source_summary_json": u.get("source_summary_json"),
+            "imdb_id": u.get("imdb_id"),
         })
     return json.dumps(export, indent=2, ensure_ascii=False)
 

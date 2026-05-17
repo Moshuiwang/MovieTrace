@@ -17,7 +17,7 @@ from movietrace.feishu.baseline import fetch_tenant_access_token
 # 飞书 field type: 1=文本, 2=数字, 5=日期, 15=URL
 REQUIRED_FIELDS_FOR_DISCOVERY_TABLE: list[tuple[str, int]] = [
     ("在播最新季", 2),  # 数字
-    ("单行时长(h)", 2),  # 数字
+    ("预估时长", 2),  # 数字
     ("IMDb 链接", 15),  # URL
     ("TMDb 链接", 15),  # URL
     ("FP 热度分", 2),  # 数字
@@ -31,6 +31,7 @@ REQUIRED_FIELDS_FOR_DISCOVERY_TABLE: list[tuple[str, int]] = [
 # 旧字段重命名映射 (old_name -> new_name)
 FIELD_RENAMES: list[tuple[str, str]] = [
     ("季号", "在播最新季"),
+    ("单行时长(h)", "预估时长"),
 ]
 
 
