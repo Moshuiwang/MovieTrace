@@ -55,6 +55,10 @@ PYTHONPATH=src python -m movietrace.cli sync-feishu-table
 5. ~~`sync_doc` 入口校验~~ **已修复** ✓
 
 
+## 待办（TODO）
+
+- [ ] **TODO-1**：飞书多维表格「单行时长(h)」列数值全为 0，需排查写入逻辑；同时将字段名改为「预估时长」
+
 ## 当前数据画像
 
 | 表 | 行数 | 备注 |
