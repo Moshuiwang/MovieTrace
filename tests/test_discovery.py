@@ -772,10 +772,11 @@ class TestSoapGenreDowngrade:
                     ),
                 ]
 
-            with patch("movietrace.pipeline.discovery._ensure_fp_data",
-                       return_value={"planned_calls": 0, "actual_calls": 0}):
-                with patch("movietrace.pipeline.multi_source_merge.merge_three_sources", side_effect=mock_merge):
-                    result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
+            with patch("movietrace.pipeline.discovery._load_secrets", return_value={"omdb": {}, "tmdb": {}}):
+                with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                           return_value={"planned_calls": 0, "actual_calls": 0}):
+                    with patch("movietrace.pipeline.multi_source_merge.merge_three_sources", side_effect=mock_merge):
+                        result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
 
             candidates = result.get("candidates", [])
             # 应该有 1 个候选，且被 Soap 降权到 P3
@@ -816,10 +817,11 @@ class TestSoapGenreDowngrade:
                     ),
                 ]
 
-            with patch("movietrace.pipeline.discovery._ensure_fp_data",
-                       return_value={"planned_calls": 0, "actual_calls": 0}):
-                with patch("movietrace.pipeline.multi_source_merge.merge_three_sources", side_effect=mock_merge):
-                    result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
+            with patch("movietrace.pipeline.discovery._load_secrets", return_value={"omdb": {}, "tmdb": {}}):
+                with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                           return_value={"planned_calls": 0, "actual_calls": 0}):
+                    with patch("movietrace.pipeline.multi_source_merge.merge_three_sources", side_effect=mock_merge):
+                        result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
 
             candidates = result.get("candidates", [])
             assert len(candidates) >= 1, f"Expected at least 1 candidate, got {len(candidates)}"
