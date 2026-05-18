@@ -70,6 +70,7 @@ PYTHONPATH=src python -m pytest tests/<file>.py -v
 
 ## 完成后输出要求
 按 [docs/workflow/report-format.md](../workflow/report-format.md) 格式汇报。
+完成后按 [CLAUDE.md § Git 工作流](../../CLAUDE.md) 交付（feature branch → PR → auto-merge）。
 ```
 
 ---

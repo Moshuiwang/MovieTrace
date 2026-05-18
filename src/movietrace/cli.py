@@ -574,6 +574,8 @@ def cmd_sync_feishu_table(args: argparse.Namespace) -> int:
         print("ERROR: feishu.discovery_table_id not found in secrets.json")
         return 1
 
+    notify_chat_id = feishu_secrets.get("notify_chat_id", "")
+
     print("MovieTrace sync-feishu-table")
     print(f"Source: {args.source}")
     print(f"Table ID: {table_id}")
@@ -593,6 +595,7 @@ def cmd_sync_feishu_table(args: argparse.Namespace) -> int:
             app_token=app_token,
             table_id=table_id,
             dry_run=args.dry_run,
+            notify_chat_id=notify_chat_id,
         )
 
         if stats.get("dry_run"):
