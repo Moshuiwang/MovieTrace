@@ -1,52 +1,27 @@
 # 项目状态快照
 
-> AI 冷启动 3 秒回答：现在停在哪儿、有没有阻塞、下一步做什么。
-> **更新策略：** 每次 commit 前更新；"近期变更"段只滚动保留 3 条，旧条目随 commit 移交 `journal/` + `git log`。
-> **不在此处：** 历史 Phase → [`docs/history/phase1_state_archive.md`](docs/history/phase1_state_archive.md)（先 `rg`）· 技术地图 → [`docs/context_map.md`](docs/context_map.md) · 日常运行 → [`docs/operations/runbook.md`](docs/operations/runbook.md)。
+> AI 冷启动只回答：停在哪儿、是否阻塞、下一步。历史见 [`docs/history/phase1_state_archive.md`](docs/history/phase1_state_archive.md)，技术地图见 [`docs/context_map.md`](docs/context_map.md)，日常运行见 [`docs/operations/runbook.md`](docs/operations/runbook.md)。
+> **更新策略：** 每次 commit 前更新；近期变更只保留影响当前判断的 3 条以内。
 
----
-
-**最后更新：** 2026-05-17 22:30 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
+**最后更新：** 2026-05-17 22:30 +08 · 分支 `main`
 **测试：** 535 passed（`--ignore=tests/test_flixpatrol_parsing.py`；~70s）
-**Schema：** version 16（migrations 001-016 全部落盘，P1.24 不动 schema）
+**Schema：** version 16（migrations 001-016 已落盘）
 
----
+## 当前状态
 
-## 现在停在哪儿
+Phase 0 → 1.24 全部完成并上线；V1 运行观察期。P1.24 飞书新字段从 2026-05-18 起随 `daily-discover` 自然写入。P1.17 跳过；P1.22 预留给 V2 episode 级缺口检测。
 
-Phase 0 → 1.24 全部完成并上线。P1.24 飞书字段已建好，新字段数据从 2026-05-18 起随 daily-discover 自然写入。P1.17 跳过（前置未满足）；P1.22 编号预留给 V2 episode 级缺口检测。
-
-**近 7 天关键变更：**
-- 2026-05-17 **row_duration 未播集修复 + SQL join 路径修正**（去掉 `a_lib_max==0` 快捷路径，新增 `_aired_episode_count` helper 精确计算已播集；`_query_a_lib_episode_count` 改用 `virtual_series_id` 关联路径）；测试 534→535
-- 2026-05-17 **P1.24 飞书发现运行日志字段增强**（8 新字段 + 季号 rename + Soap 降权 + 历史回填脚本）— 任务包 [`docs/tasks/p1.24-feishu-fields-enhancement.md`](docs/tasks/p1.24-feishu-fields-enhancement.md)；7 个原子子任务 A→B→(C/D/E)→G→F 全部完成；测试 441→534（+93）
+**近期关键变更：**
+- 2026-05-17 row_duration 未播集修复 + SQL join 路径修正；测试 534→535
+- 2026-05-17 P1.24 飞书发现运行日志字段增强（任务包 [`docs/tasks/p1.24-feishu-fields-enhancement.md`](docs/tasks/p1.24-feishu-fields-enhancement.md)）；测试 441→534
 - 2026-05-16 P1.21.9 `sync_doc` → `drive/v1/import_task`（[ADR-0015](docs/decisions/0015-feishu-doc-import-via-import-tasks.md)）
 
 ## 进行中 / 阻塞 / 待决策
 
 - **进行中：** 无
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
+- **待补覆盖：** `sync_gap_table` step 6 仍无自动化覆盖（需飞书）
 
-## Review 跟进项（push 前发现的 minor，非阻塞）
+## 数据画像
 
-1. **P1.21.6 测试空白** — `batch_delete_records` 已补 4 个单测 ✓；`sync_gap_table` step 6 仍无自动化覆盖（需飞书）
-2. ~~`weekly_report.py:_lookup_title` per-row sqlite connect~~ **已修复** ✓ (541ef70)
-3. ~~`entity_matching.py` 死代码 `__main__` 调用未定义 `main()`~~ **已删除** ✓ (541ef70)
-4. ~~`scripts/weekly_feedback.sh` 缺 TZ~~ **已修复** ✓
-5. ~~`sync_doc` 入口校验~~ **已修复** ✓
-
-
-## 当前数据画像
-
-| 表 | 行数 | 备注 |
-|----|------|------|
-| `upstream_programs` | 735 | `online_flag`=597 |
-| `upstream_episodes` | 6,562 | A 库子节目 |
-| `canonical_items` | ~905 | TV season 509 · TV series 289 · Movie 107 |
-| `virtual_series` | 307 | urgent 85 · low 187 · skip 35 |
-| `content_updates` | ~298 | new_discovery 151 · new_season 147 |
-
-TV 链接率 790/790 = 100% · `imdb_id` 全空 · 85% 节目名含 `S\d\d` 季号
-
-## 最近备份
-
-`data/movietrace_backup_20260516_1435_pre_p121.7.db` · `20260516_0326_pre_p121.db` · `20260515_1002_before_baseline_catchup.db`
+`upstream_programs` 735 · `upstream_episodes` 6,562 · `canonical_items` ~905 · `virtual_series` 307 · `content_updates` ~298。TV 链接率 790/790 = 100%，`imdb_id` 全空，85% 节目名含 `S\d\d` 季号。
