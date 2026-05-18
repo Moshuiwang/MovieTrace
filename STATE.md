@@ -25,6 +25,7 @@ Phase 0 → 1.24 全部完成并上线。P1.24 飞书字段已建好，新字段
 | P1.27 | [p1.27-feishu-raw-ratings.md](docs/tasks/p1.27-feishu-raw-ratings.md) | issue #6 | 草案，待执行 |
 | P1.28 | [p1.28-zh-locale-fields.md](docs/tasks/p1.28-zh-locale-fields.md) | issue #8 | 草案，待执行（独立 PR，含 schema migration 017） |
 | P1.29 | [p1.29-doc-sections.md](docs/tasks/p1.29-doc-sections.md) | issue #4a | 草案，待执行 |
+| P1.30 | [p1.30-feishu-auto-ensure.md](docs/tasks/p1.30-feishu-auto-ensure.md) | session 设计讨论 | 进行中（sync 入口自动 ensure + 工作流配套） |
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）；issue #9（V2 backlog，合规原因跳过）
 
@@ -35,7 +36,7 @@ Phase 0 → 1.24 全部完成并上线。P1.24 飞书字段已建好，新字段
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** P1.26（下一个开工）
+- **进行中：** P1.30（飞书字段自动 ensure + 工作流配套）
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 
 ## Review 跟进项（push 前发现的 minor，非阻塞）

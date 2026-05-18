@@ -36,6 +36,7 @@ from movietrace.feishu._http import (
     upload_media_file,
 )
 from movietrace.feishu.schema_setup import ensure_table_fields
+from movietrace.feishu.notify import send_alert, send_text
 from movietrace.sources.omdb import format_imdb_id
 
 TZ = ZoneInfo("Asia/Shanghai")
@@ -158,6 +159,8 @@ def sync_table(
     table_id: str,
     *,
     dry_run: bool = False,
+    notify_chat_id: str = "",
+    notify_chat_id_type: str = "chat_id",
 ) -> dict:
     """Sync latest.json records to a Feishu bitable by field_id.
 
@@ -191,20 +194,42 @@ def sync_table(
     print("获取飞书 token...")
     token = fetch_tenant_access_token(app_id, app_secret)
 
-    # P1.24: 幂等保证字段存在(首次跑创建 8 新字段 + rename 季号)
-    print("ensure 飞书字段(P1.24)...")
-    field_result = ensure_table_fields(
-        app_id=app_id, app_secret=app_secret,
-        app_token=app_token, table_id=table_id,
-        dry_run=False,
-    )
-    if field_result.get("created"):
-        created_names = [f.get("field_name", "?") for f in field_result["created"]]
+    # 幂等保证字段存在；失败 → IM 告警后抛出（不静默继续，避免写入丢字段）
+    print("ensure 飞书字段...")
+    try:
+        field_result = ensure_table_fields(
+            app_id=app_id, app_secret=app_secret,
+            app_token=app_token, table_id=table_id,
+            dry_run=False,
+        )
+    except Exception as ensure_exc:
+        if notify_chat_id:
+            send_alert(
+                notify_chat_id, "error", "飞书字段补建失败",
+                detail=str(ensure_exc),
+                app_id=app_id, app_secret=app_secret,
+                receive_id_type=notify_chat_id_type,
+            )
+        raise
+
+    created_names = [f.get("field_name", "?") for f in field_result.get("created", [])]
+    renamed_count = len(field_result.get("renamed", []))
+    if created_names:
         print(f"  新建 {len(created_names)} 个字段: {', '.join(created_names)}")
-    if field_result.get("renamed"):
-        renamed_count = len(field_result.get("renamed", []))
-        if renamed_count > 0:
-            print(f"  重命名 {renamed_count} 个字段")
+    if renamed_count:
+        print(f"  重命名 {renamed_count} 个字段")
+
+    if (created_names or renamed_count) and notify_chat_id:
+        parts = ["📋 飞书表格字段自动补建"]
+        if created_names:
+            parts.append(f"新建 {len(created_names)} 个：{', '.join(created_names)}")
+        if renamed_count:
+            parts.append(f"重命名 {renamed_count} 个")
+        send_text(
+            notify_chat_id, "\n".join(parts),
+            app_id=app_id, app_secret=app_secret,
+            receive_id_type=notify_chat_id_type,
+        )
 
     # 2. Fetch existing records for this date
     print(f"加载 {run_date} 已有记录...")

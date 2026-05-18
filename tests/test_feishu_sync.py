@@ -565,3 +565,142 @@ class TestRatingHelpers:
     def test_parse_votes_na_string(self):
         from movietrace.feishu.sync import _parse_votes
         assert _parse_votes("N/A") is None
+
+
+class TestSyncTableEnsureNotification:
+    """P1.30: sync_table 字段自动 ensure 后的 IM 通知行为。"""
+
+    def _make_minimal_record(self) -> dict:
+        return {
+            "content_update_id": "discovery:tv:1396:2026-05-17",
+            "update_type": "new_discovery",
+            "priority": "P2",
+            "hot_score": 50.0,
+            "title": "Test",
+            "tmdb_id": "1396",
+            "source_data_status": {},
+            "event_written_at_utc": "2026-05-17 10:30:00",
+            "created_at": "2026-05-17 10:30:00",
+            "source_summary_json": json.dumps({"score_breakdown": {}}, ensure_ascii=False),
+        }
+
+    @patch("movietrace.feishu.sync.send_text")
+    @patch("movietrace.feishu.sync.send_alert")
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_notifies_when_fields_created(
+        self, mock_update, mock_create, mock_list, mock_ensure,
+        mock_token, mock_alert, mock_text,
+    ):
+        mock_token.return_value = "tok"
+        mock_ensure.return_value = {
+            "created": [{"field_name": "中文名", "field_type": 1}],
+            "existed": [], "renamed": [], "errors": [], "dry_run": False,
+        }
+        mock_list.return_value = {}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "latest.json"
+            p.write_text(json.dumps([self._make_minimal_record()], ensure_ascii=False))
+            sync_table(
+                json_path=str(p), run_date="2026-05-17",
+                app_id="a", app_secret="s", app_token="t", table_id="tbl",
+                notify_chat_id="chat_xyz",
+            )
+
+        mock_text.assert_called_once()
+        args, kwargs = mock_text.call_args
+        assert args[0] == "chat_xyz"
+        assert "中文名" in args[1]
+        assert kwargs["receive_id_type"] == "chat_id"
+        mock_alert.assert_not_called()
+
+    @patch("movietrace.feishu.sync.send_text")
+    @patch("movietrace.feishu.sync.send_alert")
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_no_notify_when_no_field_changes(
+        self, mock_update, mock_create, mock_list, mock_ensure,
+        mock_token, mock_alert, mock_text,
+    ):
+        mock_token.return_value = "tok"
+        mock_ensure.return_value = {
+            "created": [], "existed": [{"field_name": "x"}], "renamed": [],
+            "errors": [], "dry_run": False,
+        }
+        mock_list.return_value = {}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "latest.json"
+            p.write_text(json.dumps([self._make_minimal_record()], ensure_ascii=False))
+            sync_table(
+                json_path=str(p), run_date="2026-05-17",
+                app_id="a", app_secret="s", app_token="t", table_id="tbl",
+                notify_chat_id="chat_xyz",
+            )
+
+        mock_text.assert_not_called()
+        mock_alert.assert_not_called()
+
+    @patch("movietrace.feishu.sync.send_text")
+    @patch("movietrace.feishu.sync.send_alert")
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    def test_raises_and_alerts_when_ensure_fails(
+        self, mock_ensure, mock_token, mock_alert, mock_text,
+    ):
+        mock_token.return_value = "tok"
+        mock_ensure.side_effect = RuntimeError("Feishu create field failed (code=99991663): permission denied")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "latest.json"
+            p.write_text(json.dumps([self._make_minimal_record()], ensure_ascii=False))
+            with pytest.raises(RuntimeError, match="permission denied"):
+                sync_table(
+                    json_path=str(p), run_date="2026-05-17",
+                    app_id="a", app_secret="s", app_token="t", table_id="tbl",
+                    notify_chat_id="chat_xyz",
+                )
+
+        mock_alert.assert_called_once()
+        args, kwargs = mock_alert.call_args
+        assert args[0] == "chat_xyz"
+        assert args[1] == "error"
+        assert "permission denied" in kwargs.get("detail", "")
+        mock_text.assert_not_called()
+
+    @patch("movietrace.feishu.sync.send_text")
+    @patch("movietrace.feishu.sync.send_alert")
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_no_notify_when_chat_id_empty(
+        self, mock_update, mock_create, mock_list, mock_ensure,
+        mock_token, mock_alert, mock_text,
+    ):
+        mock_token.return_value = "tok"
+        mock_ensure.return_value = {
+            "created": [{"field_name": "x", "field_type": 1}],
+            "existed": [], "renamed": [], "errors": [], "dry_run": False,
+        }
+        mock_list.return_value = {}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "latest.json"
+            p.write_text(json.dumps([self._make_minimal_record()], ensure_ascii=False))
+            sync_table(
+                json_path=str(p), run_date="2026-05-17",
+                app_id="a", app_secret="s", app_token="t", table_id="tbl",
+                # notify_chat_id 不传 → 默认空串
+            )
+
+        mock_text.assert_not_called()
+        mock_alert.assert_not_called()
