@@ -270,5 +270,70 @@ class OmdbKeyLogMaskingTest(unittest.TestCase):
             conn.close()
 
 
+class TestZhFields(unittest.TestCase):
+    def _make_db(self):
+        from movietrace.db.schema import initialize_database, connect_database
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        db_path = Path(tmp) / "test_zh.db"
+        initialize_database(db_path)
+        return connect_database(db_path)
+
+    def test_zh_fields_written_to_canonical(self):
+        """zh-CN title/overview get written to canonical_items via _update_canonical_zh_fields."""
+        from movietrace.pipeline.omdb_enrichment import _update_canonical_zh_fields
+        conn = self._make_db()
+        conn.execute(
+            "insert into canonical_items(canonical_item_key, title, content_type, content_granularity) values (?, ?, ?, ?)",
+            ("k1", "Test Show", "tv", "season"),
+        )
+        canonical_id = conn.execute("select last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            "insert into external_ids(canonical_item_id, source, external_id) values (?, ?, ?)",
+            (canonical_id, "tmdb", "tv:99999"),
+        )
+        conn.commit()
+        result = _update_canonical_zh_fields(conn, "99999", "tv", "测试剧", "这是简介", None, None)
+        self.assertTrue(result)
+        row = conn.execute("select title_zh, overview_zh from canonical_items where id = ?", (canonical_id,)).fetchone()
+        self.assertEqual(row[0], "测试剧")
+        self.assertEqual(row[1], "这是简介")
+        conn.close()
+
+    def test_genres_json_serialized(self):
+        """genres list from en-US detail is serialized to JSON string."""
+        import json
+        genres = [{"id": 18, "name": "Drama"}, {"id": 10759, "name": "Action"}]
+        result = json.dumps(genres, ensure_ascii=False)
+        parsed = json.loads(result)
+        self.assertEqual(parsed[0]["name"], "Drama")
+
+
+class TestApplyTmdbDetailDataLastEpisode(unittest.TestCase):
+    def _make_candidate(self):
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+        return MergedCandidate(tmdb_id=100, imdb_id=None, title="Test", media_type="tv")
+
+    def test_last_episode_to_air_object_preserved(self):
+        from movietrace.pipeline.omdb_enrichment import _apply_tmdb_detail_data
+        c = self._make_candidate()
+        lea = {"id": 1, "name": "Ep 1", "air_date": "2026-05-01"}
+        _apply_tmdb_detail_data(c, {"last_episode_to_air": lea})
+        self.assertEqual(c.tmdb_data["last_episode_to_air"], lea)
+
+    def test_last_episode_air_date_string_still_extracted(self):
+        from movietrace.pipeline.omdb_enrichment import _apply_tmdb_detail_data
+        c = self._make_candidate()
+        lea = {"id": 1, "name": "Ep 1", "air_date": "2026-05-01"}
+        _apply_tmdb_detail_data(c, {"last_episode_to_air": lea})
+        self.assertEqual(c.tmdb_data["last_episode_air_date"], "2026-05-01")
+
+    def test_last_episode_to_air_none_when_missing(self):
+        from movietrace.pipeline.omdb_enrichment import _apply_tmdb_detail_data
+        c = self._make_candidate()
+        _apply_tmdb_detail_data(c, {"vote_average": 7.5})
+        self.assertNotIn("last_episode_to_air", c.tmdb_data)
+
+
 if __name__ == "__main__":
     unittest.main()

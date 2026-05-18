@@ -121,6 +121,8 @@ class TestSyncTableFieldsExtension:
             "imdb_id": "tt0903747",
             "last_episode_to_air": {"season_number": 22, "episode_number": 18, "air_date": "2024-05-18"},
             "genres": [10766],  # Soap
+            "imdb": {"rating": "8.3", "votes": "1,234,567"},
+            "tmdb": {"vote_average": 7.9, "vote_count": 12345},
             "score_breakdown": {
                 "flixpatrol_score": 45.5,
                 "imdb_rating_score": 87.2,
@@ -212,9 +214,9 @@ class TestSyncTableFieldsExtension:
         assert "FP 热度分" in fields
         assert fields["FP 热度分"] == 45.5
         assert "IMDb 评分" in fields
-        assert fields["IMDb 评分"] == 87.2
+        assert fields["IMDb 评分"] == 8.3
         assert "TMDb 评分" in fields
-        assert fields["TMDb 评分"] == 79.5
+        assert fields["TMDb 评分"] == 7.9
         assert "TMDb 热度分" in fields
         assert fields["TMDb 热度分"] == 92.1
         assert "Trakt 热度分" in fields
@@ -533,3 +535,33 @@ class TestSyncTableFieldsExtension:
         fields = batch_records[0]["fields"]
         # Movie should not have 在播最新季 (or it should be None/missing)
         assert fields.get("在播最新季") is None or "在播最新季" not in fields
+
+
+class TestRatingHelpers:
+    def test_to_float_rating_string(self):
+        from movietrace.feishu.sync import _to_float_rating
+        assert _to_float_rating("8.3") == 8.3
+
+    def test_to_float_rating_none(self):
+        from movietrace.feishu.sync import _to_float_rating
+        assert _to_float_rating(None) is None
+
+    def test_to_float_rating_empty(self):
+        from movietrace.feishu.sync import _to_float_rating
+        assert _to_float_rating("") is None
+
+    def test_to_float_rating_na(self):
+        from movietrace.feishu.sync import _to_float_rating
+        assert _to_float_rating("N/A") is None
+
+    def test_parse_votes_with_commas(self):
+        from movietrace.feishu.sync import _parse_votes
+        assert _parse_votes("1,234,567") == 1234567
+
+    def test_parse_votes_none(self):
+        from movietrace.feishu.sync import _parse_votes
+        assert _parse_votes(None) is None
+
+    def test_parse_votes_na_string(self):
+        from movietrace.feishu.sync import _parse_votes
+        assert _parse_votes("N/A") is None

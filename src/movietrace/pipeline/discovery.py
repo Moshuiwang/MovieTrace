@@ -780,10 +780,14 @@ def _compute_discovery_stats(
     p0 = sum(1 for c in passed if c.get("priority") == "P0")
     p1 = sum(1 for c in passed if c.get("priority") == "P1")
     p2 = sum(1 for c in passed if c.get("priority") == "P2")
+    passed_ids = {c.get("content_id") for c in passed}
+    filtered = [c for c in all_scored if c.get("content_id") not in passed_ids]
+    filtered_out = sorted(filtered, key=lambda c: c.get("hot_score", 0), reverse=True)[:10]
     return {
         "total_merged": len(all_scored),
         "total_passed": len(passed),
         "P0": p0, "P1": p1, "P2": p2,
+        "filtered_out": filtered_out,
         "enrich_omdb": enrich_stats.get("omdb", {}),
         "enrich_tmdb_detail": enrich_stats.get("tmdb_detail", {}),
         "enrich_imdb_backfill": enrich_stats.get("imdb_backfill", {}),

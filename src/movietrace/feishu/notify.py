@@ -293,6 +293,28 @@ def send_alert(
 
 # ── Gmail SMTP (stub) ─────────────────────────────────────────────────────
 
+def build_im_summary_text(discover_stats: dict, sync_stats: dict) -> str:
+    """Return a plain-text IM summary (pipeline stats + priority counts).
+
+    Does not send — callers use this to embed in markdown or other outputs.
+    """
+    total_merged = discover_stats.get("total_merged", 0)
+    total_passed = discover_stats.get("total_passed", 0)
+    written = discover_stats.get("written", 0)
+    prio = discover_stats.get("priority", {})
+    p0 = prio.get("P0", 0)
+    p1 = prio.get("P1", 0)
+    p2 = prio.get("P2", 0)
+    s_errors = sync_stats.get("errors", 0)
+    parts = [
+        f"合并 {total_merged} 条 → 通过 {total_passed} 条 → 写入 {written} 条",
+        f"P0={p0} P1={p1} P2={p2}",
+    ]
+    if s_errors:
+        parts.append(f"飞书同步错误 {s_errors} 条")
+    return " | ".join(parts)
+
+
 def send_email(
     smtp_user: str,
     smtp_password: str,

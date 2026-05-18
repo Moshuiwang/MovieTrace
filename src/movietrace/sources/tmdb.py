@@ -152,11 +152,11 @@ class TmdbDetailClient:
             "key_fingerprint": self._key_fp,
         }
 
-    def get_tv_details(self, tmdb_tv_id: str) -> dict:
+    def get_tv_details(self, tmdb_tv_id: str, language: str = "en-US") -> dict:
         """GET /tv/{tv_id} — returns raw TMDb response dict."""
         payload = get_json(
             f"{self.base_url}/tv/{tmdb_tv_id}",
-            params={"language": "en-US"},
+            params={"language": language},
             headers={
                 "Authorization": f"Bearer {self.bearer_token}",
                 "Accept": "application/json",
@@ -167,11 +167,11 @@ class TmdbDetailClient:
             return payload
         return {}
 
-    def get_movie_details(self, tmdb_movie_id: str) -> dict:
+    def get_movie_details(self, tmdb_movie_id: str, language: str = "en-US") -> dict:
         """GET /movie/{movie_id} — returns raw TMDb response dict."""
         payload = get_json(
             f"{self.base_url}/movie/{tmdb_movie_id}",
-            params={"language": "en-US"},
+            params={"language": language},
             headers={
                 "Authorization": f"Bearer {self.bearer_token}",
                 "Accept": "application/json",

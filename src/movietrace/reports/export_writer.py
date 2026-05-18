@@ -6,6 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from movietrace.db.schema import connect_database
+from movietrace.pipeline.scoring import DEFAULT_WEIGHTS
 from movietrace.reports.inspect_renderer import _parse_source_json, _extract_source_status
 
 TZ = ZoneInfo("Asia/Shanghai")
@@ -119,7 +120,8 @@ def _load_content_updates(conn, days: int, *, report_kind: str = "all") -> list[
                   ci.title, ci.content_type, ci.content_granularity,
                   vs.name as series_name, vs.tmdb_tv_id,
                   vs.local_max_season, vs.tmdb_number_of_seasons,
-                  upstream_agg.upstream_max_season
+                  upstream_agg.upstream_max_season,
+                  ci.title_zh, ci.overview_zh, ci.genres_json, ci.networks_json
            from content_updates cu
            join canonical_items ci on ci.id = cu.canonical_item_id
            left join virtual_series vs on vs.id = ci.virtual_series_id
@@ -153,6 +155,10 @@ def _load_content_updates(conn, days: int, *, report_kind: str = "all") -> list[
             "stored_local_max_season": r[13],
             "stored_tmdb_number_of_seasons": r[14],
             "upstream_max_season": r[15],
+            "title_zh": r[16],
+            "overview_zh": r[17],
+            "genres_json": r[18],
+            "networks_json": r[19],
         }
         for r in rows
     ]
@@ -238,6 +244,7 @@ def format_markdown(
     *,
     report_kind: str = "all",
     funnel: dict | None = None,
+    stats: dict | None = None,
 ) -> str:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S +08")
     if report_kind == "baseline":
@@ -371,7 +378,113 @@ def format_markdown(
     if not updates:
         lines.append("*暂无更新事件*")
 
+    lines.extend(_render_scoring_rules())
+    # Use provided stats or derive minimal stats from updates for funnel display
+    effective_stats = stats or {"total_passed": len(updates), "filtered_out": []}
+    lines.extend(_render_funnel(effective_stats))
+    lines.extend(_render_errors(updates))
+
     return "\n".join(lines) + "\n"
+
+
+_WEIGHT_DISPLAY: list[tuple[str, str, str]] = [
+    ("flixpatrol", "FlixPatrol 热度", "flixpatrol_score"),
+    ("tmdb_popularity", "TMDb 流行度", "tmdb_popularity_score"),
+    ("trakt", "Trakt 热度", "trakt_score"),
+    ("tmdb_rating", "TMDb 评分", "tmdb_rating_score"),
+    ("imdb_rating", "IMDb 评分", "imdb_rating_score"),
+    ("platform_weight", "平台权重", "platform_weight_score"),
+    ("content_type", "内容类型", "content_type_score"),
+    ("freshness", "新鲜度", "freshness_score"),
+    ("language", "语言", "language_score"),
+]
+
+
+def _render_scoring_rules() -> list[str]:
+    """Generate '⚖️ 评分规则与权重' section lines."""
+    w = DEFAULT_WEIGHTS.get("weights", {})
+    thresholds = DEFAULT_WEIGHTS.get("priority_thresholds", {"P0": 85, "P1": 70, "P2": 50})
+    lines = [
+        "",
+        "## ⚖️ 评分规则与权重",
+        "",
+        "| 维度 | 权重 | 来源字段 |",
+        "|------|------|----------|",
+    ]
+    for key, label, field in _WEIGHT_DISPLAY:
+        pct = f"{w.get(key, 0) * 100:.0f}%"
+        lines.append(f"| {label} | {pct} | `{field}` |")
+    lines.extend([
+        "",
+        f"阈值：P0 ≥ {thresholds.get('P0', 85)} · P1 ≥ {thresholds.get('P1', 70)} · P2 ≥ {thresholds.get('P2', 50)}",
+        "",
+    ])
+    return lines
+
+
+def _render_funnel(stats: dict | None) -> list[str]:
+    """Generate '🔍 过滤明细（漏斗）' section lines."""
+    if not stats:
+        return []
+    total_merged = stats.get("total_merged")
+    total_passed = stats.get("total_passed", 0)
+    filtered_out = stats.get("filtered_out", [])
+    eliminated = (total_merged - total_passed) if total_merged is not None else "N/A"
+
+    lines = [
+        "",
+        "## 🔍 过滤明细（漏斗）",
+        "",
+        "| 阶段 | 数量 |",
+        "|------|------|",
+        f"| 多源合并候选 | {total_merged if total_merged is not None else 'N/A'} |",
+        f"| 阈值过滤通过 | {total_passed} |",
+        f"| 因低分淘汰 | {eliminated} |",
+        "",
+    ]
+    if filtered_out:
+        lines.extend([
+            f"**被淘汰 Top {len(filtered_out)}（分数最高的未入选）：**",
+            "",
+            "| 名称 | hot_score | 类型 |",
+            "|------|-----------|------|",
+        ])
+        extra = max(0, (total_merged - total_passed - len(filtered_out))) if total_merged is not None else 0
+        for item in filtered_out:
+            title = item.get("title", "N/A")
+            score = item.get("hot_score", 0)
+            ct = item.get("content_type", item.get("media_type", "N/A"))
+            lines.append(f"| {title} | {score:.1f} | {ct} |")
+        if extra > 0:
+            lines.append(f"")
+            lines.append(f"*另有 {extra} 项未列出*")
+    lines.append("")
+    return lines
+
+
+def _render_errors(updates: list[dict]) -> list[str]:
+    """Generate '⚠️ 异常 / 错误摘要' section lines from source_data_status in updates."""
+    source_status = _extract_source_status(updates)
+    error_lines: list[str] = []
+    if source_status:
+        for src_key, src_label in [("flixpatrol", "FlixPatrol"), ("tmdb", "TMDb"), ("trakt", "Trakt")]:
+            info = source_status.get(src_key, {})
+            if info.get("status") == "fallback":
+                error_lines.append(f"- {src_label} fallback：使用 {info.get('snapshot_date', '?')} 缓存")
+            elif info.get("status") == "failed_no_fallback":
+                error_lines.append(f"- {src_label} 失败：无可用缓存")
+
+    lines = [
+        "",
+        "## ⚠️ 异常 / 错误摘要",
+        "",
+    ]
+    if error_lines:
+        lines.extend(error_lines)
+    else:
+        lines.append("本次运行无异常 ✓")
+    lines.append("")
+    return lines
 
 
 def format_json(updates: list[dict]) -> str:

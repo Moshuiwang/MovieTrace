@@ -831,3 +831,34 @@ class TestSoapGenreDowngrade:
             assert drama_candidate.get("priority") in ["P0", "P1", "P2"], f"Got priority {drama_candidate.get('priority')}"
         finally:
             os.unlink(db_path)
+
+
+class TestComputeDiscoveryStatsFilteredOut:
+    def _make_scored(self, content_ids_and_scores: list[tuple[str, float]]) -> list[dict]:
+        return [{"content_id": cid, "hot_score": score, "title": cid} for cid, score in content_ids_and_scores]
+
+    def test_filtered_out_sorted_descending_by_hot_score(self):
+        from movietrace.pipeline.discovery import _compute_discovery_stats
+        all_scored = self._make_scored([
+            ("a", 80), ("b", 30), ("c", 60), ("d", 45), ("e", 75),
+        ])
+        passed = [{"content_id": "a", "priority": "P0"}]
+        stats = _compute_discovery_stats(all_scored, passed, {})
+        filtered = stats["filtered_out"]
+        scores = [item["hot_score"] for item in filtered]
+        assert scores == sorted(scores, reverse=True), "filtered_out must be sorted hot_score DESC"
+
+    def test_filtered_out_max_10(self):
+        from movietrace.pipeline.discovery import _compute_discovery_stats
+        all_scored = self._make_scored([(str(i), float(i)) for i in range(20)])
+        passed = []
+        stats = _compute_discovery_stats(all_scored, passed, {})
+        assert len(stats["filtered_out"]) <= 10
+
+    def test_filtered_out_excludes_passed(self):
+        from movietrace.pipeline.discovery import _compute_discovery_stats
+        all_scored = self._make_scored([("a", 90), ("b", 40)])
+        passed = [{"content_id": "a", "priority": "P0"}]
+        stats = _compute_discovery_stats(all_scored, passed, {})
+        filtered_ids = [item["content_id"] for item in stats["filtered_out"]]
+        assert "a" not in filtered_ids

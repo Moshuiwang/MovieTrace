@@ -296,10 +296,16 @@ def sync_table(
                 "IMDb 链接": _build_imdb_url(imdb_id),
                 "TMDb 链接": _build_tmdb_url(tmdb_id_val, content_type_val),
                 "FP 热度分": float(sb.get("flixpatrol_score") or 0),
-                "IMDb 评分": float(sb.get("imdb_rating_score") or 0),
-                "TMDb 评分": float(sb.get("tmdb_rating_score") or 0),
+                "IMDb 评分": _to_float_rating(ss.get("imdb", {}).get("rating")),
+                "TMDb 评分": ss.get("tmdb", {}).get("vote_average"),
+                "IMDb 评分人数": _parse_votes(ss.get("imdb", {}).get("votes")),
+                "TMDb 评分人数": ss.get("tmdb", {}).get("vote_count"),
                 "TMDb 热度分": float(sb.get("tmdb_popularity_score") or 0),
                 "Trakt 热度分": float(sb.get("trakt_score") or 0),
+                "中文名": rec.get("title_zh") or None,
+                "中文简介": rec.get("overview_zh") or None,
+                "类型": _names_from_json(rec.get("genres_json")),
+                "播出平台": _names_from_json(rec.get("networks_json")),
             }
 
             # 只添加非空、非零的字段值到 fields
@@ -423,6 +429,46 @@ def _derive_content_type(rec: dict) -> str:
         if ":tv:" in cid:
             return "tv"
     return "unknown"
+
+
+def _names_from_json(raw: str | None) -> str | None:
+    """Extract comma-separated names from a JSON array of {id, name} dicts."""
+    if not raw:
+        return None
+    try:
+        items = json.loads(raw)
+        if isinstance(items, list):
+            names = [str(x["name"]) for x in items if isinstance(x, dict) and x.get("name")]
+            return ", ".join(names) if names else None
+    except (json.JSONDecodeError, TypeError, KeyError):
+        pass
+    return None
+
+
+def _to_float_rating(raw) -> float | None:
+    """Convert raw IMDb/TMDb rating string to float. Returns None for empty/N/A."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s.upper() == "N/A":
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _parse_votes(raw) -> int | None:
+    """Parse vote count string with commas to int. Returns None for empty/N/A."""
+    if raw is None:
+        return None
+    s = str(raw).strip().replace(",", "")
+    if not s or s.upper() == "N/A":
+        return None
+    try:
+        return int(s)
+    except ValueError:
+        return None
 
 
 # ── Doc sync (via Feishu drive/v1/import_task) ───────────────────────────────
