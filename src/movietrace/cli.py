@@ -703,14 +703,13 @@ def cmd_sync_feishu_doc(args: argparse.Namespace) -> int:
         print("feishu_sync is disabled in config.yaml (enabled: false)")
         return 0
 
-    folder_token = fs_cfg.get("doc_folder_token", "")
-    if not folder_token:
-        print("ERROR: feishu_sync.doc_folder_token not found in config.yaml")
-        return 1
-
     target_type = fs_cfg.get("doc_import_type", "auto")
 
     secrets = load_secrets()
+    folder_token = (secrets.get("feishu") or {}).get("doc_folder_token", "")
+    if not folder_token:
+        print("ERROR: feishu.doc_folder_token not found in secrets.json")
+        return 1
     creds = _load_feishu_creds(secrets)
     if creds is None:
         print("ERROR: feishu credentials (app_id, app_secret, base_app_token) not found in secrets.json")
@@ -760,21 +759,21 @@ def cmd_notify_feishu(args: argparse.Namespace) -> int:
     cfg = _load_config()
     fs_cfg = cfg.get("feishu_sync", {})
 
-    # 优先使用外部群，否则使用个人通知
-    notify_chat_id = fs_cfg.get("notify_chat_id", "")
+    secrets = load_secrets()
+    feishu_secrets = secrets.get("feishu") or {}
+
+    # 优先使用外部群（secrets.json feishu.notify_chat_id），否则使用个人通知
+    notify_chat_id = feishu_secrets.get("notify_chat_id", "")
     if notify_chat_id:
         receive_id = notify_chat_id
         receive_id_type = "chat_id"
     else:
-        secrets = load_secrets()
-        feishu_secrets = secrets.get("feishu") or {}
         receive_id = feishu_secrets.get("notify_user_open_id", "")
         receive_id_type = "open_id"
         if not receive_id:
-            print("ERROR: feishu_sync.notify_chat_id 或 feishu.notify_user_open_id 未配置")
+            print("ERROR: feishu.notify_chat_id 或 feishu.notify_user_open_id 未配置于 secrets.json")
             return 1
 
-    secrets = load_secrets()
     creds = _load_feishu_creds(secrets)
     if creds is None:
         print("ERROR: feishu credentials (app_id, app_secret, base_app_token) not found in secrets.json")

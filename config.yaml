@@ -4,10 +4,9 @@
 feishu_sync:
   enabled: true
   table_name: "每日发现"
-  doc_folder_token: "VSVufHjq7lvIwYd7RdVcCdULnrh"
+  doc_folder_token: ""  # 从 secrets.json feishu.doc_folder_token 读取
   doc_import_type: "drive"  # 导入目标类型: 'wiki' (知识库) 或 'drive' (文件夹)
-  notify_chat_id: "oc_1fbf9b49e918d2f1ca89d624e5ebd849"  # 外部群 chat_id，若设置则发送到群；否则发送到个人
-  # notify_user_open_id and gmail credentials go in secrets.json → feishu section
+  # notify_chat_id, notify_user_open_id and gmail credentials go in secrets.json → feishu section
 
 baseline_tracking:
   enabled: true

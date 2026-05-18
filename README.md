@@ -46,7 +46,7 @@
 
 ```bash
 # 1. 环境
-cd /home/ubuntu/MovieTrace
+cd MovieTrace
 source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -61,7 +61,7 @@ sqlite3 data/movietrace.db "select max(version) from schema_migrations;"
 
 # 4. 跑测试（不消耗 API）
 PYTHONPATH=src python -m pytest tests/ -v
-# 预期：441 passed
+# 预期：535 passed
 
 # 5. 跑一次 dry-run 看输出
 PYTHONPATH=src python -m movietrace.cli daily-discover --dry-run
