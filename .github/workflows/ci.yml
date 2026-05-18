@@ -68,13 +68,14 @@ jobs:
           FEISHU_NOTIFY_CHAT_ID: ${{ secrets.FEISHU_NOTIFY_CHAT_ID }}
           TMDB_API_TOKEN: ${{ secrets.TMDB_API_TOKEN }}
           OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
+          OMDB_API_KEY_2: ${{ secrets.OMDB_API_KEY_2 }}
           TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
           FLIXPATROL_API_KEY: ${{ secrets.FLIXPATROL_API_KEY }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: FEISHU_APP_ID,FEISHU_APP_SECRET,FEISHU_BASE_APP_TOKEN,FEISHU_DISCOVERY_TABLE_ID,FEISHU_GAP_TABLE_ID,FEISHU_DOC_FOLDER_TOKEN,FEISHU_NOTIFY_CHAT_ID,TMDB_API_TOKEN,OMDB_API_KEY,TRAKT_CLIENT_ID,FLIXPATROL_API_KEY
+          envs: FEISHU_APP_ID,FEISHU_APP_SECRET,FEISHU_BASE_APP_TOKEN,FEISHU_DISCOVERY_TABLE_ID,FEISHU_GAP_TABLE_ID,FEISHU_DOC_FOLDER_TOKEN,FEISHU_NOTIFY_CHAT_ID,TMDB_API_TOKEN,OMDB_API_KEY,OMDB_API_KEY_2,TRAKT_CLIENT_ID,FLIXPATROL_API_KEY
           script: |
             mkdir -p ~/.config/movietrace
             python3 - <<'EOF'
@@ -94,7 +95,7 @@ jobs:
                     "notify_chat_id": os.environ["FEISHU_NOTIFY_CHAT_ID"],
                 },
                 "tmdb": {"api_read_access_token": os.environ["TMDB_API_TOKEN"]},
-                "omdb": {"api_keys": [os.environ["OMDB_API_KEY"]]},
+                "omdb": {"api_keys": [k for k in [os.environ["OMDB_API_KEY"], os.environ.get("OMDB_API_KEY_2", "")] if k]},
                 "trakt": {"client_id": os.environ["TRAKT_CLIENT_ID"]},
                 "flixpatrol": {"api_key": os.environ["FLIXPATROL_API_KEY"]},
             }
