@@ -288,5 +288,30 @@ class SeasonDetailCacheIntegrationTest(unittest.TestCase):
         self.assertFalse(was_cached)
 
 
+class TestTmdbDetailClientLanguageParam(unittest.TestCase):
+    def test_get_tv_detail_language_param_accepted(self):
+        """get_tv_details accepts language kwarg without error."""
+        from movietrace.sources.tmdb import TmdbDetailClient
+        from unittest.mock import patch
+
+        with patch("movietrace.sources.tmdb.get_json") as mock_get:
+            mock_get.return_value = {"id": 1, "name": "Test"}
+            client = TmdbDetailClient("fake_token", db_path=":memory:")
+            result = client.get_tv_details("12345", language="zh-CN")
+            self.assertIsInstance(result, dict)
+            mock_get.assert_called_once()
+
+    def test_get_movie_detail_language_param_default_en(self):
+        """get_movie_details defaults to en-US when no language given."""
+        from movietrace.sources.tmdb import TmdbDetailClient
+        from unittest.mock import patch
+
+        with patch("movietrace.sources.tmdb.get_json") as mock_get:
+            mock_get.return_value = {"id": 2, "title": "Movie"}
+            client = TmdbDetailClient("fake_token", db_path=":memory:")
+            result = client.get_movie_details("99")
+            self.assertEqual(result, {"id": 2, "title": "Movie"})
+
+
 if __name__ == "__main__":
     unittest.main()

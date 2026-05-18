@@ -122,4 +122,5 @@ def initialize_database(path: str | Path) -> None:
         _apply_migration(conn, 14, _load_migration_sql("014_content_updates_event_history.sql"))
         _apply_migration(conn, 15, _load_migration_sql("015_api_cache_unique_key.sql"))
         _apply_migration(conn, 16, _load_migration_sql("016_drop_legacy_tables.sql"))
+        _apply_migration(conn, 17, _load_migration_sql("017_canonical_zh_fields.sql"))
         conn.commit()

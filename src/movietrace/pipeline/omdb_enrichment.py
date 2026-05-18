@@ -156,6 +156,69 @@ def enrich_with_omdb(
     }
 
 
+def _fetch_zh_detail_with_cache(
+    conn: sqlite3.Connection,
+    client: TmdbDetailClient,
+    tmdb_id: str | int,
+    media_type: str,
+    *,
+    ttl_hours: int = 24,
+) -> tuple[dict | None, bool]:
+    """Fetch zh-CN TMDb detail, caching under a :zh-CN key."""
+    normalized_type = "tv" if media_type in ("tv", "show") else "movie"
+    cache_key = f"tmdb:detail:{tmdb_id}:{normalized_type}:zh-CN"
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).strftime("%Y-%m-%d %H:%M:%S")
+    row = conn.execute(
+        "select response_json from api_cache where source = 'tmdb' and cache_key = ? and fetched_at >= ?",
+        (cache_key, cutoff),
+    ).fetchone()
+    if row:
+        try:
+            return json.loads(row[0]), True
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if normalized_type == "tv":
+        data = client.get_tv_details(str(tmdb_id), language="zh-CN")
+    else:
+        data = client.get_movie_details(str(tmdb_id), language="zh-CN")
+    if isinstance(data, dict) and data:
+        conn.execute(
+            "insert or replace into api_cache (source, cache_key, response_json) values (?, ?, ?)",
+            ("tmdb", cache_key, json.dumps(data, ensure_ascii=False)),
+        )
+        conn.commit()
+        return data, False
+    return None, False
+
+
+def _update_canonical_zh_fields(
+    conn: sqlite3.Connection,
+    tmdb_id: str | int,
+    media_type: str,
+    title_zh: str | None,
+    overview_zh: str | None,
+    genres_json: str | None,
+    networks_json: str | None,
+) -> bool:
+    """Update canonical_items zh-CN fields via external_ids lookup. Returns True if found."""
+    normalized_type = "tv" if media_type in ("tv", "show") else "movie"
+    ext_id = f"{normalized_type}:{tmdb_id}"
+    row = conn.execute(
+        "select canonical_item_id from external_ids where source = 'tmdb' and external_id = ?",
+        (ext_id,),
+    ).fetchone()
+    if not row:
+        return False
+    conn.execute(
+        """update canonical_items
+           set title_zh = ?, overview_zh = ?, genres_json = ?, networks_json = ?
+           where id = ?""",
+        (title_zh or None, overview_zh or None, genres_json, networks_json, row[0]),
+    )
+    conn.commit()
+    return True
+
+
 def enrich_with_tmdb_details(
     conn: sqlite3.Connection,
     candidates: list[MergedCandidate],
@@ -202,6 +265,28 @@ def enrich_with_tmdb_details(
         if data:
             _apply_tmdb_detail_data(c, data)
             enriched += 1
+            # P1.28: fetch zh-CN fields and update canonical_items
+            genres = data.get("genres")
+            genres_json = json.dumps(genres, ensure_ascii=False) if isinstance(genres, list) else None
+            networks = data.get("networks") if c.media_type in ("tv", "show") else None
+            networks_json = json.dumps(networks, ensure_ascii=False) if isinstance(networks, list) else None
+            try:
+                zh_data, _ = _fetch_zh_detail_with_cache(
+                    conn, client, c.tmdb_id, c.media_type, ttl_hours=cache_ttl_hours
+                )
+                title_zh = None
+                overview_zh = None
+                if zh_data:
+                    raw_title = zh_data.get("name") or zh_data.get("title")
+                    raw_overview = zh_data.get("overview")
+                    title_zh = str(raw_title).strip() if raw_title else None
+                    overview_zh = str(raw_overview).strip() if raw_overview else None
+                _update_canonical_zh_fields(
+                    conn, c.tmdb_id, c.media_type,
+                    title_zh, overview_zh, genres_json, networks_json,
+                )
+            except Exception as exc:
+                logger.warning("zh-CN enrichment failed for %s (%s): %s", c.tmdb_id, c.media_type, exc)
 
     logger.info(
         "TMDb detail enrichment: api_calls=%d cache_hits=%d enriched=%d of %d",
@@ -299,6 +384,7 @@ def _apply_tmdb_detail_data(c: MergedCandidate, data: dict) -> None:
         lea = data.get("last_episode_to_air")
         if isinstance(lea, dict):
             c.tmdb_data["last_episode_air_date"] = str(lea.get("air_date", "")) if lea.get("air_date") else None
+            c.tmdb_data["last_episode_to_air"] = lea
     if not c.tmdb_data.get("first_air_date"):
         fad = data.get("first_air_date")
         if fad:
