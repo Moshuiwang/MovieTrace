@@ -10,7 +10,6 @@ logger = logging.getLogger("movietrace.config")
 
 DEFAULT_SECRETS_DIR = Path.home() / ".config" / "movietrace"
 DEFAULT_SECRETS_PATH = DEFAULT_SECRETS_DIR / "secrets.json"
-LEGACY_SECRETS_PATH = Path("/tmp/movietrace_phase0_secrets.json")
 SMOKE_TEST_SECRETS_PATH = DEFAULT_SECRETS_DIR / "secrets.smoke-test.json"
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -70,56 +69,28 @@ def _apply_smoke_overlay(secrets: dict) -> dict:
 
 
 def load_secrets(path: str | Path | None = None) -> dict:
-    """Load secrets JSON. New path (~/.config/movietrace/secrets.json) preferred,
-    falls back to legacy path (/tmp) with deprecation warning.
+    """Load secrets JSON from ~/.config/movietrace/secrets.json.
 
     When MOVIETRACE_SMOKE=1, additionally loads secrets.smoke-test.json and
     deep-merges it on top (overriding table IDs for the smoke-test Feishu base).
 
     Raises RuntimeError when no valid secrets file can be loaded.
     """
-    if path:
-        resolved = Path(path)
-    else:
-        resolved = DEFAULT_SECRETS_PATH
+    resolved = Path(path) if path else DEFAULT_SECRETS_PATH
 
-    if resolved.exists():
-        _check_permissions(resolved)
-        try:
-            return _apply_smoke_overlay(json.loads(resolved.read_text(encoding="utf-8")))
-        except json.JSONDecodeError as exc:
-            if path is None and LEGACY_SECRETS_PATH.exists():
-                logger.warning("Secrets file %s is invalid JSON, trying legacy path", resolved)
-                _check_permissions(LEGACY_SECRETS_PATH)
-                try:
-                    return _apply_smoke_overlay(json.loads(LEGACY_SECRETS_PATH.read_text(encoding="utf-8")))
-                except json.JSONDecodeError:
-                    raise RuntimeError(
-                        f"Both secrets files contain invalid JSON: "
-                        f"{resolved} and {LEGACY_SECRETS_PATH}"
-                    ) from exc
-            raise RuntimeError(f"Secrets file {resolved} is invalid JSON") from exc
-
-    if path is None and LEGACY_SECRETS_PATH.exists():
-        logger.warning(
-            "Secrets at %s not found, falling back to legacy path %s — "
-            "please migrate to %s",
-            DEFAULT_SECRETS_PATH, LEGACY_SECRETS_PATH, DEFAULT_SECRETS_PATH,
+    if not resolved.exists():
+        raise RuntimeError(
+            f"No secrets file found at {resolved}. "
+            "Create one with: mkdir -p ~/.config/movietrace && "
+            "echo '{\"tmdb\":{\"api_read_access_token\":\"...\"}}' > ~/.config/movietrace/secrets.json && "
+            "chmod 600 ~/.config/movietrace/secrets.json"
         )
-        _check_permissions(LEGACY_SECRETS_PATH)
-        try:
-            return _apply_smoke_overlay(json.loads(LEGACY_SECRETS_PATH.read_text(encoding="utf-8")))
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                f"Legacy secrets file {LEGACY_SECRETS_PATH} is invalid JSON"
-            ) from exc
 
-    raise RuntimeError(
-        f"No secrets file found at {resolved}. "
-        "Create one with: mkdir -p ~/.config/movietrace && "
-        "echo '{\"tmdb\":{\"api_read_access_token\":\"...\"}}' > ~/.config/movietrace/secrets.json && "
-        "chmod 600 ~/.config/movietrace/secrets.json"
-    )
+    _check_permissions(resolved)
+    try:
+        return _apply_smoke_overlay(json.loads(resolved.read_text(encoding="utf-8")))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Secrets file {resolved} is invalid JSON") from exc
 
 
 def _check_permissions(path: Path) -> None:

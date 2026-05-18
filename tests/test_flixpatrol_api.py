@@ -334,21 +334,6 @@ class TestLoadApiKey:
         finally:
             os.unlink(tmp_path)
 
-    def test_loads_from_legacy_fallback_when_no_path(self):
-        secrets = {"flixpatrol": {"api_key": "aku_legacykey123456"}}
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
-            json.dump(secrets, f)
-            tmp_path = Path(f.name)
-        try:
-            with patch("movietrace.config.DEFAULT_SECRETS_PATH", tmp_path.parent / "missing.json"):
-                with patch("movietrace.config.LEGACY_SECRETS_PATH", tmp_path):
-                    key = load_api_key()
-            assert key == "aku_legacykey123456"
-        finally:
-            os.unlink(tmp_path)
-
 
 # ── Client tests ────────────────────────────────────────────────────────
 

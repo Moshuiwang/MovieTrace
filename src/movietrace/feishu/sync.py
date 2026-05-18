@@ -36,6 +36,7 @@ from movietrace.feishu._http import (
     upload_media_file,
 )
 from movietrace.feishu.schema_setup import ensure_table_fields
+from movietrace.sources.omdb import format_imdb_id
 
 TZ = ZoneInfo("Asia/Shanghai")
 
@@ -380,16 +381,18 @@ def sync_table(
 def _build_imdb_url(imdb_id: str | None) -> dict | str:
     """Build Feishu URL field value for IMDb.
 
-    Returns {"link": "https://...", "text": "..."} for Feishu URL type 15,
-    or empty string if no IMDb ID.
+    Accepts bare digits (e.g. "1190634") or tt-prefixed IDs ("tt1190634");
+    output URL always carries the tt prefix per IMDb's canonical form
+    (issue #7: bare-digit URLs return 404).
     """
     if not imdb_id:
         return ""
     imdb_id_str = str(imdb_id).strip()
     if not imdb_id_str:
         return ""
-    url = f"https://www.imdb.com/title/{imdb_id_str}/"
-    return {"link": url, "text": imdb_id_str}
+    formatted = format_imdb_id(imdb_id_str)
+    url = f"https://www.imdb.com/title/{formatted}/"
+    return {"link": url, "text": formatted}
 
 
 def _build_tmdb_url(tmdb_id: str | None, content_type: str) -> dict | str:
