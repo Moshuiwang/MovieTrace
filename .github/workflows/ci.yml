@@ -55,8 +55,10 @@ jobs:
           python3 -c "
           import os, pathlib
           key = os.environ['VPS_SSH_KEY']
+          lines = [line.strip() for line in key.splitlines() if line.strip()]
+          cleaned = '\n'.join(lines) + '\n'
           p = pathlib.Path.home() / '.ssh/deploy_key'
-          p.write_text(key if key.endswith('\n') else key + '\n')
+          p.write_text(cleaned)
           p.chmod(0o600)
           "
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
