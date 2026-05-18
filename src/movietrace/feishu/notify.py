@@ -300,10 +300,11 @@ def build_im_summary_text(discover_stats: dict, sync_stats: dict) -> str:
     """
     total_merged = discover_stats.get("total_merged", 0)
     total_passed = discover_stats.get("total_passed", 0)
-    written = sync_stats.get("written", 0)
-    p0 = discover_stats.get("P0", 0)
-    p1 = discover_stats.get("P1", 0)
-    p2 = discover_stats.get("P2", 0)
+    written = discover_stats.get("written", 0)
+    prio = discover_stats.get("priority", {})
+    p0 = prio.get("P0", 0)
+    p1 = prio.get("P1", 0)
+    p2 = prio.get("P2", 0)
     s_errors = sync_stats.get("errors", 0)
     parts = [
         f"合并 {total_merged} 条 → 通过 {total_passed} 条 → 写入 {written} 条",
