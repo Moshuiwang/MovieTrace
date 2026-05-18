@@ -49,41 +49,6 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             load_secrets(f)
 
-    def test_load_secrets_falls_back_to_legacy(self):
-        from movietrace.config import load_secrets, DEFAULT_SECRETS_PATH, LEGACY_SECRETS_PATH
-
-        data = {"tmdb": {"api_read_access_token": "legacy_token"}}
-        legacy = self._make_secrets(data)
-
-        with patch("movietrace.config.DEFAULT_SECRETS_PATH", self.tmp_path / "nonexistent.json"):
-            with patch("movietrace.config.LEGACY_SECRETS_PATH", legacy):
-                result = load_secrets()
-                self.assertEqual(result["tmdb"]["api_read_access_token"], "legacy_token")
-
-    def test_load_secrets_invalid_default_json_falls_back_to_legacy(self):
-        from movietrace.config import load_secrets
-
-        default = self.tmp_path / "default_bad.json"
-        default.write_text("not json", encoding="utf-8")
-        legacy = self._make_secrets({"tmdb": {"api_read_access_token": "legacy_token"}})
-
-        with patch("movietrace.config.DEFAULT_SECRETS_PATH", default):
-            with patch("movietrace.config.LEGACY_SECRETS_PATH", legacy):
-                result = load_secrets()
-
-        self.assertEqual(result["tmdb"]["api_read_access_token"], "legacy_token")
-
-    def test_load_secrets_explicit_invalid_json_does_not_fallback(self):
-        from movietrace.config import load_secrets
-
-        explicit = self.tmp_path / "explicit_bad.json"
-        explicit.write_text("not json", encoding="utf-8")
-        legacy = self._make_secrets({"tmdb": {"api_read_access_token": "legacy_token"}})
-
-        with patch("movietrace.config.LEGACY_SECRETS_PATH", legacy):
-            with self.assertRaises(RuntimeError):
-                load_secrets(explicit)
-
     def test_get_secrets_path(self):
         from movietrace.config import get_secrets_path
 

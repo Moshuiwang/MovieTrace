@@ -18,6 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from movietrace.config import DEFAULT_SECRETS_PATH
 from movietrace.db.schema import connect_database
 from movietrace.pipeline.entity_matching import (
     _ensure_quality_issues_table,
@@ -26,7 +27,7 @@ from movietrace.pipeline.entity_matching import (
 from movietrace.sources.tmdb import TmdbDetailClient, TmdbSearchClient
 
 
-def load_tmdb_token(secrets_path: str = "/tmp/movietrace_phase0_secrets.json") -> str:
+def load_tmdb_token(secrets_path: str = str(DEFAULT_SECRETS_PATH)) -> str:
     secrets = json.loads(Path(secrets_path).read_text(encoding="utf-8"))
     token = (secrets.get("tmdb") or {}).get("api_read_access_token")
     if not token:
@@ -37,7 +38,7 @@ def load_tmdb_token(secrets_path: str = "/tmp/movietrace_phase0_secrets.json") -
 def main() -> None:
     parser = argparse.ArgumentParser(description="P1.5-E: Full upstream program matching")
     parser.add_argument("--db", default="data/movietrace.db")
-    parser.add_argument("--secrets", default="/tmp/movietrace_phase0_secrets.json")
+    parser.add_argument("--secrets", default=str(DEFAULT_SECRETS_PATH))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--interval", type=float, default=1.0)
