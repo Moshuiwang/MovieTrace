@@ -16,14 +16,26 @@
 
 Phase 0 → 1.24 全部完成并上线。P1.24 飞书字段已建好，新字段数据从 2026-05-18 起随 daily-discover 自然写入。P1.17 跳过（前置未满足）；P1.22 编号预留给 V2 episode 级缺口检测。
 
+**活跃任务包（按执行顺序）：**
+
+| 编号 | 文件 | 来源 | 状态 |
+|---|---|---|---|
+| P1.25 | [p1.25-fix-imdb-url.md](docs/tasks/p1.25-fix-imdb-url.md) | issue #7 | ✅ PR #10 已开（待合并） |
+| P1.26 | [p1.26-fix-last-episode-to-air.md](docs/tasks/p1.26-fix-last-episode-to-air.md) | issue #5 | 草案，待执行 |
+| P1.27 | [p1.27-feishu-raw-ratings.md](docs/tasks/p1.27-feishu-raw-ratings.md) | issue #6 | 草案，待执行 |
+| P1.28 | [p1.28-zh-locale-fields.md](docs/tasks/p1.28-zh-locale-fields.md) | issue #8 | 草案，待执行（独立 PR，含 schema migration 017） |
+| P1.29 | [p1.29-doc-sections.md](docs/tasks/p1.29-doc-sections.md) | issue #4a | 草案，待执行 |
+
+**暂缓：** issue #4b（daily log 回填，单独 issue 后续做）；issue #9（V2 backlog，合规原因跳过）
+
 **近 7 天关键变更：**
+- 2026-05-18 **P1.25 IMDb 链接 tt 前缀修复**（`_build_imdb_url` 调用 `format_imdb_id`；+4 测试；PR #10 已开）
 - 2026-05-18 **仓库公开 + CI/CD**（GitHub Actions：push main 自动跑测试 + SSH 部署服务器 + 同步 secrets.json；密钥统一存 GitHub Secrets；`doc_folder_token` / `notify_chat_id` 迁移到 secrets.json）
-- 2026-05-17 **row_duration 未播集修复 + SQL join 路径修正**（去掉 `a_lib_max==0` 快捷路径，新增 `_aired_episode_count` helper 精确计算已播集；`_query_a_lib_episode_count` 改用 `virtual_series_id` 关联路径）；测试 534→535
 - 2026-05-17 **P1.24 飞书发现运行日志字段增强**（8 新字段 + 季号 rename + Soap 降权 + 历史回填脚本）；测试 441→534（+93）
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** 无
+- **进行中：** P1.26（下一个开工）
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 
 ## Review 跟进项（push 前发现的 minor，非阻塞）
