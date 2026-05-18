@@ -1,8 +1,8 @@
-# API 探索铁律（防盲目猜测）
+# FEISHU/LARK API 探索铁律（防盲目猜测）
 
 ## 开工前必答（任一不清楚 → 停下澄清）
 
-- 目标 API 具体是哪个端点？（不接受笼统描述如"wiki"）
+- 目标 API 具体是哪个端点？不接受笼统描述
 - 官方文档 URL 已读确认？
 - 认证方式？（Bearer / tenant_access_token / API Key）
 - 必选参数清单？
