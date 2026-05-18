@@ -6,7 +6,7 @@
 
 ---
 
-**最后更新：** 2026-05-17 22:30 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
+**最后更新：** 2026-05-18 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
 **测试：** 535 passed（`--ignore=tests/test_flixpatrol_parsing.py`；~70s）
 **Schema：** version 16（migrations 001-016 全部落盘，P1.24 不动 schema）
 
@@ -17,9 +17,9 @@
 Phase 0 → 1.24 全部完成并上线。P1.24 飞书字段已建好，新字段数据从 2026-05-18 起随 daily-discover 自然写入。P1.17 跳过（前置未满足）；P1.22 编号预留给 V2 episode 级缺口检测。
 
 **近 7 天关键变更：**
+- 2026-05-18 **仓库公开 + CI/CD**（GitHub Actions：push main 自动跑测试 + SSH 部署服务器 + 同步 secrets.json；密钥统一存 GitHub Secrets；`doc_folder_token` / `notify_chat_id` 迁移到 secrets.json）
 - 2026-05-17 **row_duration 未播集修复 + SQL join 路径修正**（去掉 `a_lib_max==0` 快捷路径，新增 `_aired_episode_count` helper 精确计算已播集；`_query_a_lib_episode_count` 改用 `virtual_series_id` 关联路径）；测试 534→535
-- 2026-05-17 **P1.24 飞书发现运行日志字段增强**（8 新字段 + 季号 rename + Soap 降权 + 历史回填脚本）— 任务包 [`docs/tasks/p1.24-feishu-fields-enhancement.md`](docs/tasks/p1.24-feishu-fields-enhancement.md)；7 个原子子任务 A→B→(C/D/E)→G→F 全部完成；测试 441→534（+93）
-- 2026-05-16 P1.21.9 `sync_doc` → `drive/v1/import_task`（[ADR-0015](docs/decisions/0015-feishu-doc-import-via-import-tasks.md)）
+- 2026-05-17 **P1.24 飞书发现运行日志字段增强**（8 新字段 + 季号 rename + Soap 降权 + 历史回填脚本）；测试 441→534（+93）
 
 ## 进行中 / 阻塞 / 待决策
 

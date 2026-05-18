@@ -1,7 +1,7 @@
 # MovieTrace 日常运行手册
 
 > **目的：** 让接手者能独立完成日常运行和排障。
-> **最后更新：** 2026-05-15
+> **最后更新：** 2026-05-18
 
 ---
 
@@ -9,7 +9,7 @@
 
 ```bash
 # 确认 Python 环境和依赖
-cd /home/ubuntu/MovieTrace
+cd ~/MovieTrace
 source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -110,25 +110,24 @@ PYTHONPATH=src python -m movietrace.cli export-baseline-updates --days 7
 
 ---
 
-## 5. Secrets 路径
+## 5. Secrets 路径与部署
 
-| 路径 | 优先级 | 说明 |
-|------|--------|------|
-| `~/.config/movietrace/secrets.json` | 新（推荐） | 统一 secrets 路径 |
-| `/tmp/movietrace_phase0_secrets.json` | 旧（fallback） | 自动 fallback + deprecation warning |
+**本地运行：** `~/.config/movietrace/secrets.json`（权限 0600，不进 git）
 
-**格式：**
+**CI/CD：** push main → GitHub Actions 自动跑测试 + SSH 部署 + 从 GitHub Secrets 重新生成 secrets.json。密钥变更只需在 GitHub → Settings → Secrets 里修改。
+
+**secrets.json 必填字段：**
 ```json
 {
-  "tmdb": {
-    "api_read_access_token": "eyJ..."
+  "feishu": {
+    "app_id": "...", "app_secret": "...", "base_app_token": "...",
+    "discovery_table_id": "...", "gap_table_id": "...",
+    "doc_folder_token": "...", "notify_chat_id": "..."
   },
-  "omdb": {
-    "api_keys": ["key1", "key2"]
-  },
-  "flixpatrol": {
-    "api_key": "xxx"
-  }
+  "tmdb": { "api_read_access_token": "eyJ..." },
+  "omdb": { "api_keys": ["key1", "key2"] },
+  "trakt": { "client_id": "..." },
+  "flixpatrol": { "api_key": "..." }
 }
 ```
 
