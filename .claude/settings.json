@@ -5,5 +5,8 @@
       "Bash(npm info *)",
       "Bash(journalctl *)"
     ]
+  },
+  "worktree": {
+    "bgIsolation": "none"
   }
 }
