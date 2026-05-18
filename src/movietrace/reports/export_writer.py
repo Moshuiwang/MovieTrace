@@ -456,7 +456,7 @@ def _render_funnel(stats: dict | None) -> list[str]:
             ct = item.get("content_type", item.get("media_type", "N/A"))
             lines.append(f"| {title} | {score:.1f} | {ct} |")
         if extra > 0:
-            lines.append(f"")
+            lines.append("")
             lines.append(f"*另有 {extra} 项未列出*")
     lines.append("")
     return lines

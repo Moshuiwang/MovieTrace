@@ -265,7 +265,6 @@ def enrich_with_tmdb_details(
         if data:
             _apply_tmdb_detail_data(c, data)
             enriched += 1
-            # P1.28: fetch zh-CN fields and update canonical_items
             genres = data.get("genres")
             genres_json = json.dumps(genres, ensure_ascii=False) if isinstance(genres, list) else None
             networks = data.get("networks") if c.media_type in ("tv", "show") else None
