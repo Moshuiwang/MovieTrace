@@ -6,38 +6,41 @@
 
 ---
 
-**最后更新：** 2026-05-18 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
-**测试：** 535 passed（`--ignore=tests/test_flixpatrol_parsing.py`；~70s）
-**Schema：** version 16（migrations 001-016 全部落盘，P1.24 不动 schema）
+**最后更新：** 2026-05-19 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
+**测试：** 609 passed（~76s）
+**Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段）
 
 ---
 
 ## 现在停在哪儿
 
-Phase 0 → 1.24 全部完成并上线。P1.24 飞书字段已建好，新字段数据从 2026-05-18 起随 daily-discover 自然写入。P1.17 跳过（前置未满足）；P1.22 编号预留给 V2 episode 级缺口检测。
+Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P1.29 一批合并修复多个 issue（IMDb URL/在播最新季/原始评分/zh-CN 字段/日报章节）；P1.30 sync_table 增加 IM 通知层 + 工作流配套。P1.17 跳过（前置未满足）；P1.22 编号预留给 V2 episode 级缺口检测。
 
-**活跃任务包（按执行顺序）：**
+**最近完成任务包：**
 
 | 编号 | 文件 | 来源 | 状态 |
 |---|---|---|---|
-| P1.25 | [p1.25-fix-imdb-url.md](docs/tasks/p1.25-fix-imdb-url.md) | issue #7 | ✅ PR #10 已开（待合并） |
-| P1.26 | [p1.26-fix-last-episode-to-air.md](docs/tasks/p1.26-fix-last-episode-to-air.md) | issue #5 | 草案，待执行 |
-| P1.27 | [p1.27-feishu-raw-ratings.md](docs/tasks/p1.27-feishu-raw-ratings.md) | issue #6 | 草案，待执行 |
-| P1.28 | [p1.28-zh-locale-fields.md](docs/tasks/p1.28-zh-locale-fields.md) | issue #8 | 草案，待执行（独立 PR，含 schema migration 017） |
-| P1.29 | [p1.29-doc-sections.md](docs/tasks/p1.29-doc-sections.md) | issue #4a | 草案，待执行 |
-| P1.30 | [p1.30-feishu-auto-ensure.md](docs/tasks/p1.30-feishu-auto-ensure.md) | session 设计讨论 | 进行中（sync 入口自动 ensure + 工作流配套） |
+| P1.25 | [p1.25-fix-imdb-url.md](docs/tasks/p1.25-fix-imdb-url.md) | issue #7 | ✅ 已合并 (PR #10) |
+| P1.26 | [p1.26-fix-last-episode-to-air.md](docs/tasks/p1.26-fix-last-episode-to-air.md) | issue #5 | ✅ 已合并 (commit eaa8297) |
+| P1.27 | [p1.27-feishu-raw-ratings.md](docs/tasks/p1.27-feishu-raw-ratings.md) | issue #6 | ✅ 已合并 (commit eaa8297) |
+| P1.28 | [p1.28-zh-locale-fields.md](docs/tasks/p1.28-zh-locale-fields.md) | issue #8 | ✅ 已合并 (commit eaa8297，含 schema migration 017，回填 622 条 canonical_items) |
+| P1.29 | [p1.29-doc-sections.md](docs/tasks/p1.29-doc-sections.md) | issue #4a | ✅ 已合并 (commit eaa8297) |
+| P1.30 | [p1.30-feishu-auto-ensure.md](docs/tasks/p1.30-feishu-auto-ensure.md) | session 设计 | ✅ 已合并 (PR #13) |
 
-**暂缓：** issue #4b（daily log 回填，单独 issue 后续做）；issue #9（V2 backlog，合规原因跳过）
+**Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
+
+**暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
-- 2026-05-18 **P1.25 IMDb 链接 tt 前缀修复**（`_build_imdb_url` 调用 `format_imdb_id`；+4 测试；PR #10 已开）
-- 2026-05-18 **仓库公开 + CI/CD**（GitHub Actions：push main 自动跑测试 + SSH 部署服务器 + 同步 secrets.json；密钥统一存 GitHub Secrets；`doc_folder_token` / `notify_chat_id` 迁移到 secrets.json）
-- 2026-05-17 **P1.24 飞书发现运行日志字段增强**（8 新字段 + 季号 rename + Soap 降权 + 历史回填脚本）；测试 441→534（+93）
+- 2026-05-19 **P1.30 sync_table IM 通知 + 工作流配套**（auto-ensure 触发 send_text / send_alert；GitHub 分支保护 main；feature branch + PR 工作流；auto-merge 大小写修复；pre-push hook）；测试 609 passed
+- 2026-05-18~19 **P1.25-P1.29 批量合并**（IMDb URL tt 前缀 / 在播最新季 / 原始评分 / zh-CN 字段 + migration 017 / 日报章节扩充）；4 个 issue 已关闭
+- 2026-05-18 **仓库公开 + CI/CD**（GitHub Actions：push main 自动跑测试 + SSH 部署服务器 + 同步 secrets.json；密钥统一存 GitHub Secrets）
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** P1.30（飞书字段自动 ensure + 工作流配套）
+- **进行中：** 无（P1.30 已合并；下一个任务包待定）
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
+- **已知限制：** auto-merge.yml 用默认 `GITHUB_TOKEN` 合并的 PR 不触发 `push` 事件，导致 auto-merged PR 不会自动 deploy。PR #14 提了 workflow_dispatch 补救方案；长期更优是换 PAT secret。
 
 ## Review 跟进项（push 前发现的 minor，非阻塞）
 
