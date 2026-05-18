@@ -172,7 +172,8 @@ jobs:
           chat_id = os.environ["FEISHU_NOTIFY_CHAT_ID"]
           test_result = os.environ["TEST_RESULT"]
           deploy_result = os.environ["DEPLOY_RESULT"]
-          commit_msg = os.environ["COMMIT_MSG"].splitlines()[0][:60]
+          commit_msg_raw = os.environ.get("COMMIT_MSG", "").strip()
+          commit_msg = commit_msg_raw.splitlines()[0][:60] if commit_msg_raw else "(手动触发 / no head commit)"
           commit_sha = os.environ["COMMIT_SHA"][:7]
           run_id = os.environ["RUN_ID"]
           repo = os.environ["REPO"]
