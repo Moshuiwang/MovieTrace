@@ -44,6 +44,30 @@ class TestBuildImdbUrl:
         assert result["link"] == "https://www.imdb.com/title/tt1234567/"
         assert result["text"] == "tt1234567"
 
+    def test_build_imdb_url_bare_numeric_7_digit(self):
+        """Bare 7-digit numeric ID gets tt prefix (issue #7 regression)."""
+        result = _build_imdb_url("1190634")
+        assert result["link"] == "https://www.imdb.com/title/tt1190634/"
+        assert result["text"] == "tt1190634"
+
+    def test_build_imdb_url_bare_numeric_8_digit(self):
+        """Bare 8-digit numeric ID is not truncated by zfill(7)."""
+        result = _build_imdb_url("31589662")
+        assert result["link"] == "https://www.imdb.com/title/tt31589662/"
+        assert result["text"] == "tt31589662"
+
+    def test_build_imdb_url_short_numeric_padded(self):
+        """Short numeric ID is zero-padded to 7 digits per IMDb canonical form."""
+        result = _build_imdb_url("123")
+        assert result["link"] == "https://www.imdb.com/title/tt0000123/"
+        assert result["text"] == "tt0000123"
+
+    def test_build_imdb_url_idempotent_tt_prefix(self):
+        """Already tt-prefixed ID is not re-prefixed."""
+        result = _build_imdb_url("tt1190634")
+        assert result["link"] == "https://www.imdb.com/title/tt1190634/"
+        assert result["text"] == "tt1190634"
+
 
 class TestBuildTmdbUrl:
     """Tests for _build_tmdb_url helper."""
