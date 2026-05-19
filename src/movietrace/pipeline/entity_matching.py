@@ -558,7 +558,12 @@ def _build_searcher_from_secrets(secrets_path: Path | None = None) -> MultiSourc
     secrets = load_secrets(secrets_path)
     searchers: list[EntitySearcher] = []
     tmdb_token = (secrets.get("tmdb") or {}).get("api_read_access_token")
-    omdb_api_key = (secrets.get("omdb") or {}).get("api_key")
+    omdb_cfg = secrets.get("omdb") or {}
+    omdb_api_keys = omdb_cfg.get("api_keys") or []
+    omdb_api_key = (
+        next((key for key in omdb_api_keys if key), None)
+        or omdb_cfg.get("api_key")
+    )
     trakt_client_id = (secrets.get("trakt") or {}).get("client_id")
     if tmdb_token:
         searchers.append(TmdbSearchClient(tmdb_token))
@@ -947,5 +952,3 @@ def match_upstream_program(
         "content_type": content_type,
         "season_number": season_number,
     }
-
-

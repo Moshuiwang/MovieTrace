@@ -390,3 +390,5 @@ def _apply_tmdb_detail_data(c: MergedCandidate, data: dict) -> None:
             c.tmdb_data["first_air_date"] = str(fad)
     if not c.tmdb_data.get("movie_release_date") and data.get("release_date"):
         c.tmdb_data["movie_release_date"] = str(data["release_date"])
+    if not c.tmdb_data.get("seasons") and isinstance(data.get("seasons"), list):
+        c.tmdb_data["seasons"] = data["seasons"]

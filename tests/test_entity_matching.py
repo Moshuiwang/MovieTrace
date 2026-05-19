@@ -37,6 +37,19 @@ class EntityMatchingTest(unittest.TestCase):
 
         load_mock.assert_called_once_with(explicit)
 
+    def test_build_searcher_uses_new_omdb_api_keys_format(self):
+        from movietrace.pipeline.entity_matching import _build_searcher_from_secrets
+
+        with patch(
+            "movietrace.config.load_secrets",
+            return_value={"omdb": {"api_keys": ["", "omdb-key"]}},
+        ):
+            with patch("movietrace.sources.omdb.OmdbSearchClient") as omdb_mock:
+                searcher = _build_searcher_from_secrets()
+
+        omdb_mock.assert_called_once_with("omdb-key")
+        self.assertEqual(len(searcher.searchers), 1)
+
     def test_choose_best_match_uses_tmdb_original_name(self):
         from movietrace.pipeline.entity_matching import (
             BaselineItem,

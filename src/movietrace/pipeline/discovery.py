@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -333,6 +334,7 @@ def run_discovery(
 
         # Step 2: Multi-source merge
         from movietrace.pipeline.multi_source_merge import merge_three_sources
+        logger.info("Discovery merge: reading and merging source rows")
         candidates = merge_three_sources(conn, snapshot_date, source_dates)
         if not candidates:
             return {
@@ -354,16 +356,19 @@ def run_discovery(
 
         # P1.8-F/G: Pre-score IMDb ID backfill via TMDb external_ids
         if tmdb_token:
+            logger.info("Discovery enrichment: backfilling IMDb IDs for %d candidates", len(candidates))
             from movietrace.pipeline.omdb_enrichment import backfill_imdb_ids
             enrich_stats["imdb_backfill"] = backfill_imdb_ids(
                 candidates, tmdb_token, db_path=db_path, request_date=snapshot_date,
             )
 
         if omdb_keys:
+            logger.info("Discovery enrichment: fetching OMDb ratings for %d candidates", len(candidates))
             from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
             enrich_stats["omdb"] = enrich_with_omdb(conn, candidates, omdb_keys, db_path=db_path, request_date=snapshot_date)
 
         if tmdb_token:
+            logger.info("Discovery enrichment: fetching TMDb details for %d candidates", len(candidates))
             from movietrace.pipeline.omdb_enrichment import enrich_with_tmdb_details
             enrich_stats["tmdb_detail"] = enrich_with_tmdb_details(conn, candidates, tmdb_token, db_path=db_path, request_date=snapshot_date)
 
@@ -407,7 +412,16 @@ def run_discovery(
                 tmdb_token, db_path=db_path, request_date=snapshot_date,
             )
 
-        for c in passed:
+        duration_started = time.monotonic()
+        for idx, c in enumerate(passed, start=1):
+            if idx == 1 or idx % 25 == 0 or idx == len(passed):
+                elapsed = time.monotonic() - duration_started
+                logger.info(
+                    "Discovery row duration: %d/%d candidates processed (%.1fs)",
+                    idx,
+                    len(passed),
+                    elapsed,
+                )
             if tmdb_client_for_seasons:
                 try:
                     c["row_duration_hours"] = compute_row_duration_hours(c, conn, tmdb_client_for_seasons)
@@ -881,10 +895,13 @@ def compute_row_duration_hours(c_dict: dict, conn: sqlite3.Connection, tmdb_clie
         return 0.0
 
     a_lib_max = _query_a_lib_max_season(conn, tmdb_id)
+    available_seasons = _available_tmdb_seasons(tmdb_data, a_lib_max, last_aired_season)
 
     # 起算季 = max(a_lib_max, 0) + 1 → 缺失从 a_lib_max+1 开始;a_lib_max=0 表示全季缺失,从 S1 开始
     total = 0
-    for s in range(a_lib_max + 1, last_aired_season + 1):
+    for s in available_seasons:
+        if s <= a_lib_max or s > last_aired_season:
+            continue
         season_detail, _ = get_tmdb_season_detail_with_cache(conn, tmdb_client, tmdb_id, s)
         if not season_detail:
             continue
@@ -900,6 +917,23 @@ def compute_row_duration_hours(c_dict: dict, conn: sqlite3.Connection, tmdb_clie
                 total += (tmdb_eps_in_max - a_lib_eps_in_max)
 
     return float(total)
+
+
+def _available_tmdb_seasons(tmdb_data: dict, a_lib_max: int, last_aired_season: int) -> list[int]:
+    seasons = tmdb_data.get("seasons")
+    if not isinstance(seasons, list):
+        return list(range(a_lib_max + 1, last_aired_season + 1))
+
+    out: list[int] = []
+    for season in seasons:
+        if not isinstance(season, dict):
+            continue
+        season_number = season.get("season_number")
+        try:
+            out.append(int(season_number))
+        except (TypeError, ValueError):
+            continue
+    return sorted(set(out))
 
 
 def _aired_episode_count(
