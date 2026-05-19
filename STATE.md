@@ -38,8 +38,10 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 ## 进行中 / 阻塞 / 待决策
 
 - **进行中：** 无
-- **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）；Trakt API fallback（今日数据用 2026-05-18 缓存）→ P1.33 排查
-- **待决策：** Trakt 403 根因（token 失效？速率限制？）
+- **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
+- **待决策：**
+  - 生产环境日志如何传递给开发环境？目前排查问题需要用户手动 SSH 生产环境 grep 日志再粘贴到对话，效率低；可选方案：日志定期上传飞书文档 / 通过 manual-pipeline 暴露 `log-tail` 操作 / 接入集中日志服务
+  - canonical_items zh-CN 字段（title_zh / overview_zh / networks_json）生产环境全为 NULL，需要一次性 backfill → issue #20 修复前置
 
 ## Review 跟进项（push 前发现的 minor，非阻塞）
 
