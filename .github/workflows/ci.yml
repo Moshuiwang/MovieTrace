@@ -155,7 +155,11 @@ jobs:
 
   notify:
     needs: [test, deploy]
-    if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    if: >-
+      always() &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main' &&
+      !(needs.test.result == 'cancelled' && needs.deploy.result == 'cancelled')
     runs-on: ubuntu-latest
     timeout-minutes: 3
 
