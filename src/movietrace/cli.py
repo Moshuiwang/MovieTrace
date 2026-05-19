@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -25,6 +26,7 @@ from movietrace.db.schema import connect_database, initialize_database
 
 def cmd_daily_discover(args: argparse.Namespace) -> int:
     """Run the full multi-source daily discovery pipeline (P1.7-D)."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     report_date = _parse_date_arg(args.date) or date.today()
     date_str = report_date.isoformat()
     dry_run = args.dry_run

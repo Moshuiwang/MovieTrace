@@ -1,7 +1,7 @@
 # MovieTrace 日常运行手册
 
 > **目的：** 让接手者能独立完成日常运行和排障。
-> **最后更新：** 2026-05-18
+> **最后更新：** 2026-05-20
 
 ---
 
@@ -15,11 +15,10 @@ pip install -r requirements.txt
 
 # 确认数据库状态
 sqlite3 data/movietrace.db "select max(version) from schema_migrations;"
-# 预期输出：16
+# 预期输出：17
 
-# 确认 secrets 可用
-cat ~/.config/movietrace/secrets.json 2>/dev/null || cat /tmp/movietrace_phase0_secrets.json 2>/dev/null
-# 必须包含 omdb.api_keys、tmdb.api_read_access_token、flixpatrol.api_key
+# 确认 secrets 可用（只检查字段，不打印密钥）
+python -c "import json, pathlib; p=pathlib.Path.home()/'.config/movietrace/secrets.json'; s=json.loads(p.read_text()); req=[('tmdb','api_read_access_token'),('omdb','api_keys'),('trakt','client_id'),('flixpatrol','api_key'),('feishu','app_id'),('feishu','app_secret')]; missing=[f'{a}.{b}' for a,b in req if not (s.get(a) or {}).get(b)]; print('OK' if not missing else 'missing: '+', '.join(missing)); raise SystemExit(bool(missing))"
 
 # 确认配置
 cat config.yaml
@@ -207,9 +206,10 @@ cp data/movietrace_backup_YYYYMMDD_HHMM.db data/movietrace.db
 PYTHONPATH=src python -c "from movietrace.db.schema import initialize_database; initialize_database('data/movietrace.db')"
 ```
 
-### 重置到初始状态
+### 重置为空库
 
 ```bash
-# 重新建库（丢失所有数据！）
-PYTHONPATH=src python -c "from movietrace.db.schema import initialize_database; initialize_database('data/movietrace.db', force_recreate=True)"
+# 先保留旧库，再初始化一个空库
+mv data/movietrace.db data/movietrace_reset_backup_$(date +%Y%m%d_%H%M).db
+PYTHONPATH=src python -c "from movietrace.db.schema import initialize_database; initialize_database('data/movietrace.db')"
 ```

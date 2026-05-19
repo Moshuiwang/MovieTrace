@@ -334,6 +334,13 @@ class TestApplyTmdbDetailDataLastEpisode(unittest.TestCase):
         _apply_tmdb_detail_data(c, {"vote_average": 7.5})
         self.assertNotIn("last_episode_to_air", c.tmdb_data)
 
+    def test_seasons_list_preserved_for_sparse_season_duration(self):
+        from movietrace.pipeline.omdb_enrichment import _apply_tmdb_detail_data
+        c = self._make_candidate()
+        seasons = [{"season_number": 1}, {"season_number": 49}]
+        _apply_tmdb_detail_data(c, {"seasons": seasons})
+        self.assertEqual(c.tmdb_data["seasons"], seasons)
+
 
 if __name__ == "__main__":
     unittest.main()

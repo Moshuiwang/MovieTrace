@@ -57,11 +57,11 @@ pip install -r requirements.txt
 
 # 3. 初始化或检查数据库
 sqlite3 data/movietrace.db "select max(version) from schema_migrations;"
-# 预期：16
+# 预期：17
 
 # 4. 跑测试（不消耗 API）
 PYTHONPATH=src python -m pytest tests/ -v
-# 预期：535 passed
+# 预期：623 passed
 
 # 5. 跑一次 dry-run 看输出
 PYTHONPATH=src python -m movietrace.cli daily-discover --dry-run

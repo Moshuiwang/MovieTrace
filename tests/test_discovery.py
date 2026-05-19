@@ -738,6 +738,43 @@ class TestComputeRowDuration:
         # 期望:21 季完整 × 22 集 + S22 已播 5 集 = 467
         assert result == 21 * 22 + 5
 
+    def test_tv_sparse_seasons_only_fetches_listed_seasons(self):
+        """回归:长寿节目季号不连续时,不要请求 TMDb 不存在的中间季。"""
+        from movietrace.pipeline.discovery import compute_row_duration_hours
+        from unittest.mock import MagicMock
+
+        c_dict = {
+            "media_type": "tv",
+            "tmdb_id": 2035,
+            "tmdb_data": {
+                "last_episode_to_air": {"season_number": 49, "episode_number": 27},
+                "seasons": [
+                    {"season_number": 1},
+                    {"season_number": 2},
+                    {"season_number": 49},
+                ],
+            },
+        }
+        conn = MagicMock()
+        tmdb_client = MagicMock()
+        requested = []
+
+        def season_detail_side_effect(c, cli, tv_id, s_n):
+            requested.append(s_n)
+            if s_n == 49:
+                return ({"episode_count": 30}, False)
+            return ({"episode_count": 10}, False)
+
+        with patch("movietrace.pipeline.discovery._query_a_lib_max_season", return_value=0):
+            with patch(
+                "movietrace.pipeline.discovery.get_tmdb_season_detail_with_cache",
+                side_effect=season_detail_side_effect,
+            ):
+                result = compute_row_duration_hours(c_dict, conn, tmdb_client)
+
+        assert requested == [1, 2, 49]
+        assert result == 10 + 10 + 27
+
 
 # ── P1.24-C: Soap降权tests ────────────────────────────────────────────────
 

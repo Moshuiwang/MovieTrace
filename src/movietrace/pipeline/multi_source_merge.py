@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -36,6 +37,7 @@ def merge_three_sources(
     fp_rows = _read_fp(conn, fp_date) if fp_date else []
     tmdb_rows = _read_tmdb(conn, tmdb_date) if tmdb_date else []
     trakt_rows = _read_trakt(conn, trakt_date) if trakt_date else []
+    _reconcile_fp_media_types(conn, fp_rows, tmdb_rows, trakt_rows)
 
     merged: dict[str, MergedCandidate] = {}
 
@@ -156,6 +158,70 @@ def _make_key_title(title: str, media_type: str) -> str:
 
 def _normalize_title(title: str) -> str:
     return re.sub(r"[^a-z0-9]", "", title.lower())
+
+
+def _reconcile_fp_media_types(
+    conn: sqlite3.Connection,
+    fp_rows: list[dict],
+    tmdb_rows: list[dict],
+    trakt_rows: list[dict],
+) -> None:
+    """Prefer TMDb/Trakt/cache media_type when FlixPatrol labels the same TMDb ID differently."""
+    authoritative: dict[int, str] = {}
+    for row in trakt_rows:
+        tmdb_id = row.get("tmdb_id")
+        media_type = row.get("media_type")
+        if tmdb_id and media_type in ("movie", "tv"):
+            authoritative[int(tmdb_id)] = media_type
+    for row in tmdb_rows:
+        tmdb_id = row.get("tmdb_id")
+        media_type = row.get("media_type")
+        if tmdb_id and media_type in ("movie", "tv"):
+            authoritative[int(tmdb_id)] = media_type
+
+    for row in fp_rows:
+        tmdb_id = row.get("tmdb_id")
+        if not tmdb_id:
+            continue
+        expected = authoritative.get(int(tmdb_id)) or _cached_tmdb_media_type(
+            conn, int(tmdb_id), row.get("title", "")
+        )
+        if expected and row.get("media_type") != expected:
+            logger.warning(
+                "FlixPatrol media_type conflict for tmdb_id=%s: %s -> %s",
+                tmdb_id,
+                row.get("media_type"),
+                expected,
+            )
+            row["media_type"] = expected
+
+
+def _cached_tmdb_media_type(conn: sqlite3.Connection, tmdb_id: int, title: str) -> str | None:
+    rows = conn.execute(
+        """select cache_key, response_json
+           from api_cache
+           where source = 'tmdb'
+             and cache_key in (?, ?)
+           order by fetched_at desc""",
+        (f"tmdb:detail:{tmdb_id}:movie", f"tmdb:detail:{tmdb_id}:tv"),
+    ).fetchall()
+    title_norm = _normalize_title(title)
+    if not title_norm:
+        return None
+    for row in rows:
+        cache_key = str(row[0])
+        try:
+            payload = json.loads(row[1])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        cached_title = payload.get("title") or payload.get("name")
+        if _normalize_title(str(cached_title or "")) != title_norm:
+            continue
+        if cache_key.endswith(":movie"):
+            return "movie"
+        if cache_key.endswith(":tv"):
+            return "tv"
+    return None
 
 
 def _merge_by_tmdb_id(rows: list[dict], merged: dict, source: str) -> None:

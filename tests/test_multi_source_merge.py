@@ -114,6 +114,57 @@ class MultiSourceMergeTest(unittest.TestCase):
         self.assertIsNotNone(c.trakt_data)
         self.assertEqual(len(c.fp_items), 1)
 
+    def test_fp_media_type_conflict_uses_tmdb_type(self):
+        from movietrace.pipeline.multi_source_merge import merge_three_sources
+        self._seed_fp([{"tmdb_id": 1658982, "title": "The Roast of Kevin Hart FP",
+                        "content_type": "tv_show", "snapshot_date": "2026-05-13"}])
+        self._seed_tmdb([{"tmdb_id": 1658982, "media_type": "movie",
+                          "title": "The Roast of Kevin Hart",
+                          "snapshot_date": "2026-05-13"}])
+
+        candidates = merge_three_sources(self.conn, "2026-05-13")
+
+        self.assertEqual(len(candidates), 1)
+        c = candidates[0]
+        self.assertEqual(c.media_type, "movie")
+        self.assertIn("fp", c.source_flags)
+        self.assertIn("tmdb", c.source_flags)
+        self.assertEqual(c.fp_items[0]["media_type"], "movie")
+
+    def test_fp_media_type_conflict_uses_cached_tmdb_detail_type(self):
+        from movietrace.pipeline.multi_source_merge import merge_three_sources
+        self._seed_fp([{"tmdb_id": 1658982, "title": "The Roast of Kevin Hart FP",
+                        "content_type": "tv_show", "snapshot_date": "2026-05-13"}])
+        self.conn.execute(
+            """insert into api_cache(source, cache_key, response_json)
+               values ('tmdb', 'tmdb:detail:1658982:movie', '{"title": "The Roast of Kevin Hart FP"}')"""
+        )
+        self.conn.commit()
+
+        candidates = merge_three_sources(self.conn, "2026-05-13")
+
+        self.assertEqual(len(candidates), 1)
+        c = candidates[0]
+        self.assertEqual(c.media_type, "movie")
+        self.assertEqual(c.fp_items[0]["media_type"], "movie")
+
+    def test_fp_media_type_conflict_ignores_cached_type_for_different_title(self):
+        from movietrace.pipeline.multi_source_merge import merge_three_sources
+        self._seed_fp([{"tmdb_id": 42, "title": "A Real TV Show",
+                        "content_type": "tv_show", "snapshot_date": "2026-05-13"}])
+        self.conn.execute(
+            """insert into api_cache(source, cache_key, response_json)
+               values ('tmdb', 'tmdb:detail:42:movie', '{"title": "Different Movie"}')"""
+        )
+        self.conn.commit()
+
+        candidates = merge_three_sources(self.conn, "2026-05-13")
+
+        self.assertEqual(len(candidates), 1)
+        c = candidates[0]
+        self.assertEqual(c.media_type, "tv")
+        self.assertEqual(c.fp_items[0]["media_type"], "tv")
+
     def test_imdb_id_fallback_merging(self):
         from movietrace.pipeline.multi_source_merge import merge_three_sources
         self._seed_fp([{"imdb_id": "tt1234567", "title": "ImdbOnly", "snapshot_date": "2026-05-13"}])

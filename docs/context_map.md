@@ -2,7 +2,7 @@
 
 > Agent 启动时按本图**分层加载**，不做全量读取。
 > 使用者/开发者也可用本图快速定位代码、表、脚本所在位置。
-> 最后更新：2026-05-16（P1.23 + P1.21.9 之后）
+> 最后更新：2026-05-20（去除易漂移计数；schema version 17）
 
 ---
 
@@ -73,11 +73,11 @@ rg -n "virtual_series|canonical_items|OMDb" docs/history/phase1_state_archive.md
 
 | 文件 | 职责 |
 |------|------|
-| `cli.py` | CLI 入口；16 个子命令（详见下表）|
+| `cli.py` | CLI 入口；主要子命令见下表 |
 | `config.py` | 加载 `~/.config/movietrace/secrets.json` 和 `config.yaml` |
 | `__init__.py` | 包初始化 |
 
-**17 个 CLI 子命令（来源：`cli.py` 中 `sub.add_parser`）：**
+**主要 CLI 子命令（来源：`cli.py` 中 `sub.add_parser`）：**
 
 | 命令 | 用途 | 调度 |
 |------|------|------|
@@ -104,7 +104,7 @@ rg -n "virtual_series|canonical_items|OMDb" docs/history/phase1_state_archive.md
 
 | 子包 | 职责 | 关键文件 |
 |------|------|---------|
-| `db/` | SQLite schema + migrations | `schema.py`（DDL + initialize_database）· `migrations/002…016*.sql` |
+| `db/` | SQLite schema + migrations | `schema.py`（DDL + initialize_database）· `migrations/002…017*.sql` |
 | `sources/` | 外部数据源客户端（无业务逻辑）| `tmdb.py`（trending/detail/search）· `trakt.py`（trending/search）· `omdb.py`（评分补充）· `flixpatrol.py`（HTML 解析）· `flixpatrol_api.py`（付费 API，目前 402）· `http.py`（公共 UA / 重试 / 配额）|
 | `pipeline/` | 业务流水线 | `discovery.py`（每日热点主链路）· `baseline_tracking.py`（A 库基线新季）· `scoring.py`（hot_score 0-100 加权）· `multi_source_merge.py`（多源候选合并）· `entity_matching.py`（A 库↔TMDb 匹配 + baseline_quality_issues 写入）· `virtual_series.py`（TV 系列聚合 + poll_priority 推导）· `poll_scheduler.py`（A 库 TV 轮询计划生成）· `tmdb_detail_cache.py`（24h api_cache 复用）· `tmdb_trending.py` / `trakt_trending.py`（写各自快照表）· `omdb_enrichment.py`（OMDb 评分补充）· `source_fetch_status.py`（source_fetch_runs 状态机）|
 | `reports/` | 报告生成 | `export_writer.py`（MD + JSON 双写）· `inspect_renderer.py`（CLI 查询渲染）|
@@ -126,8 +126,6 @@ rg -n "virtual_series|canonical_items|OMDb" docs/history/phase1_state_archive.md
 
 三个脚本都 `export TZ='Asia/Shanghai'`（防御 UTC 服务器漂移），日志写入 `reports/logs/`。
 
-> **Review 跟进 #4**：`weekly_feedback.sh` 当前仍**漏 TZ export**，待补（见 STATE.md）。
-
 ### 一次性 / 验证脚本
 
 | 脚本 | 用途 | 状态 |
@@ -141,34 +139,34 @@ rg -n "virtual_series|canonical_items|OMDb" docs/history/phase1_state_archive.md
 
 ---
 
-## § 5. 数据库地图（`data/movietrace.db`，schema version 16）
+## § 5. 数据库地图（`data/movietrace.db`，schema version 17）
 
 SQLite，14 张活跃表。备份命名 `movietrace_backup_<YYYYMMDD>_<HHMM>.db`。
 
 ### 核心业务表（B 库主链路）
 
-| 表 | 行数（参考） | 用途 | 重点字段 |
-|----|--------------|------|---------|
-| `canonical_items` | ~905 | B 库标准化条目（movie / tv series / tv season）| `id`（PK）· `canonical_item_key`（unique，业务键）· `content_type`（movie/tv）· `content_granularity`（series/season/episode）· `parent_canonical_item_id`（season → series 自引用）· `season_number` · `virtual_series_id`（→ virtual_series.id）|
-| `external_ids` | ~1.2k | TMDb / IMDb / Trakt → canonical_items 映射 | `canonical_item_id`（FK，cascade）· `source`（tmdb/imdb/trakt）· `external_id` · UNIQUE(source, external_id) |
-| `content_updates` | ~298 | **事件历史表**（ADR-0012）；新发现/新季事件 | `content_update_id`（unique，格式：`discovery:{movie\|tv}:{tmdb_id}:{date}` 或 `new_season:{tmdb_tv_id}:{season}:{date}`）· `canonical_item_id` · `update_type`（new_discovery / new_season）· `priority`（P0/P1/P2）· `hot_score` · `baseline_match_status` · `match_confidence_low`（0/1）· `source_summary_json` |
-| `virtual_series` | 307 | TV 系列聚合层（按 tmdb_tv_id 一行）；用于"新季追踪" | `tmdb_tv_id`（unique）· `tmdb_status`（Returning Series / Ended / ...）· `tmdb_number_of_seasons` · `local_max_season`（B 库已收录最高季）· `poll_priority`（urgent / normal / low / skip，由 tmdb_status 推导）· `last_polled_at` |
-| `baseline_quality_issues` | 动态 | A 库实体匹配的质量问题日志（运行时按需建表）| `upstream_program_id` · `issue_type`（low_confidence / no_match / ...）· `source_name` · `confidence` · `reason` |
+| 表 | 用途 | 重点字段 |
+|----|------|---------|
+| `canonical_items` | B 库标准化条目（movie / tv series / tv season）| `id`（PK）· `canonical_item_key`（unique，业务键）· `content_type`（movie/tv）· `content_granularity`（series/season/episode）· `parent_canonical_item_id`（season → series 自引用）· `season_number` · `virtual_series_id`（→ virtual_series.id）|
+| `external_ids` | TMDb / IMDb / Trakt → canonical_items 映射 | `canonical_item_id`（FK，cascade）· `source`（tmdb/imdb/trakt）· `external_id` · UNIQUE(source, external_id) |
+| `content_updates` | **事件历史表**（ADR-0012）；新发现/新季事件 | `content_update_id`（unique，格式：`discovery:{movie\|tv}:{tmdb_id}:{date}` 或 `new_season:{tmdb_tv_id}:{season}:{date}`）· `canonical_item_id` · `update_type`（new_discovery / new_season）· `priority`（P0/P1/P2）· `hot_score` · `baseline_match_status` · `match_confidence_low`（0/1）· `source_summary_json` |
+| `virtual_series` | TV 系列聚合层（按 tmdb_tv_id 一行）；用于"新季追踪" | `tmdb_tv_id`（unique）· `tmdb_status`（Returning Series / Ended / ...）· `tmdb_number_of_seasons` · `local_max_season`（B 库已收录最高季）· `poll_priority`（urgent / normal / low / skip，由 tmdb_status 推导）· `last_polled_at` |
+| `baseline_quality_issues` | A 库实体匹配的质量问题日志（运行时按需建表）| `upstream_program_id` · `issue_type`（low_confidence / no_match / ...）· `source_name` · `confidence` · `reason` |
 
 ### A 库镜像表（上游业务库快照，只读）
 
-| 表 | 行数 | 用途 |
-|----|------|------|
-| `upstream_programs` | 735 | A 库节目主表镜像；`online_flag` 过滤"在售"剧集 |
-| `upstream_episodes` | 6,562 | A 库子节目（季/集），`fk_program_content_id` 关联到 upstream_programs |
+| 表 | 用途 |
+|----|------|
+| `upstream_programs` | A 库节目主表镜像；`online_flag` 过滤"在售"剧集 |
+| `upstream_episodes` | A 库子节目（季/集），`fk_program_content_id` 关联到 upstream_programs |
 
 ### 外部源快照表（trending 抓取留痕）
 
-| 表 | 行数 | 用途 |
-|----|------|------|
-| `tmdb_trending` | 多 | 每日 TMDb trending/popular 快照，按 `snapshot_date` 分区 |
-| `trakt_trending` | 多 | 每日 Trakt trending 快照 |
-| `flixpatrol_top10` | 多 | FlixPatrol top10 抓取快照，6 个平台 × 多国家 |
+| 表 | 用途 |
+|----|------|
+| `tmdb_trending` | 每日 TMDb trending/popular 快照，按 `snapshot_date` 分区 |
+| `trakt_trending` | 每日 Trakt trending 快照 |
+| `flixpatrol_top10` | FlixPatrol top10 抓取快照，6 个平台 × 多国家 |
 
 ### 运维 / 监控表
 
@@ -177,7 +175,7 @@ SQLite，14 张活跃表。备份命名 `movietrace_backup_<YYYYMMDD>_<HHMM>.db`
 | `api_cache` | 外部 API 响应缓存（TMDb detail 24h、OMDb 等）| `source` + `cache_key`（unique）· `response_json` · `fetched_at` · `expires_at`（migration 015 加 unique index 防 cartesian 重复）|
 | `api_usage_log` | 每次外部 API 调用的配额监控 | `service` · `endpoint` · `request_date` · `status`（ok / error / quota_error / rate_limited）· `key_fingerprint`（多 key 轮换时区分）|
 | `source_fetch_runs` | 每日各源抓取运行状态机 | `target_date` · `source` · `status`（fresh / fallback / failed）· `rows_used` |
-| `schema_migrations` | migration 版本号 | `version`（当前最大 16）· `applied_at` |
+| `schema_migrations` | migration 版本号 | `version`（当前最大 17）· `applied_at` |
 
 ### 已 DROP 的遗留表（migration 016，ADR-0014）
 
