@@ -6,7 +6,7 @@
 
 ---
 
-**最后更新：** 2026-05-19 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `chore/fix-automerge-and-state-sync`
+**最后更新：** 2026-05-19 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
 **测试：** 617 passed（~74s · +4 feishu sync 测试）
 **Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段；P1.31 SCHEMA_VERSION 常量同步到 17）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
@@ -32,9 +32,9 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-19 **CI/CD 深度修复**（PR #25-29）：auto-merge 全链路打通——`--auto`+轮询/`allow_auto_merge` 仓库开关/`workflows: write` 阻断 workflow_run 根因/notify 跳过 cancelled 误报；含 workflow 文件的 PR 改为手动合并（安全）
 - 2026-05-19 **CD 修复**（auto-merge.yml: 删除 `mergeable` null 误判检查，合并后自动触发 main CI deploy，告别手动 `gh workflow run`；CLAUDE.md 补 Compact Instructions + PR 后立即切 main 规则）
 - 2026-05-19 **P1.33 飞书表格优化**（A库最新季改整数型；新增 A库总集数/TMDB总集数字段；+4 测试，617 passed）
-- 2026-05-19 **P1.31 + P1.32 事故善后**（P1.31: cli migrate + ci.yml deploy 自动应用 migration；生产 migration 017 手动补跑 applied: [17]；P1.32: manual-pipeline.yml workflow_dispatch 入口）
 - 2026-05-19 **P1.30 sync_table IM 通知 + 工作流配套**（auto-ensure 触发 send_text / send_alert；GitHub 分支保护 main；feature branch + PR 工作流；auto-merge 大小写修复；pre-push hook）；测试 609 passed
 - 2026-05-18~19 **P1.25-P1.29 批量合并**（IMDb URL tt 前缀 / 在播最新季 / 原始评分 / zh-CN 字段 + migration 017 / 日报章节扩充）；4 个 issue 已关闭
 
