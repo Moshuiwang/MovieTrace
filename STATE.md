@@ -6,9 +6,10 @@
 
 ---
 
-**最后更新：** 2026-05-19 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
-**测试：** 609 passed（~76s）
-**Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段）
+**最后更新：** 2026-05-19 +08 · Claude Code CLI（Opus 4.7） · 分支 `feat/p1.31-db-migrate-on-deploy`
+**测试：** 613 passed（~74s · +4 migrate CLI 测试）
+**Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段；P1.31 SCHEMA_VERSION 常量同步到 17）
+**在线事故：** 2026-05-19 08:00 cron 触发 export 失败 — Migration 017 未应用到生产库（`schema_migrations.max=16`），`canonical_items.title_zh` 列缺失。诊断 `incident-reports/20260519_run_failure.md`；修复方案 P1.31（本分支）+ P1.32（后续分支）
 
 ---
 
@@ -38,7 +39,10 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** 无（P1.30 已合并；下一个任务包待定）
+- **进行中：**
+  - [P1.31 部署自动应用 DB Migration](docs/tasks/p1.31-db-migrate-on-deploy.md) — 代码 + 测试已就绪（本分支 `feat/p1.31-db-migrate-on-deploy`），待 PR 评审合并；事故系统性修复（schema + ci.yml + CLI migrate + 4 个测试）
+  - [P1.32 Manual Pipeline Workflow](docs/tasks/p1.32-manual-pipeline-workflow.md) — 任务包就绪、代码未启动；P1.31 下游，提供 workflow_dispatch 手动重跑入口，闭环今天事故的数据补救
+- **执行顺序：** P1.31 PR 合并 → auto-deploy 应用 017 → 开 P1.32 PR → 合并后 `gh workflow run manual-pipeline -f stage=export -f days=1` 补今天产出
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 - **已知限制：** auto-merge.yml 用默认 `GITHUB_TOKEN` 合并的 PR 不触发 `push` 事件，导致 auto-merged PR 不会自动 deploy。PR #14 提了 workflow_dispatch 补救方案；长期更优是换 PAT secret。
 
