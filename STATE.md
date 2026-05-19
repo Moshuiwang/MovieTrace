@@ -6,10 +6,10 @@
 
 ---
 
-**最后更新：** 2026-05-19 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `feat/p1.32-manual-pipeline-workflow`
+**最后更新：** 2026-05-19 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
 **测试：** 613 passed（~74s · +4 migrate CLI 测试）
 **Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段；P1.31 SCHEMA_VERSION 常量同步到 17）
-**在线事故：** 2026-05-19 08:00 cron 触发 export 失败 — Migration 017 未应用到生产库（`schema_migrations.max=16`），`canonical_items.title_zh` 列缺失。✅ P1.31 已修复并部署（migration 017 applied: 16→17）；P1.32 提供手动补跑入口，待合并后补今日产出
+**在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
 ---
 
@@ -21,12 +21,10 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 | 编号 | 文件 | 来源 | 状态 |
 |---|---|---|---|
-| P1.25 | [p1.25-fix-imdb-url.md](docs/tasks/p1.25-fix-imdb-url.md) | issue #7 | ✅ 已合并 (PR #10) |
-| P1.26 | [p1.26-fix-last-episode-to-air.md](docs/tasks/p1.26-fix-last-episode-to-air.md) | issue #5 | ✅ 已合并 (commit eaa8297) |
-| P1.27 | [p1.27-feishu-raw-ratings.md](docs/tasks/p1.27-feishu-raw-ratings.md) | issue #6 | ✅ 已合并 (commit eaa8297) |
 | P1.28 | [p1.28-zh-locale-fields.md](docs/tasks/p1.28-zh-locale-fields.md) | issue #8 | ✅ 已合并 (commit eaa8297，含 schema migration 017，回填 622 条 canonical_items) |
-| P1.29 | [p1.29-doc-sections.md](docs/tasks/p1.29-doc-sections.md) | issue #4a | ✅ 已合并 (commit eaa8297) |
 | P1.30 | [p1.30-feishu-auto-ensure.md](docs/tasks/p1.30-feishu-auto-ensure.md) | session 设计 | ✅ 已合并 (PR #13) |
+| P1.31 | [p1.31-db-migrate-on-deploy.md](docs/tasks/p1.31-db-migrate-on-deploy.md) | 事故修复 | ✅ 已合并 (PR #17 #18)，生产 migration 017 applied |
+| P1.32 | [p1.32-manual-pipeline-workflow.md](docs/tasks/p1.32-manual-pipeline-workflow.md) | 事故善后 | ✅ 已合并 (PR #19)，今日 export+sync 补跑成功 |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
@@ -39,11 +37,9 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：**
-  - [P1.32 Manual Pipeline Workflow](docs/tasks/p1.32-manual-pipeline-workflow.md) — workflow 文件已写，待 PR 合并；合并后跑 `gh workflow run manual-pipeline.yml -f stage=export -f days=1` 补今日 export
-- **执行顺序：** P1.32 PR 合并 → auto-deploy → `gh workflow run manual-pipeline.yml -f stage=export -f days=1` 补今天产出
-- **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
-- **已知限制：** auto-merge.yml 用默认 `GITHUB_TOKEN` 合并的 PR 不触发 `push` 事件，导致 auto-merged PR 不会自动 deploy；每次合并后需手动 `gh workflow run CI --ref main`。长期更优是换 PAT secret。
+- **进行中：** 无
+- **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）；Trakt API fallback（今日数据用 2026-05-18 缓存）→ P1.33 排查
+- **待决策：** Trakt 403 根因（token 失效？速率限制？）
 
 ## Review 跟进项（push 前发现的 minor，非阻塞）
 
