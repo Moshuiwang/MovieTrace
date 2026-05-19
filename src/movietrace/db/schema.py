@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 
 SCHEMA_SQL = """

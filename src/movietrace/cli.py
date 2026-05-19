@@ -18,7 +18,7 @@ from pathlib import Path
 from movietrace.config import load_secrets, get_secrets_path, get_db_path
 from datetime import date, datetime
 
-from movietrace.db.schema import connect_database
+from movietrace.db.schema import connect_database, initialize_database
 
 # ── daily-discover ──────────────────────────────────────────────────────
 
@@ -1294,6 +1294,40 @@ def cmd_export_feedback_report(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_migrate(args: argparse.Namespace) -> int:
+    """Apply any pending schema migrations to the local DB (idempotent)."""
+    import sqlite3
+
+    db_path = get_db_path(getattr(args, "db", None))
+
+    def _versions() -> set[int]:
+        try:
+            with connect_database(db_path) as conn:
+                rows = conn.execute("select version from schema_migrations").fetchall()
+                return {row[0] for row in rows}
+        except sqlite3.OperationalError:
+            return set()
+
+    before_set = _versions()
+    before_max = max(before_set) if before_set else 0
+
+    try:
+        initialize_database(db_path)
+    except Exception as exc:
+        print(f"migrate failed: {exc}", file=sys.stderr)
+        return 1
+
+    after_set = _versions()
+    after_max = max(after_set) if after_set else 0
+    applied = sorted(after_set - before_set)
+
+    print(f"DB path: {db_path}")
+    print(f"before version: {before_max}")
+    print(f"after  version: {after_max}")
+    print(f"applied: {applied}")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="movietrace",
@@ -1416,6 +1450,10 @@ def main() -> None:
     p_pull_fb.add_argument("--output", help="Output directory (default: reports/feedback)")
     p_pull_fb.add_argument("--dry-run", action="store_true")
 
+    # migrate (P1.31)
+    p_migrate = sub.add_parser("migrate", help="Apply pending DB schema migrations (idempotent)")
+    p_migrate.add_argument("--db", help="Database path (default: get_db_path())")
+
     # export-feedback-report
     p_exp_fb = sub.add_parser("export-feedback-report", help="Generate weekly feedback report from JSON")
     p_exp_fb.add_argument("--input", help="Input JSON file (default: reports/feedback/feishu_pull_latest.json)")
@@ -1447,6 +1485,7 @@ def main() -> None:
         "sync-feishu-gap-table": cmd_sync_feishu_gap_table,
         "pull-feishu-feedback": cmd_pull_feishu_feedback,
         "export-feedback-report": cmd_export_feedback_report,
+        "migrate": cmd_migrate,
     }
 
     handler = handlers.get(args.command)
