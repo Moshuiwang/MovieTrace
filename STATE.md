@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-19 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
-**测试：** 613 passed（~74s · +4 migrate CLI 测试）
+**最后更新：** 2026-05-19 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `chore/fix-automerge-and-state-sync`
+**测试：** 617 passed（~74s · +4 feishu sync 测试）
 **Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段；P1.31 SCHEMA_VERSION 常量同步到 17）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -25,12 +25,15 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.30 | [p1.30-feishu-auto-ensure.md](docs/tasks/p1.30-feishu-auto-ensure.md) | session 设计 | ✅ 已合并 (PR #13) |
 | P1.31 | [p1.31-db-migrate-on-deploy.md](docs/tasks/p1.31-db-migrate-on-deploy.md) | 事故修复 | ✅ 已合并 (PR #17 #18)，生产 migration 017 applied |
 | P1.32 | [p1.32-manual-pipeline-workflow.md](docs/tasks/p1.32-manual-pipeline-workflow.md) | 事故善后 | ✅ 已合并 (PR #19)，今日 export+sync 补跑成功 |
+| P1.33 | — | issue #21 | ✅ 已合并 (PR #24)，飞书 A库最新季整数化 + A库/TMDB总集数字段 |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-19 **CD 修复**（auto-merge.yml: 删除 `mergeable` null 误判检查，合并后自动触发 main CI deploy，告别手动 `gh workflow run`；CLAUDE.md 补 Compact Instructions + PR 后立即切 main 规则）
+- 2026-05-19 **P1.33 飞书表格优化**（A库最新季改整数型；新增 A库总集数/TMDB总集数字段；+4 测试，617 passed）
 - 2026-05-19 **P1.31 + P1.32 事故善后**（P1.31: cli migrate + ci.yml deploy 自动应用 migration；生产 migration 017 手动补跑 applied: [17]；P1.32: manual-pipeline.yml workflow_dispatch 入口）
 - 2026-05-19 **P1.30 sync_table IM 通知 + 工作流配套**（auto-ensure 触发 send_text / send_alert；GitHub 分支保护 main；feature branch + PR 工作流；auto-merge 大小写修复；pre-push hook）；测试 609 passed
 - 2026-05-18~19 **P1.25-P1.29 批量合并**（IMDb URL tt 前缀 / 在播最新季 / 原始评分 / zh-CN 字段 + migration 017 / 日报章节扩充）；4 个 issue 已关闭
@@ -38,8 +41,9 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 ## 进行中 / 阻塞 / 待决策
 
 - **进行中：** 无
-- **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）；Trakt API fallback（今日数据用 2026-05-18 缓存）→ P1.33 排查
-- **待决策：** Trakt 403 根因（token 失效？速率限制？）
+- **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）；Trakt API 403（token 失效？速率限制？，待排查）
+- **待决策：** 无
+- **下一任务：** 接入 Logtail 收集生产日志（独立任务包）
 
 ## Review 跟进项（push 前发现的 minor，非阻塞）
 

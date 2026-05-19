@@ -14,6 +14,7 @@ jobs:
     permissions:
       pull-requests: write
       contents: write
+      actions: write
 
     steps:
       - name: Checkout
@@ -42,21 +43,17 @@ jobs:
             exit 0
           fi
 
-          # 检查是否可以合并
-          IS_MERGEABLE=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" \
-            --jq '.mergeable')
-
-          if [ "$IS_MERGEABLE" != "true" ]; then
-            echo "⚠️  无法合并：存在冲突或其他阻止条件"
-            exit 0
-          fi
-
-          # 执行 Squash 合并
+          # 执行 Squash 合并（gh pr merge --squash 同步执行，不用 --auto 避免异步延迟）
           echo "✅ 合并 PR #$PR_NUMBER (作者：@$PR_AUTHOR)"
           gh pr merge "$PR_NUMBER" \
             --squash \
-            --auto \
             --delete-branch \
             --body "自动合并 by CI"
 
           echo "✨ PR #$PR_NUMBER 已合并（Squash 策略）"
+
+          # 合并后触发 main 分支 CI 以执行 deploy（GITHUB_TOKEN merge 不触发 push 事件）
+          sleep 3
+          echo "🚀 触发 main 分支 CI deploy..."
+          gh workflow run CI --ref main
+          echo "✅ CI dispatch 已发送"
