@@ -64,16 +64,17 @@ jobs:
           "
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
-      - name: Deploy to VPS (pull + backup + migrate)
+      - name: Deploy to production (pull + backup + migrate)
         run: |
           ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} bash <<'REMOTE'
           set -e
           cd ~/MovieTrace
           git pull origin main
           if [ -f data/movietrace.db ]; then
-            cp data/movietrace.db "data/movietrace_backup_$(date +%Y%m%d_%H%M)_pre_migrate.db"
+            cp data/movietrace.db "data/movietrace_backup_$(date +%Y%m%d_%H%M%S)_pre_migrate.db"
           fi
-          PYTHONPATH=src python3 -m movietrace.cli migrate
+          source .venv/bin/activate
+          PYTHONPATH=src python -m movietrace.cli migrate
           REMOTE
 
       - name: Sync secrets to VPS
