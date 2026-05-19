@@ -24,6 +24,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_NOTIFY_CHAT_ID: ${{ secrets.FEISHU_NOTIFY_CHAT_ID }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           # 获取关联的 PR
           PR_NUMBER=$(gh api "repos/${{ github.repository }}/actions/runs/$WORKFLOW_RUN_ID" \
@@ -72,5 +77,58 @@ jobs:
           # 合并后触发 main 分支 CI 以执行 deploy（auto-merge 不触发 push 事件）
           sleep 3
           echo "🚀 触发 main 分支 CI deploy..."
-          gh workflow run CI --ref main
-          echo "✅ CI dispatch 已发送"
+
+          export PR_NUMBER
+          DISPATCH_OK=false
+          if gh workflow run CI --ref main; then
+            sleep 5  # 给 GitHub 几秒钟创建 run
+            for i in $(seq 1 10); do
+              LATEST_STATUS=$(gh run list --workflow CI --branch main --limit 1 --json status --jq '.[0].status' 2>/dev/null || echo "")
+              if [ "$LATEST_STATUS" = "queued" ] || [ "$LATEST_STATUS" = "in_progress" ]; then
+                DISPATCH_OK=true
+                echo "✅ CI run 已创建并进入 $LATEST_STATUS 状态"
+                break
+              fi
+              sleep 3
+            done
+          fi
+
+          if [ "$DISPATCH_OK" = "false" ]; then
+            echo "❌ Dispatch CI 失败或 run 未在 30s 内创建，发送飞书告警"
+            python3 - <<'PYEOF'
+          import os, json, urllib.request
+          app_id = os.environ["FEISHU_APP_ID"]
+          app_secret = os.environ["FEISHU_APP_SECRET"]
+          chat_id = os.environ["FEISHU_NOTIFY_CHAT_ID"]
+          pr_number = os.environ.get("PR_NUMBER", "?")
+          repo = os.environ.get("REPO", "?")
+          run_id = os.environ.get("RUN_ID", "?")
+
+          token_resp = urllib.request.urlopen(urllib.request.Request(
+              "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+              data=json.dumps({"app_id": app_id, "app_secret": app_secret}).encode(),
+              headers={"Content-Type": "application/json"},
+              method="POST"
+          ))
+          token = json.loads(token_resp.read())["tenant_access_token"]
+
+          text = (
+              f"❌ MovieTrace auto-merge dispatch 失败\n"
+              f"PR #{pr_number} 已合并但 main CI 未触发\n"
+              f"需手动跑：gh workflow run CI --ref main\n"
+              f"https://github.com/{repo}/actions/runs/{run_id}"
+          )
+
+          req = urllib.request.Request(
+              "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
+              data=json.dumps({"receive_id": chat_id, "msg_type": "text", "content": json.dumps({"text": text})}).encode(),
+              headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+              method="POST"
+          )
+          result = json.loads(urllib.request.urlopen(req).read())
+          print(f"Feishu notify: code={result.get('code')} msg={result.get('msg')}")
+          PYEOF
+            exit 1
+          fi
+
+          echo "✅ CI dispatch 已发送并确认 run 已创建"
