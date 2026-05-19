@@ -6,10 +6,10 @@
 
 ---
 
-**最后更新：** 2026-05-19 +08 · Claude Code CLI（Opus 4.7） · 分支 `feat/p1.31-db-migrate-on-deploy`
+**最后更新：** 2026-05-19 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `feat/p1.32-manual-pipeline-workflow`
 **测试：** 613 passed（~74s · +4 migrate CLI 测试）
 **Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段；P1.31 SCHEMA_VERSION 常量同步到 17）
-**在线事故：** 2026-05-19 08:00 cron 触发 export 失败 — Migration 017 未应用到生产库（`schema_migrations.max=16`），`canonical_items.title_zh` 列缺失。诊断 `incident-reports/20260519_run_failure.md`；修复方案 P1.31（本分支）+ P1.32（后续分支）
+**在线事故：** 2026-05-19 08:00 cron 触发 export 失败 — Migration 017 未应用到生产库（`schema_migrations.max=16`），`canonical_items.title_zh` 列缺失。✅ P1.31 已修复并部署（migration 017 applied: 16→17）；P1.32 提供手动补跑入口，待合并后补今日产出
 
 ---
 
@@ -33,18 +33,17 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-19 **P1.31 + P1.32 事故善后**（P1.31: cli migrate + ci.yml deploy 自动应用 migration；生产 migration 017 手动补跑 applied: [17]；P1.32: manual-pipeline.yml workflow_dispatch 入口）
 - 2026-05-19 **P1.30 sync_table IM 通知 + 工作流配套**（auto-ensure 触发 send_text / send_alert；GitHub 分支保护 main；feature branch + PR 工作流；auto-merge 大小写修复；pre-push hook）；测试 609 passed
 - 2026-05-18~19 **P1.25-P1.29 批量合并**（IMDb URL tt 前缀 / 在播最新季 / 原始评分 / zh-CN 字段 + migration 017 / 日报章节扩充）；4 个 issue 已关闭
-- 2026-05-18 **仓库公开 + CI/CD**（GitHub Actions：push main 自动跑测试 + SSH 部署服务器 + 同步 secrets.json；密钥统一存 GitHub Secrets）
 
 ## 进行中 / 阻塞 / 待决策
 
 - **进行中：**
-  - [P1.31 部署自动应用 DB Migration](docs/tasks/p1.31-db-migrate-on-deploy.md) — 代码 + 测试已就绪（本分支 `feat/p1.31-db-migrate-on-deploy`），待 PR 评审合并；事故系统性修复（schema + ci.yml + CLI migrate + 4 个测试）
-  - [P1.32 Manual Pipeline Workflow](docs/tasks/p1.32-manual-pipeline-workflow.md) — 任务包就绪、代码未启动；P1.31 下游，提供 workflow_dispatch 手动重跑入口，闭环今天事故的数据补救
-- **执行顺序：** P1.31 PR 合并 → auto-deploy 应用 017 → 开 P1.32 PR → 合并后 `gh workflow run manual-pipeline -f stage=export -f days=1` 补今天产出
+  - [P1.32 Manual Pipeline Workflow](docs/tasks/p1.32-manual-pipeline-workflow.md) — workflow 文件已写，待 PR 合并；合并后跑 `gh workflow run manual-pipeline.yml -f stage=export -f days=1` 补今日 export
+- **执行顺序：** P1.32 PR 合并 → auto-deploy → `gh workflow run manual-pipeline.yml -f stage=export -f days=1` 补今天产出
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
-- **已知限制：** auto-merge.yml 用默认 `GITHUB_TOKEN` 合并的 PR 不触发 `push` 事件，导致 auto-merged PR 不会自动 deploy。PR #14 提了 workflow_dispatch 补救方案；长期更优是换 PAT secret。
+- **已知限制：** auto-merge.yml 用默认 `GITHUB_TOKEN` 合并的 PR 不触发 `push` 事件，导致 auto-merged PR 不会自动 deploy；每次合并后需手动 `gh workflow run CI --ref main`。长期更优是换 PAT secret。
 
 ## Review 跟进项（push 前发现的 minor，非阻塞）
 
