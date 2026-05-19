@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -121,16 +121,33 @@ def _load_content_updates(conn, days: int, *, report_kind: str = "all") -> list[
                   vs.name as series_name, vs.tmdb_tv_id,
                   vs.local_max_season, vs.tmdb_number_of_seasons,
                   upstream_agg.upstream_max_season,
-                  ci.title_zh, ci.overview_zh, ci.genres_json, ci.networks_json
+                  ci.title_zh, ci.overview_zh, ci.genres_json, ci.networks_json,
+                  upstream_agg.upstream_total_eps,
+                  movie_eps.movie_upstream_eps
            from content_updates cu
            join canonical_items ci on ci.id = cu.canonical_item_id
            left join virtual_series vs on vs.id = ci.virtual_series_id
            left join (
-               select ci2.virtual_series_id, max(ci2.season_number) as upstream_max_season
+               select ci2.virtual_series_id,
+                      max(ci2.season_number) as upstream_max_season,
+                      sum(ep_cnt.cnt) as upstream_total_eps
                from canonical_items ci2
                join external_ids ei on ei.canonical_item_id = ci2.id and ei.source = 'upstream'
+               left join (
+                   select fk_program_content_id, count(*) as cnt
+                   from upstream_episodes
+                   group by fk_program_content_id
+               ) ep_cnt on ep_cnt.fk_program_content_id = cast(ei.external_id as integer)
                group by ci2.virtual_series_id
            ) upstream_agg on upstream_agg.virtual_series_id = ci.virtual_series_id
+           left join (
+               select ei2.canonical_item_id,
+                      count(ue.id) as movie_upstream_eps
+               from external_ids ei2
+               left join upstream_episodes ue on ue.fk_program_content_id = cast(ei2.external_id as integer)
+               where ei2.source = 'upstream'
+               group by ei2.canonical_item_id
+           ) movie_eps on movie_eps.canonical_item_id = ci.id
            where cu.created_at >= datetime('now', ?)
              {type_clause}
            order by cu.created_at desc""",
@@ -159,6 +176,8 @@ def _load_content_updates(conn, days: int, *, report_kind: str = "all") -> list[
             "overview_zh": r[17],
             "genres_json": r[18],
             "networks_json": r[19],
+            # TV: sum from virtual_series; movie: count per canonical_item
+            "upstream_total_eps": r[20] if r[9] == "tv" else r[21],
         }
         for r in rows
     ]
@@ -201,6 +220,50 @@ def _load_content_updates(conn, days: int, *, report_kind: str = "all") -> list[
         for i, tmdb_id in need_imdb:
             if tmdb_id in imdb_map:
                 result[i]["imdb_id"] = imdb_map[tmdb_id]
+
+    # Backfill tmdb_total_episodes: movies = 1; TV = sum of aired season episode_count.
+    today_str = date.today().isoformat()
+    tv_need_eps: list[tuple[int, str]] = []
+    for i, row in enumerate(result):
+        if row.get("content_type") == "movie":
+            result[i]["tmdb_total_episodes"] = 1
+            continue
+        tmdb_id = str(row.get("tmdb_tv_id") or "")
+        if not tmdb_id:
+            parts = (row.get("content_update_id") or "").split(":")
+            if len(parts) >= 3 and parts[0] == "discovery" and parts[1] == "tv":
+                tmdb_id = parts[2]
+        if tmdb_id:
+            tv_need_eps.append((i, tmdb_id))
+        else:
+            result[i]["tmdb_total_episodes"] = None
+
+    if tv_need_eps:
+        eps_keys = [f"tmdb:detail:{tmdb_id}:tv" for _, tmdb_id in tv_need_eps]
+        phs = ",".join("?" for _ in eps_keys)
+        eps_rows = conn.execute(
+            f"select cache_key, json_extract(response_json, '$.seasons') from api_cache where cache_key in ({phs})",
+            eps_keys,
+        ).fetchall()
+        tmdb_eps_map: dict[str, int] = {}
+        for ck, seasons_json in eps_rows:
+            if not seasons_json:
+                continue
+            try:
+                seasons = json.loads(seasons_json)
+                tid = ck.split(":")[2]
+                total = sum(
+                    s.get("episode_count", 0)
+                    for s in seasons
+                    if s.get("season_number", 0) > 0
+                    and (s.get("air_date") or "") <= today_str
+                    and s.get("air_date")
+                )
+                tmdb_eps_map[tid] = total
+            except (ValueError, TypeError):
+                pass
+        for i, tmdb_id in tv_need_eps:
+            result[i]["tmdb_total_episodes"] = tmdb_eps_map.get(tmdb_id)
 
     return result
 

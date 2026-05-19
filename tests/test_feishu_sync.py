@@ -536,6 +536,129 @@ class TestSyncTableFieldsExtension:
         # Movie should not have 在播最新季 (or it should be None/missing)
         assert fields.get("在播最新季") is None or "在播最新季" not in fields
 
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_a_ku_max_season_written_as_integer(
+        self,
+        mock_batch_update,
+        mock_batch_create,
+        mock_list_records,
+        mock_ensure_fields,
+        mock_fetch_token,
+    ):
+        """A库最新季 is written as integer, not string 'S3'."""
+        mock_fetch_token.return_value = "token"
+        mock_ensure_fields.return_value = {"created": [], "existed": [], "renamed": [], "errors": [], "dry_run": False}
+        mock_list_records.return_value = {}
+
+        record = self._make_test_record(upstream_max_season=3)
+        json_content = json.dumps([record], ensure_ascii=False)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_path = Path(tmpdir) / "latest.json"
+            json_path.write_text(json_content, encoding="utf-8")
+            sync_table(json_path=str(json_path), run_date="2026-05-17",
+                       app_id="a", app_secret="s", app_token="t", table_id="tbl")
+
+        fields = mock_batch_create.call_args[0][3][0]["fields"]
+        assert fields["A库最新季"] == 3
+        assert not isinstance(fields["A库最新季"], str)
+
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_a_ku_max_season_none_when_no_upstream(
+        self,
+        mock_batch_update,
+        mock_batch_create,
+        mock_list_records,
+        mock_ensure_fields,
+        mock_fetch_token,
+    ):
+        """A库最新季 is absent from fields when upstream_max_season is None."""
+        mock_fetch_token.return_value = "token"
+        mock_ensure_fields.return_value = {"created": [], "existed": [], "renamed": [], "errors": [], "dry_run": False}
+        mock_list_records.return_value = {}
+
+        record = self._make_test_record(upstream_max_season=None)
+        json_content = json.dumps([record], ensure_ascii=False)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_path = Path(tmpdir) / "latest.json"
+            json_path.write_text(json_content, encoding="utf-8")
+            sync_table(json_path=str(json_path), run_date="2026-05-17",
+                       app_id="a", app_secret="s", app_token="t", table_id="tbl")
+
+        fields = mock_batch_create.call_args[0][3][0]["fields"]
+        assert "A库最新季" not in fields
+
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_episode_count_fields_written_when_present(
+        self,
+        mock_batch_update,
+        mock_batch_create,
+        mock_list_records,
+        mock_ensure_fields,
+        mock_fetch_token,
+    ):
+        """A库总集数 and TMDB总集数 are written when the record has them."""
+        mock_fetch_token.return_value = "token"
+        mock_ensure_fields.return_value = {"created": [], "existed": [], "renamed": [], "errors": [], "dry_run": False}
+        mock_list_records.return_value = {}
+
+        record = self._make_test_record(upstream_total_eps=50, tmdb_total_episodes=48)
+        json_content = json.dumps([record], ensure_ascii=False)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_path = Path(tmpdir) / "latest.json"
+            json_path.write_text(json_content, encoding="utf-8")
+            sync_table(json_path=str(json_path), run_date="2026-05-17",
+                       app_id="a", app_secret="s", app_token="t", table_id="tbl")
+
+        fields = mock_batch_create.call_args[0][3][0]["fields"]
+        assert fields["A库总集数"] == 50
+        assert fields["TMDB总集数"] == 48
+
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_episode_count_fields_absent_when_none(
+        self,
+        mock_batch_update,
+        mock_batch_create,
+        mock_list_records,
+        mock_ensure_fields,
+        mock_fetch_token,
+    ):
+        """A库总集数 and TMDB总集数 are not written when the record lacks them."""
+        mock_fetch_token.return_value = "token"
+        mock_ensure_fields.return_value = {"created": [], "existed": [], "renamed": [], "errors": [], "dry_run": False}
+        mock_list_records.return_value = {}
+
+        record = self._make_test_record()  # no upstream_total_eps / tmdb_total_episodes
+        json_content = json.dumps([record], ensure_ascii=False)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_path = Path(tmpdir) / "latest.json"
+            json_path.write_text(json_content, encoding="utf-8")
+            sync_table(json_path=str(json_path), run_date="2026-05-17",
+                       app_id="a", app_secret="s", app_token="t", table_id="tbl")
+
+        fields = mock_batch_create.call_args[0][3][0]["fields"]
+        assert "A库总集数" not in fields
+        assert "TMDB总集数" not in fields
+
 
 class TestRatingHelpers:
     def test_to_float_rating_string(self):
