@@ -10,13 +10,12 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   test:
     runs-on: ubuntu-latest
+    concurrency:
+      group: ci-test-${{ github.ref }}
+      cancel-in-progress: true
     timeout-minutes: 10
 
     env:
@@ -43,6 +42,9 @@ jobs:
   deploy:
     needs: test
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    concurrency:
+      group: ci-deploy-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -75,6 +77,15 @@ jobs:
           fi
           source .venv/bin/activate
           PYTHONPATH=src python -m movietrace.cli migrate
+          REMOTE
+
+      - name: Smoke test (import check)
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} bash <<'REMOTE'
+          set -e
+          cd ~/MovieTrace
+          source .venv/bin/activate
+          PYTHONPATH=src python -c "from movietrace.cli import main; print('smoke: cli import ok')"
           REMOTE
 
       - name: Sync secrets to VPS

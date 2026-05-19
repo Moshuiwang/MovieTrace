@@ -6,7 +6,7 @@
 
 ---
 
-**最后更新：** 2026-05-19 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
+**最后更新：** 2026-05-19 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `chore/p1.34-ci-resilience`
 **测试：** 617 passed（~74s · +4 feishu sync 测试）
 **Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段；P1.31 SCHEMA_VERSION 常量同步到 17）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
@@ -26,12 +26,14 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.31 | [p1.31-db-migrate-on-deploy.md](docs/tasks/p1.31-db-migrate-on-deploy.md) | 事故修复 | ✅ 已合并 (PR #17 #18)，生产 migration 017 applied |
 | P1.32 | [p1.32-manual-pipeline-workflow.md](docs/tasks/p1.32-manual-pipeline-workflow.md) | 事故善后 | ✅ 已合并 (PR #19)，今日 export+sync 补跑成功 |
 | P1.33 | — | issue #21 | ✅ 已合并 (PR #24)，飞书 A库最新季整数化 + A库/TMDB总集数字段 |
+| P1.34 | [p1.34-ci-resilience.md](docs/tasks/p1.34-ci-resilience.md) | 流程审视 | ⏳ 进行中（CI concurrency 拆分 + deploy 冒烟 + auto-merge dispatch 告警） |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-19 **P1.34 CI 韧性补强**（concurrency 拆分防 deploy 腰斩 / deploy 末尾 import 冒烟 / auto-merge dispatch 失败飞书告警）
 - 2026-05-19 **CI/CD 深度修复**（PR #25-29）：auto-merge 全链路打通——`--auto`+轮询/`allow_auto_merge` 仓库开关/`workflows: write` 阻断 workflow_run 根因/notify 跳过 cancelled 误报；含 workflow 文件的 PR 改为手动合并（安全）
 - 2026-05-19 **CD 修复**（auto-merge.yml: 删除 `mergeable` null 误判检查，合并后自动触发 main CI deploy，告别手动 `gh workflow run`；CLAUDE.md 补 Compact Instructions + PR 后立即切 main 规则）
 - 2026-05-19 **P1.33 飞书表格优化**（A库最新季改整数型；新增 A库总集数/TMDB总集数字段；+4 测试，617 passed）
@@ -40,7 +42,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** 无
+- **进行中：** P1.34 CI 韧性补强（分支 `chore/p1.34-ci-resilience`，子 agent Sonnet 4.6 接手编码）
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）；Trakt API 403（token 失效？速率限制？，待排查）
 - **待决策：** 无
 - **下一任务：** 接入 Logtail 收集生产日志（独立任务包）
