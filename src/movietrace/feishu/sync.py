@@ -292,12 +292,13 @@ def sync_table(
                 "优先级":            str(rec.get("priority", "")),
                 "hot_score":        float(rec.get("hot_score") or 0),
                 "TMDb ID":          str(rec.get("tmdb_id") or rec.get("tmdb_tv_id") or ""),
-                "A库最新季":         f"S{rec['upstream_max_season']}" if rec.get("upstream_max_season") is not None else "无",
                 "是否低置信度":        "是" if rec.get("match_confidence_low") else "否",
                 "数据源状态":         source_status_str,
                 "同步时间":          now_ts,
                 "同步批次":          run_date,
             }
+            if rec.get("upstream_max_season") is not None:
+                fields["A库最新季"] = int(rec["upstream_max_season"])
             if detected_at is not None:
                 fields["检测时间"] = detected_at
 
@@ -331,6 +332,8 @@ def sync_table(
                 "中文简介": rec.get("overview_zh") or None,
                 "类型": _names_from_json(rec.get("genres_json")),
                 "播出平台": _names_from_json(rec.get("networks_json")),
+                "A库总集数": int(rec["upstream_total_eps"]) if rec.get("upstream_total_eps") is not None else None,
+                "TMDB总集数": int(rec["tmdb_total_episodes"]) if rec.get("tmdb_total_episodes") is not None else None,
             }
 
             # 只添加非空、非零的字段值到 fields
