@@ -26,7 +26,9 @@ from movietrace.db.schema import connect_database, initialize_database
 
 def cmd_daily_discover(args: argparse.Namespace) -> int:
     """Run the full multi-source daily discovery pipeline (P1.7-D)."""
+    import time as _time
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    _run_start = _time.monotonic()
     report_date = _parse_date_arg(args.date) or date.today()
     date_str = report_date.isoformat()
     dry_run = args.dry_run
@@ -36,8 +38,6 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
     print()
 
     secrets = load_secrets()
-    omdb_cfg = secrets.get("omdb") or {}
-    omdb_keys = omdb_cfg.get("api_keys") or ([omdb_cfg.get("api_key")] if omdb_cfg.get("api_key") else [])
     tmdb_token = _load_tmdb_token()
 
     # Read FP config for movie scheduling
@@ -48,8 +48,37 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
         fetch_movies = fp_cfg.get("movie_fetch_weekly", False)
     movie_weekly_day = fp_cfg.get("movie_weekly_day", 0)
 
-    # Step 1: Fetch TMDb trending
-    print("[1/6] Fetching TMDb trending...", end=" ", flush=True)
+    # ── Step 1: Fetch FlixPatrol data ────────────────────────────────────
+    print("[1/8] 拉取 FlixPatrol 榜单数据...")
+    fp_result: dict = {}
+    try:
+        from movietrace.pipeline.discovery import _ensure_fp_data
+        _fp_conn = connect_database(get_db_path())
+        fp_result = _ensure_fp_data(
+            _fp_conn, date_str,
+            db_path=get_db_path(),
+            fetch_movies=fetch_movies,
+            movie_weekly_day=movie_weekly_day,
+        )
+        _fp_conn.close()
+        if fp_result.get("error"):
+            fp_err = fp_result["error"]
+            print(f"  ❌ 失败: {fp_err}")
+        elif fp_result.get("actual_calls", 0) == 0 and fp_result.get("planned_calls", 0) == 0:
+            # Used cache (data already existed for date)
+            print(f"  ⚠️  使用缓存快照 ({date_str})")
+        else:
+            actual = fp_result.get("actual_calls", 0)
+            planned = fp_result.get("planned_calls", 0)
+            inserted = fp_result.get("inserted", 0)
+            print(f"  ✓  新鲜数据: {inserted} 条 (actual_calls={actual} planned={planned})")
+    except Exception as exc:
+        print(f"  ❌ 失败: {exc}")
+        fp_result = {"error": str(exc)}
+    print()
+
+    # ── Step 2: Fetch TMDb trending ──────────────────────────────────────
+    print("[2/8] 拉取 TMDb 热门数据...")
     tmdb_result = {}
     try:
         from movietrace.pipeline.tmdb_trending import fetch_and_store_tmdb_trending
@@ -60,13 +89,19 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
             snapshot_date=date_str,
             pages_per_endpoint=tmdb_pages,
         )
-        print(f"OK ({tmdb_result.get('inserted', 0)} items, {tmdb_pages}p)")
+        inserted = tmdb_result.get("inserted", 0)
+        errors = tmdb_result.get("errors", 0)
+        if errors > 0:
+            print(f"  ⚠️  {errors} 个端点失败, 新鲜数据 {inserted} 条")
+        else:
+            print(f"  ✓  新鲜数据: {inserted} 条 ({tmdb_pages}p)")
     except Exception as exc:
-        print(f"FAILED: {exc}")
+        print(f"  ❌ 失败: {exc}")
         tmdb_result = {"error": str(exc)}
+    print()
 
-    # Step 2: Fetch Trakt trending
-    print("[2/6] Fetching Trakt trending...", end=" ", flush=True)
+    # ── Step 3: Fetch Trakt trending ─────────────────────────────────────
+    print("[3/8] 拉取 Trakt 热门数据...")
     trakt_result = {}
     try:
         trakt_client_id = (secrets.get("trakt") or {}).get("client_id", "")
@@ -82,38 +117,17 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
                 shows_limit=trakt_shows,
                 movies_limit=trakt_movies,
             )
-            print(f"OK ({trakt_result.get('inserted', 0)} items, shows={trakt_shows} movies={trakt_movies})")
+            inserted = trakt_result.get("inserted", 0)
+            print(f"  ✓  新鲜数据: {inserted} 条 (剧集 {trakt_shows} · 电影 {trakt_movies})")
         else:
-            print("SKIPPED (no Trakt client_id)")
+            print("  ⚠️  跳过 (未配置 Trakt client_id)")
+            trakt_result = {}
     except Exception as exc:
-        print(f"FAILED: {exc}")
+        print(f"  ❌ 失败: {exc}")
         trakt_result = {"error": str(exc)}
+    print()
 
-    # Step 3: Fetch FlixPatrol data
-    print("[3/6] Fetching FlixPatrol data...", end=" ", flush=True)
-    fp_result: dict = {}
-    try:
-        from movietrace.pipeline.discovery import _ensure_fp_data
-        _fp_conn = connect_database(get_db_path())
-        fp_result = _ensure_fp_data(
-            _fp_conn, date_str,
-            db_path=get_db_path(),
-            fetch_movies=fetch_movies,
-            movie_weekly_day=movie_weekly_day,
-        )
-        _fp_conn.close()
-        if fp_result.get("error"):
-            print(f"FAILED: {fp_result['error']}")
-        else:
-            actual = fp_result.get("actual_calls", 0)
-            planned = fp_result.get("planned_calls", 0)
-            print(f"OK (actual_calls={actual} planned={planned})")
-    except Exception as exc:
-        print(f"FAILED: {exc}")
-        fp_result = {"error": str(exc)}
-
-    # Step 4: Merge + Enrich + Score + Write
-    print("[4/6] Merging + enriching...", end=" ", flush=True)
+    # ── Step 4-8: run_discovery (merge + enrich + score + write) ─────────
     fallback_cfg = cfg.get("source_fallback")
     try:
         from movietrace.pipeline.discovery import run_discovery
@@ -127,49 +141,151 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
             fallback_cfg=fallback_cfg,
         )
         stats = result.get("stats", {})
-        merged = stats.get("total_merged", 0)
-        omdb_enrich = stats.get("enrich_omdb", {})
-        fallback_used = stats.get("source_fallback_used", False)
-        fallback_note = " [FALLBACK]" if fallback_used else ""
-        print(f"OK (merged={merged} omdb_hit={omdb_enrich.get('enriched', 0)}{fallback_note})")
     except Exception as exc:
-        print(f"FAILED: {exc}")
+        print(f"❌ run_discovery 失败: {exc}")
         return 1
 
-    # Step 5: Scoring + filtering
-    print("[5/6] Scoring + filtering...", end=" ", flush=True)
-    try:
-        passed_count = stats.get("total_passed", 0)
-        total_merged = stats.get("total_merged", 0)
-        print(f"OK (passed P2+ = {passed_count} of {total_merged})")
-    except Exception as exc:
-        print(f"FAILED: {exc}")
-        return 1
-
-    # Step 6: Write discovery updates only. Baseline tracking has its own cadence.
-    written = stats.get("written", 0)
-    print(f"[6/6] Writing content_updates... OK (written={written})")
-
-    print()
-    # Source data status (P1.10-D)
     source_status = stats.get("source_status", {})
-    if source_status:
-        print("Source data:")
-        source_names = {"flixpatrol": "FlixPatrol", "tmdb": "TMDb", "trakt": "Trakt"}
-        for src_key, src_label in source_names.items():
-            ss = source_status.get(src_key, {})
-            status = ss.get("status", "unknown")
-            sdate = ss.get("snapshot_date")
-            if status == "fresh":
-                print(f"  {src_label}: fresh {sdate}")
-            elif status == "fallback":
-                print(f"  {src_label}: fallback from {sdate}")
-            elif status == "failed_no_fallback":
-                print(f"  {src_label}: failed_no_fallback")
-            else:
-                print(f"  {src_label}: {status}")
+
+    # ── Step 4: Source date fallback decisions ────────────────────────────
+    print("[4/8] 数据源日期回退决策...")
+    source_names = [("flixpatrol", "FlixPatrol"), ("tmdb", "TMDb"), ("trakt", "Trakt")]
+    for src_key, src_label in source_names:
+        ss = source_status.get(src_key, {})
+        status = ss.get("status", "unknown")
+        sdate = ss.get("snapshot_date")
+        if status == "fresh":
+            print(f"  {src_label:<11} → {sdate} (fresh)")
+        elif status == "fallback":
+            print(f"  {src_label:<11} → {sdate} (fallback)")
+        elif status == "failed_no_fallback":
+            print(f"  {src_label:<11} → 无可用数据 (failed_no_fallback)")
+        else:
+            print(f"  {src_label:<11} → {status}")
     print()
-    print(f"✓ Daily discovery complete (P0={stats.get('P0',0)} P1={stats.get('P1',0)} P2={stats.get('P2',0)})")
+
+    # ── Step 5: Merge ─────────────────────────────────────────────────────
+    total_merged = stats.get("total_merged", 0)
+    fp_ss = source_status.get("flixpatrol", {})
+    tmdb_ss = source_status.get("tmdb", {})
+    trakt_ss = source_status.get("trakt", {})
+    # Count rows used per source from the merge (these are from fetch results)
+    fp_rows = fp_result.get("inserted", 0) or fp_result.get("actual_calls", 0)
+    tmdb_rows = tmdb_result.get("inserted", 0)
+    trakt_rows = trakt_result.get("inserted", 0)
+    print(f"[5/8] 三源合并去重...")
+    print(f"  ✓  fp={fp_rows}  tmdb={tmdb_rows}  trakt={trakt_rows}  →  候选 {total_merged} 条")
+    print()
+
+    # ── Step 6: Enrichment ────────────────────────────────────────────────
+    print("[6/8] 候选内容丰富化...")
+    enrich_imdb = stats.get("enrich_imdb_backfill", {})
+    enrich_omdb = stats.get("enrich_omdb", {})
+    enrich_tmdb_detail = stats.get("enrich_tmdb_detail", {})
+
+    def _count_gzip_errors(errors_list) -> int:
+        """Count errors that are gzip-related."""
+        if not errors_list:
+            return 0
+        if isinstance(errors_list, int):
+            return 0
+        count = 0
+        for err in errors_list:
+            err_str = str(err).lower()
+            if "gzip" in err_str or "0x8b" in err_str or "utf-8" in err_str or "codec" in err_str:
+                count += 1
+        return count
+
+    # IMDb backfill line
+    imdb_backfilled = enrich_imdb.get("backfilled", enrich_imdb.get("enriched", 0))
+    imdb_total = enrich_imdb.get("total", total_merged)
+    imdb_errors_raw = enrich_imdb.get("errors", [])
+    imdb_error_count = imdb_errors_raw if isinstance(imdb_errors_raw, int) else len(imdb_errors_raw)
+    imdb_gzip = _count_gzip_errors(imdb_errors_raw if not isinstance(imdb_errors_raw, int) else [])
+    imdb_line = f"  IMDb ID 回填:  补全 {imdb_backfilled} / {imdb_total} 条"
+    if imdb_gzip > 0:
+        imdb_line += f"  ⚠️  共 {imdb_gzip} 条失败: utf-8 解码错误（gzip 未解压）"
+    elif imdb_error_count > 0:
+        imdb_line += f"  ⚠️  共 {imdb_error_count} 条失败"
+    print(imdb_line)
+
+    # OMDb line
+    omdb_enriched = enrich_omdb.get("enriched", 0)
+    omdb_api = enrich_omdb.get("api_calls", 0)
+    omdb_cache = enrich_omdb.get("cache_hits", 0)
+    omdb_errors_raw = enrich_omdb.get("errors", [])
+    omdb_error_count = omdb_errors_raw if isinstance(omdb_errors_raw, int) else len(omdb_errors_raw)
+    omdb_gzip = _count_gzip_errors(omdb_errors_raw if not isinstance(omdb_errors_raw, int) else [])
+    omdb_line = f"  OMDb 评分:     丰富化 {omdb_enriched} / {total_merged} 条  (API {omdb_api} 次 · 缓存命中 {omdb_cache} 次)"
+    if omdb_gzip > 0:
+        omdb_line += f"  ⚠️  共 {omdb_gzip} 条失败: gzip"
+    elif omdb_error_count > 0:
+        omdb_line += f"  ⚠️  共 {omdb_error_count} 条失败"
+    print(omdb_line)
+
+    # TMDb detail line
+    tmdb_enriched = enrich_tmdb_detail.get("enriched", 0)
+    tmdb_api = enrich_tmdb_detail.get("api_calls", 0)
+    tmdb_cache = enrich_tmdb_detail.get("cache_hits", 0)
+    tmdb_errors_raw = enrich_tmdb_detail.get("errors", [])
+    tmdb_error_count = tmdb_errors_raw if isinstance(tmdb_errors_raw, int) else len(tmdb_errors_raw)
+    tmdb_gzip = _count_gzip_errors(tmdb_errors_raw if not isinstance(tmdb_errors_raw, int) else [])
+    tmdb_detail_line = f"  TMDb 详情:     丰富化 {tmdb_enriched} / {total_merged} 条  (API {tmdb_api} 次 · 缓存命中 {tmdb_cache} 次)"
+    if tmdb_gzip > 0:
+        tmdb_detail_line += f"  ⚠️  共 {tmdb_gzip} 条失败: gzip"
+    elif tmdb_error_count > 0:
+        tmdb_detail_line += f"  ⚠️  共 {tmdb_error_count} 条失败"
+    print(tmdb_detail_line)
+    print()
+
+    # ── Step 7: Duration estimation ───────────────────────────────────────
+    print("[7/8] 预估引进时长计算...")
+    candidates = result.get("candidates", [])
+    total_passed = stats.get("total_passed", 0)
+    elapsed_step7 = _time.monotonic() - _run_start
+    # Calculate average duration for TV shows from passed candidates
+    tv_durations = [
+        c.get("row_duration_hours", 0)
+        for c in candidates
+        if c.get("media_type") in ("tv", "show")
+        and c.get("row_duration_hours", 0) > 0
+    ]
+    if tv_durations:
+        avg_episodes = sum(tv_durations) / len(tv_durations)
+        print(f"  ✓  {total_passed} 条候选处理完成 ({elapsed_step7:.1f}s)")
+        print(f"     电影: 固定 2.0h / 部")
+        print(f"     剧集: 平均缺 {avg_episodes:.0f} 集 / 约 {avg_episodes:.0f}h per 条目")
+    else:
+        print(f"  ✓  {total_passed} 条候选处理完成 ({elapsed_step7:.1f}s)")
+        print(f"     电影: 固定 2.0h / 部")
+        print(f"     剧集: N/A (dry-run 或无剧集候选)")
+    print()
+
+    # ── Step 8: Score + filter + write ────────────────────────────────────
+    print("[8/8] 热度打分 · 过滤 · 写入...")
+    soap_count = sum(1 for c in result.get("all_scored", []) if c.get("is_soap"))
+    total_scored = stats.get("total_merged", 0)
+    p0 = stats.get("P0", 0)
+    p1 = stats.get("P1", 0)
+    p2 = stats.get("P2", 0)
+    written = stats.get("written", 0)
+    auto_registered = stats.get("auto_registered", 0)
+    if soap_count:
+        print(f"  ✓  打分 {total_scored} 条，Soap 自动降权 {soap_count} 条")
+    else:
+        print(f"  ✓  打分 {total_scored} 条")
+    print(f"  ✓  通过 P2+ 阈值: {total_passed} / {total_scored} 条  (P0={p0}  P1={p1}  P2={p2})")
+    if auto_registered:
+        print(f"  ✓  新注册 {auto_registered} 条，写入 content_updates {written} 条")
+    else:
+        print(f"  ✓  写入 content_updates {written} 条")
+    print()
+
+    # ── Run summary ────────────────────────────────────────────────────────
+    _elapsed = _time.monotonic() - _run_start
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print("=== 运行摘要 ===")
+    print(f"结束: {now_str} +08  耗时: {_elapsed:.0f}s")
 
     if getattr(args, "stats_out", None):
         discover_out = {
@@ -185,6 +301,10 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
                 "P2": stats.get("P2", 0),
             },
             "source_status": stats.get("source_status", {}),
+            # Enrichment detail fields (P1.37)
+            "enrich_imdb_backfill": stats.get("enrich_imdb_backfill", {}),
+            "enrich_omdb": stats.get("enrich_omdb", {}),
+            "enrich_tmdb_detail": stats.get("enrich_tmdb_detail", {}),
         }
         with open(args.stats_out, "w") as _f:
             json.dump(discover_out, _f, ensure_ascii=False, indent=2)

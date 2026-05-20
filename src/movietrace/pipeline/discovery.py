@@ -802,16 +802,26 @@ def _compute_discovery_stats(
     passed_ids = {c.get("content_id") for c in passed}
     filtered = [c for c in all_scored if c.get("content_id") not in passed_ids]
     filtered_out = sorted(filtered, key=lambda c: c.get("hot_score", 0), reverse=True)[:10]
+
+    # Enrichment detail fields — each sub-dict has {enriched/backfilled, api_calls, cache_hits, errors, total}
+    enrich_imdb = enrich_stats.get("imdb_backfill", {})
+    enrich_omdb = enrich_stats.get("omdb", {})
+    enrich_tmdb_detail = enrich_stats.get("tmdb_detail", {})
+
     return {
         "total_merged": len(all_scored),
         "total_passed": len(passed),
         "P0": p0, "P1": p1, "P2": p2,
         "filtered_out": filtered_out,
-        "enrich_omdb": enrich_stats.get("omdb", {}),
-        "enrich_tmdb_detail": enrich_stats.get("tmdb_detail", {}),
-        "enrich_imdb_backfill": enrich_stats.get("imdb_backfill", {}),
+        # Enrichment detail — full sub-dicts for CLI/notify formatting
+        "enrich_omdb": enrich_omdb,
+        "enrich_tmdb_detail": enrich_tmdb_detail,
+        "enrich_imdb_backfill": enrich_imdb,
+        # FP fetch stats
         "fp_planned": (fp_stats or {}).get("planned_calls", 0),
         "fp_actual": (fp_stats or {}).get("actual_calls", 0),
+        "fp_error": (fp_stats or {}).get("error"),
+        "fp_inserted": (fp_stats or {}).get("inserted", 0),
     }
 
 

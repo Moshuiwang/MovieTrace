@@ -155,6 +155,44 @@ def _build_card(
             "text": {"tag": "lark_md", "content": f"**⚠️ 异常提醒**\n{warn_body}"},
         })
 
+    # ── Section 6: run progress summary (P1.37) ──────────────────────────
+    source_status_prog = discover_stats.get("source_status", {})
+    enrich_imdb = discover_stats.get("enrich_imdb_backfill", {})
+    enrich_omdb_d = discover_stats.get("enrich_omdb", {})
+    enrich_tmdb_d = discover_stats.get("enrich_tmdb_detail", {})
+
+    def _prog_src_tag(src_key: str, fetched: int) -> str:
+        info = source_status_prog.get(src_key, {})
+        if info.get("status") == "fallback":
+            return f"⚠️ 缓存({info.get('snapshot_date', '?')}, {fetched}条)"
+        if info.get("status") == "failed_no_fallback":
+            return "❌ 无可用数据"
+        return f"✓ {fetched}条新鲜"
+
+    fp_fetched_prog = discover_stats.get("flixpatrol_fetched", 0)
+    tmdb_fetched_prog = discover_stats.get("tmdb_fetched", 0)
+    trakt_fetched_prog = discover_stats.get("trakt_fetched", 0)
+
+    imdb_backfilled = enrich_imdb.get("backfilled", enrich_imdb.get("enriched", 0))
+    imdb_total_prog = enrich_imdb.get("total", total_merged)
+    omdb_enriched = enrich_omdb_d.get("enriched", 0)
+    tmdb_enriched = enrich_tmdb_d.get("enriched", 0)
+
+    prog_lines = [
+        f"**⚙️ 运行进度**",
+        f"[1/8] FlixPatrol: {_prog_src_tag('flixpatrol', fp_fetched_prog)}",
+        f"[2/8] TMDb: {_prog_src_tag('tmdb', tmdb_fetched_prog)}",
+        f"[3/8] Trakt: {_prog_src_tag('trakt', trakt_fetched_prog)}",
+        f"[5/8] 合并: {total_merged}条候选",
+        f"[6/8] 丰富化: IMDb {imdb_backfilled}/{imdb_total_prog} · OMDb {omdb_enriched}/{total_merged} · TMDb详情 {tmdb_enriched}/{total_merged}",
+        f"[8/8] 写入: P0={p0} P1={p1} P2={p2}, 共写入{written}条",
+    ]
+    elements.append({"tag": "hr"})
+    elements.append({
+        "tag": "div",
+        "text": {"tag": "lark_md", "content": "\n".join(prog_lines)},
+    })
+
     # ── Action buttons ────────────────────────────────────────────────────
     actions: list[dict] = []
     if doc_url:

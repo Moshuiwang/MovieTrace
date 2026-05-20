@@ -347,6 +347,43 @@ class TestComputeDiscoveryStats:
         assert stats["P1"] == 2
         assert stats["P2"] == 1
 
+    def test_enrichment_detail_fields_present(self):
+        """P1.37: _compute_discovery_stats must include enrich_imdb_backfill/omdb/tmdb_detail."""
+        scored = [{"hot_score": 80, "priority": "P1"}]
+        passed = scored[:]
+        enrich_stats = {
+            "imdb_backfill": {"backfilled": 5, "total": 10, "errors": []},
+            "omdb": {"enriched": 8, "api_calls": 3, "cache_hits": 5, "errors": 0},
+            "tmdb_detail": {"enriched": 7, "api_calls": 2, "cache_hits": 5, "errors": 0},
+        }
+        stats = _compute_discovery_stats(scored, passed, enrich_stats)
+        assert "enrich_imdb_backfill" in stats
+        assert "enrich_omdb" in stats
+        assert "enrich_tmdb_detail" in stats
+        assert stats["enrich_imdb_backfill"]["backfilled"] == 5
+        assert stats["enrich_omdb"]["enriched"] == 8
+        assert stats["enrich_tmdb_detail"]["enriched"] == 7
+
+    def test_enrichment_detail_empty_when_not_run(self):
+        """P1.37: enrich fields default to empty dict when enrichment not run."""
+        scored = [{"hot_score": 60, "priority": "P2"}]
+        passed = scored[:]
+        stats = _compute_discovery_stats(scored, passed, {})
+        assert stats["enrich_imdb_backfill"] == {}
+        assert stats["enrich_omdb"] == {}
+        assert stats["enrich_tmdb_detail"] == {}
+
+    def test_fp_stats_fields_present(self):
+        """P1.37: fp_error and fp_inserted should be included in stats."""
+        scored = []
+        passed = []
+        fp_stats = {"planned_calls": 2, "actual_calls": 2, "inserted": 120, "error": None}
+        stats = _compute_discovery_stats(scored, passed, {}, fp_stats)
+        assert stats["fp_planned"] == 2
+        assert stats["fp_actual"] == 2
+        assert stats["fp_inserted"] == 120
+        assert stats["fp_error"] is None
+
 
 # ── Auto-register canonical_item tests (P1.9) ───────────────────────────
 
