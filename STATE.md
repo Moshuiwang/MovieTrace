@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-19 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `chore/p1.34-ci-resilience`
-**测试：** 617 passed（~74s · +4 feishu sync 测试）
+**最后更新：** 2026-05-20 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
+**测试：** 585 passed（P1.37 合并后，含新增 test_notify.py 5 个测试）
 **Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段；P1.31 SCHEMA_VERSION 常量同步到 17）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -42,10 +42,17 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** P1.34 CI 韧性补强（分支 `chore/p1.34-ci-resilience`，子 agent Sonnet 4.6 接手编码）
-- **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）；Trakt API 403（token 失效？速率限制？，待排查）
+- **进行中：** 无
+- **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 - **待决策：** 无
 - **下一任务：** 接入 Logtail 收集生产日志（独立任务包）
+
+**近期完成（P1.35–P1.37）：**
+| 编号 | 文件 | 说明 | 状态 |
+|---|---|---|---|
+| P1.35 | [p1.35-fix-gzip-http.md](docs/tasks/p1.35-fix-gzip-http.md) | HTTP get_json() gzip 解压修复 | ✅ 已合并 PR #33 |
+| P1.36 | [p1.36-fp-fetch-lift-out.md](docs/tasks/p1.36-fp-fetch-lift-out.md) | FP fetch 提出到 CLI 层 | ✅ 已合并 PR #34 |
+| P1.37 | [p1.37-progress-format-notify.md](docs/tasks/p1.37-progress-format-notify.md) | [1/8] 进度格式 + enrichment 细节 + 飞书卡片 | ✅ 已合并 PR #35 |
 
 ## Review 跟进项（push 前发现的 minor，非阻塞）
 
