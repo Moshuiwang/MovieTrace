@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import json
 import re
 import time
@@ -38,7 +39,10 @@ def get_json(
     try:
         with urlopen(request, timeout=timeout) as response:
             http_status = response.status
-            body = response.read().decode("utf-8")
+            raw = response.read()
+            if response.headers.get("Content-Encoding") == "gzip":
+                raw = gzip.decompress(raw)
+            body = raw.decode("utf-8")
         result = json.loads(body)
         elapsed_ms = int((time.monotonic() - start) * 1000)
         _log_success(log_context, http_status, elapsed_ms, result)
