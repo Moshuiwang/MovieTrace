@@ -49,7 +49,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
     movie_weekly_day = fp_cfg.get("movie_weekly_day", 0)
 
     # Step 1: Fetch TMDb trending
-    print("[1/5] Fetching TMDb trending...", end=" ", flush=True)
+    print("[1/6] Fetching TMDb trending...", end=" ", flush=True)
     tmdb_result = {}
     try:
         from movietrace.pipeline.tmdb_trending import fetch_and_store_tmdb_trending
@@ -65,8 +65,8 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
         print(f"FAILED: {exc}")
         tmdb_result = {"error": str(exc)}
 
-    # Step 3: Fetch Trakt trending
-    print("[2/5] Fetching Trakt trending...", end=" ", flush=True)
+    # Step 2: Fetch Trakt trending
+    print("[2/6] Fetching Trakt trending...", end=" ", flush=True)
     trakt_result = {}
     try:
         trakt_client_id = (secrets.get("trakt") or {}).get("client_id", "")
@@ -89,8 +89,31 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
         print(f"FAILED: {exc}")
         trakt_result = {"error": str(exc)}
 
+    # Step 3: Fetch FlixPatrol data
+    print("[3/6] Fetching FlixPatrol data...", end=" ", flush=True)
+    fp_result: dict = {}
+    try:
+        from movietrace.pipeline.discovery import _ensure_fp_data
+        _fp_conn = connect_database(get_db_path())
+        fp_result = _ensure_fp_data(
+            _fp_conn, date_str,
+            db_path=get_db_path(),
+            fetch_movies=fetch_movies,
+            movie_weekly_day=movie_weekly_day,
+        )
+        _fp_conn.close()
+        if fp_result.get("error"):
+            print(f"FAILED: {fp_result['error']}")
+        else:
+            actual = fp_result.get("actual_calls", 0)
+            planned = fp_result.get("planned_calls", 0)
+            print(f"OK (actual_calls={actual} planned={planned})")
+    except Exception as exc:
+        print(f"FAILED: {exc}")
+        fp_result = {"error": str(exc)}
+
     # Step 4: Merge + Enrich + Score + Write
-    print("[3/5] Merging + enriching...", end=" ", flush=True)
+    print("[4/6] Merging + enriching...", end=" ", flush=True)
     fallback_cfg = cfg.get("source_fallback")
     try:
         from movietrace.pipeline.discovery import run_discovery
@@ -100,6 +123,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
             movie_weekly_day=movie_weekly_day,
             tmdb_fetch_result=tmdb_result,
             trakt_fetch_result=trakt_result,
+            fp_fetch_result=fp_result,
             fallback_cfg=fallback_cfg,
         )
         stats = result.get("stats", {})
@@ -113,7 +137,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
         return 1
 
     # Step 5: Scoring + filtering
-    print("[4/5] Scoring + filtering...", end=" ", flush=True)
+    print("[5/6] Scoring + filtering...", end=" ", flush=True)
     try:
         passed_count = stats.get("total_passed", 0)
         total_merged = stats.get("total_merged", 0)
@@ -122,9 +146,9 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
         print(f"FAILED: {exc}")
         return 1
 
-    # Step 5: Write discovery updates only. Baseline tracking has its own cadence.
+    # Step 6: Write discovery updates only. Baseline tracking has its own cadence.
     written = stats.get("written", 0)
-    print(f"[5/5] Writing content_updates... OK (written={written})")
+    print(f"[6/6] Writing content_updates... OK (written={written})")
 
     print()
     # Source data status (P1.10-D)
@@ -151,7 +175,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
         discover_out = {
             "tmdb_fetched": tmdb_result.get("inserted", 0),
             "trakt_fetched": trakt_result.get("inserted", 0),
-            "flixpatrol_fetched": 0,
+            "flixpatrol_fetched": fp_result.get("actual_calls", 0),
             "total_merged": stats.get("total_merged", 0),
             "total_passed": stats.get("total_passed", 0),
             "written": stats.get("written", 0),

@@ -273,6 +273,7 @@ def run_discovery(
     movie_weekly_day: int = 0,
     tmdb_fetch_result: dict | None = None,
     trakt_fetch_result: dict | None = None,
+    fp_fetch_result: dict | None = None,
     fallback_cfg: dict | None = None,
 ) -> dict:
     """End-to-end multi-source discovery pipeline (P1.8/P1.10).
@@ -290,10 +291,14 @@ def run_discovery(
 
     try:
         # Step 1: Ensure FP data
-        fp_stats = _ensure_fp_data(
-            conn, snapshot_date, db_path=db_path,
-            fetch_movies=fetch_movies, movie_weekly_day=movie_weekly_day,
-        )
+        if fp_fetch_result is not None:
+            # FP fetch was performed at CLI layer; use the passed result directly
+            fp_stats = fp_fetch_result
+        else:
+            fp_stats = _ensure_fp_data(
+                conn, snapshot_date, db_path=db_path,
+                fetch_movies=fetch_movies, movie_weekly_day=movie_weekly_day,
+            )
         fp_error = fp_stats.get("error") if isinstance(fp_stats, dict) else None
 
         # Step 1.5: Resolve source dates with fallback (P1.10-D)
