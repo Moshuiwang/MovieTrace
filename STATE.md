@@ -54,6 +54,15 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.36 | [p1.36-fp-fetch-lift-out.md](docs/tasks/p1.36-fp-fetch-lift-out.md) | FP fetch 提出到 CLI 层 | ✅ 已合并 PR #34 |
 | P1.37 | [p1.37-progress-format-notify.md](docs/tasks/p1.37-progress-format-notify.md) | [1/8] 进度格式 + enrichment 细节 + 飞书卡片 | ✅ 已合并 PR #35 |
 
+## 待修 Bug（已确认，待任务包）
+
+| # | 位置 | 现象 | 根因 |
+|---|---|---|---|
+| B-01 | `notify.py _build_card()` + `discover_stats` | 飞书卡片 [1/8][2/8] 缓存条数显示 0 | stats JSON 只存新抓取数量，fallback 时为 0，未记录缓存快照实际条数 |
+| B-02 | `notify.py _build_card()` `top_items` | 重点内容重复出现（The Boys × 2，FROM × 2） | top_items 未按标题去重，同一剧多 content_update_id 导致 |
+
+---
+
 ## Review 跟进项（push 前发现的 minor，非阻塞）
 
 1. **P1.21.6 测试空白** — `batch_delete_records` 已补 4 个单测 ✓；`sync_gap_table` step 6 仍无自动化覆盖（需飞书）
