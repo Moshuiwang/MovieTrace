@@ -8,6 +8,7 @@
 ## 必做项（按顺序）
 
 - [ ] **STATE.md** — 更新当前阶段、进行中任务、阻塞项、待用户决策、最近重大决策。时间戳精确到分钟（如 `2026-05-14 10:34 +08`）
+- [ ] **PLAN.md** — 本次合并的任务包从"即将立项"表删除；Bug 只在 STATE.md 维护，不在 PLAN.md 重复
 - [ ] **任务包同步** — 如本次新增/修改任务包或任务依赖，确认 `STATE.md` 已列出任务包链接、执行顺序和待用户决策
 - [ ] **日报** — 写 `journal/YYYY-MM-DD_HHMM_<tool>_<model>.md`（格式见 [journal-spec.md](journal-spec.md)，2026-05-12 起命名加入 HHMM。**所有时间字段精确到分钟**，不可只写日期）
 - [ ] **ADR** — 如有新决策或状态变更（Proposed→Accepted 等），更新对应 ADR 和 [docs/decisions/README.md](../decisions/README.md) 索引表

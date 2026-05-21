@@ -38,7 +38,7 @@
 
 所有命令在 [`docs/context_map.md`](docs/context_map.md) § 3 有完整索引。
 
-**V1 不做**（详见 [`SCOPE.md`](SCOPE.md)）：用户画像、目标用户契合度评估（V2 LLM 范围）；新集级别（episode）更新追踪（V2 backlog）；自动给供应商发起采购单。
+**V1 不做**（详见 [`.claude/rules/10-scope-guardrails.md`](.claude/rules/10-scope-guardrails.md)）：用户画像、目标用户契合度评估（V2 LLM 范围）；新集级别（episode）更新追踪（V2 backlog）；自动给供应商发起采购单。
 
 ---
 
@@ -110,7 +110,7 @@ A 库（upstream_programs/episodes，每次手动 import 刷新）
 
 | 你是 | 先读 | 然后看 |
 |------|------|--------|
-| 第一次接手 | 本文件 → [`SCOPE.md`](SCOPE.md) → [`docs/context_map.md`](docs/context_map.md) | [`docs/operations/runbook.md`](docs/operations/runbook.md) |
+| 第一次接手 | 本文件 → [`docs/context_map.md`](docs/context_map.md) | [`docs/operations/runbook.md`](docs/operations/runbook.md) |
 | 运营 / 使用者 | 本文件 | [`docs/operations/feishu_feedback_spec.md`](docs/operations/feishu_feedback_spec.md)（飞书字段怎么填）|
 | 开发者改代码 | [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) → [`STATE.md`](STATE.md) → [`docs/context_map.md`](docs/context_map.md) | [`docs/tasks/TEMPLATE.md`](docs/tasks/TEMPLATE.md) + [`docs/decisions/`](docs/decisions/) |
 | AI 协作 | [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md)（**强制 12 条规则**）| [`STATE.md`](STATE.md) → 任务包 |

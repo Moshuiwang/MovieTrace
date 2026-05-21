@@ -11,11 +11,11 @@
 | 文件 | 用途 | 何时读 |
 |------|------|--------|
 | [`STATE.md`](../STATE.md) | 当前阶段、最近完成、进行中任务、review 跟进项 | **每次会话启动必读**（第 1 步）|
-| [`SCOPE.md`](../SCOPE.md) | V1/V2 范围边界，"做什么不做什么" | 启动必读（防止越界）|
+| [`PLAN.md`](../PLAN.md) | 近期任务队列、待修 Bug、V2 触发条件 | 启动后，想知道"接下来做什么"时读 |
 | [`CLAUDE.md`](../CLAUDE.md) | Claude Code 协作宪法（12 条规则 + 4 易踩坑）| AI 入口 |
 | [`AGENTS.md`](../AGENTS.md) | 指针入口（→ CLAUDE.md），Codex / Cursor / Cline 等工具读取 | AI 入口 |
 
-**预算：** 启动默认 3 个文件（STATE + SCOPE + 本文件）≈ 600 行。
+**预算：** 启动默认 2 个文件（STATE + 本文件）≈ 500 行；PLAN.md 按需读取。
 
 ---
 
@@ -39,7 +39,7 @@
 
 | 场景 | 文件 | 为什么 |
 |------|------|--------|
-| V1/V2 边界 | [`SCOPE.md`](../SCOPE.md) + [`docs/product_roadmap.md`](product_roadmap.md) | 定位和路线图 |
+| V1/V2 边界 | [`docs/product_roadmap.md`](product_roadmap.md) · [`.claude/rules/10-scope-guardrails.md`](../.claude/rules/10-scope-guardrails.md) | 路线图 + 越界硬防线 |
 | 当前需求基线 | [`docs/requirements.md`](requirements.md) | V3 版需求（含 V1.5 翻转）|
 | 架构决策 | [`docs/decisions/`](decisions/) | 15 篇 ADR，关键看 0007（系统翻转）/ 0012（content_updates 事件化）/ 0014（schema 清理）/ 0015（飞书文档导入）|
 | 飞书运营同步背景 | [`docs/notes/feishu_ops_sync_requirements.md`](notes/feishu_ops_sync_requirements.md) | 运行观察期新增需求草案 |

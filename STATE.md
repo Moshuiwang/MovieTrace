@@ -2,12 +2,12 @@
 
 > AI 冷启动 3 秒回答：现在停在哪儿、有没有阻塞、下一步做什么。
 > **更新策略：** 每次 commit 前更新；"近期变更"段只滚动保留 3 条，旧条目随 commit 移交 `journal/` + `git log`。
-> **不在此处：** 历史 Phase → [`docs/history/phase1_state_archive.md`](docs/history/phase1_state_archive.md)（先 `rg`）· 技术地图 → [`docs/context_map.md`](docs/context_map.md) · 日常运行 → [`docs/operations/runbook.md`](docs/operations/runbook.md)。
+> **不在此处：** 历史 Phase → [`docs/history/phase1_state_archive.md`](docs/history/phase1_state_archive.md)（先 `rg`）· 技术地图 → [`docs/context_map.md`](docs/context_map.md) · 日常运行 → [`docs/operations/runbook.md`](docs/operations/runbook.md) · **近期规划** → [`PLAN.md`](PLAN.md)。
 
 ---
 
-**最后更新：** 2026-05-20 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
-**测试：** 585 passed（P1.37 合并后，含新增 test_notify.py 5 个测试）
+**最后更新：** 2026-05-21 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `main`
+**测试：** 591 passed（P1.40+P1.41 合并后，+6 新测试）
 **Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段；P1.31 SCHEMA_VERSION 常量同步到 17）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -26,16 +26,21 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.31 | [p1.31-db-migrate-on-deploy.md](docs/tasks/p1.31-db-migrate-on-deploy.md) | 事故修复 | ✅ 已合并 (PR #17 #18)，生产 migration 017 applied |
 | P1.32 | [p1.32-manual-pipeline-workflow.md](docs/tasks/p1.32-manual-pipeline-workflow.md) | 事故善后 | ✅ 已合并 (PR #19)，今日 export+sync 补跑成功 |
 | P1.33 | — | issue #21 | ✅ 已合并 (PR #24)，飞书 A库最新季整数化 + A库/TMDB总集数字段 |
-| P1.34 | [p1.34-ci-resilience.md](docs/tasks/p1.34-ci-resilience.md) | 流程审视 | ⏳ 进行中（CI concurrency 拆分 + deploy 冒烟 + auto-merge dispatch 告警） |
+| P1.34 | [p1.34-ci-resilience.md](docs/tasks/p1.34-ci-resilience.md) | 流程审视 | ✅ 已合并 (PR #31)，CI concurrency 拆分 + deploy 冒烟 + auto-merge dispatch 告警 |
+| P1.35 | [p1.35-fix-gzip-http.md](docs/tasks/p1.35-fix-gzip-http.md) | HTTP bug | ✅ 已合并 (PR #33)，HTTP get_json() gzip 解压修复 |
+| P1.36 | [p1.36-fp-fetch-lift-out.md](docs/tasks/p1.36-fp-fetch-lift-out.md) | 重构 | ✅ 已合并 (PR #34)，FP fetch 提出到 CLI 层 |
+| P1.37 | [p1.37-progress-format-notify.md](docs/tasks/p1.37-progress-format-notify.md) | 进度通知 | ✅ 已合并 (PR #35)，[1/8] 进度格式 + enrichment 细节 + 飞书卡片进度 section |
+| P1.40 | [p1.40-fix-json-export-missing-fields.md](docs/tasks/p1.40-fix-json-export-missing-fields.md) | bug fix | ✅ 已合并 (PR #36)，format_json 补充 8 个缺失字段（中文名/平台/集数等）|
+| P1.41 | [p1.41-feishu-type-label-field.md](docs/tasks/p1.41-feishu-type-label-field.md) | feat | ✅ 已合并 (PR #37 #38)，热点发现子表新增"类型标签"多选字段（TMDb genre 名称）|
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
-- 2026-05-19 **P1.34 CI 韧性补强**（concurrency 拆分防 deploy 腰斩 / deploy 末尾 import 冒烟 / auto-merge dispatch 失败飞书告警）
-- 2026-05-19 **CI/CD 深度修复**（PR #25-29）：auto-merge 全链路打通——`--auto`+轮询/`allow_auto_merge` 仓库开关/`workflows: write` 阻断 workflow_run 根因/notify 跳过 cancelled 误报；含 workflow 文件的 PR 改为手动合并（安全）
-- 2026-05-19 **CD 修复**（auto-merge.yml: 删除 `mergeable` null 误判检查，合并后自动触发 main CI deploy，告别手动 `gh workflow run`；CLAUDE.md 补 Compact Instructions + PR 后立即切 main 规则）
+- 2026-05-21 **P1.40 export_writer 缺字段修复**（format_json 补充 8 个字段：title_zh/overview_zh/genres_json/networks_json/upstream_total_eps/tmdb_total_episodes/content_type/match_confidence_low；464/465 记录有中文名；PR #36）
+- 2026-05-21 **P1.41 飞书类型标签字段**（新增 _compute_type_labels()，热点发现子表写入 TMDb genre 名称多选；修复 fields_extra["类型"] 覆盖 content_type 的旧 bug；dev 验证 465 条全量 sync 通过；PR #37 #38）
+- 2026-05-21 **dev secrets 修复**（discovery_table_id 从说明文档表 tblMtBnBcOosDK6e 改为正确数据表 tbl19pDsJG2aLul4）
 - 2026-05-19 **P1.33 飞书表格优化**（A库最新季改整数型；新增 A库总集数/TMDB总集数字段；+4 测试，617 passed）
 - 2026-05-19 **P1.30 sync_table IM 通知 + 工作流配套**（auto-ensure 触发 send_text / send_alert；GitHub 分支保护 main；feature branch + PR 工作流；auto-merge 大小写修复；pre-push hook）；测试 609 passed
 - 2026-05-18~19 **P1.25-P1.29 批量合并**（IMDb URL tt 前缀 / 在播最新季 / 原始评分 / zh-CN 字段 + migration 017 / 日报章节扩充）；4 个 issue 已关闭
@@ -45,16 +50,12 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 - **进行中：** 无
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 - **待决策：** 无
-- **下一任务：** 接入 Logtail 收集生产日志（独立任务包）
+- **下一任务：** 见 [`PLAN.md`](PLAN.md)（P1.38 修复飞书卡片 Bug B-01/B-02）
+- **P1.39 已完成**：生产日志 SSH 拉取方案已落地（`scripts/fetch-prod-logs.sh`），Logtail 接入决策放弃，从 PLAN.md 移除
 
-**近期完成（P1.35–P1.37）：**
-| 编号 | 文件 | 说明 | 状态 |
-|---|---|---|---|
-| P1.35 | [p1.35-fix-gzip-http.md](docs/tasks/p1.35-fix-gzip-http.md) | HTTP get_json() gzip 解压修复 | ✅ 已合并 PR #33 |
-| P1.36 | [p1.36-fp-fetch-lift-out.md](docs/tasks/p1.36-fp-fetch-lift-out.md) | FP fetch 提出到 CLI 层 | ✅ 已合并 PR #34 |
-| P1.37 | [p1.37-progress-format-notify.md](docs/tasks/p1.37-progress-format-notify.md) | [1/8] 进度格式 + enrichment 细节 + 飞书卡片 | ✅ 已合并 PR #35 |
+## 待修 Bug（已确认，纳入 P1.38）
 
-## 待修 Bug（已确认，待任务包）
+详情见 [`PLAN.md`](PLAN.md)。
 
 | # | 位置 | 现象 | 根因 |
 |---|---|---|---|

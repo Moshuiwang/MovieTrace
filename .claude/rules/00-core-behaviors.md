@@ -57,6 +57,7 @@ include: ["**/*"]
 11. 没有运行验证命令不声明完成
 12. 完成后必须按 [`docs/workflow/report-format.md`](../../docs/workflow/report-format.md) 汇报
 13. 模型名与运行环境**每次从 system prompt 自取**，禁止沿用上一会话
+14. **PR 必须最后创建，不得提前开**——有 open PR 时 push 直接触发 CI → auto-merge → 上线。顺序：`git pull` → 开分支 → 写代码 → `commit + push` → 汇报 → 等用户说"开 PR" → `gh pr create`
 
 ## 验证与完成判定
 
