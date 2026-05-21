@@ -230,5 +230,51 @@ class ExportWriterTest(unittest.TestCase):
         self.assertIn("# MovieTrace", md_content)
 
 
+    def test_export_json_includes_zh_and_network_fields(self):
+        from movietrace.reports.export_writer import export_baseline_updates
+        import json as _json
+
+        self._seed_content_update()
+        self.conn.execute(
+            """update canonical_items set
+                title_zh = '测试中文名',
+                overview_zh = '简介',
+                genres_json = '[{"id":18,"name":"Drama"}]',
+                networks_json = '[{"id":1,"name":"HBO"}]'
+            where title = 'Test Series S01'"""
+        )
+        self.conn.commit()
+
+        out_dir = Path(self.tmpdir.name) / "exports_zh"
+        result = export_baseline_updates(
+            db_path=str(self.db_path), output_dir=str(out_dir), days=30
+        )
+
+        records = _json.loads(Path(result["json_path"]).read_text())
+        self.assertGreater(len(records), 0)
+        r = records[0]
+        for key in ("title_zh", "overview_zh", "genres_json", "networks_json"):
+            self.assertIn(key, r)
+        self.assertEqual(r["title_zh"], "测试中文名")
+
+    def test_export_json_includes_content_type_and_confidence(self):
+        from movietrace.reports.export_writer import export_baseline_updates
+        import json as _json
+
+        self._seed_content_update()
+
+        out_dir = Path(self.tmpdir.name) / "exports_ct"
+        result = export_baseline_updates(
+            db_path=str(self.db_path), output_dir=str(out_dir), days=30
+        )
+
+        records = _json.loads(Path(result["json_path"]).read_text())
+        self.assertGreater(len(records), 0)
+        r = records[0]
+        self.assertIn("content_type", r)
+        self.assertIn("match_confidence_low", r)
+        self.assertIn(r["content_type"], ("tv", "movie"))
+
+
 if __name__ == "__main__":
     unittest.main()
