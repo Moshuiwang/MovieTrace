@@ -9,6 +9,7 @@ import tempfile
 from movietrace.feishu.sync import (
     _build_imdb_url,
     _build_tmdb_url,
+    _compute_type_labels,
     sync_table,
 )
 
@@ -827,3 +828,25 @@ class TestSyncTableEnsureNotification:
 
         mock_text.assert_not_called()
         mock_alert.assert_not_called()
+
+
+class TestComputeTypeLabels:
+    """P1.41: _compute_type_labels() unit tests."""
+
+    def test_compute_type_labels_movie(self):
+        rec = {"content_type": "movie", "genres_json": '[{"id":28,"name":"Action"}]'}
+        assert _compute_type_labels(rec) == ["movie", "Action"]
+
+    def test_compute_type_labels_tv_multi_genre(self):
+        rec = {
+            "content_type": "tv",
+            "genres_json": '[{"id":18,"name":"Drama"},{"id":878,"name":"Science Fiction"}]',
+        }
+        assert _compute_type_labels(rec) == ["tv", "Drama", "Science Fiction"]
+
+    def test_compute_type_labels_no_genres(self):
+        rec = {"content_type": "tv", "genres_json": None}
+        assert _compute_type_labels(rec) == ["tv"]
+
+    def test_compute_type_labels_empty_rec(self):
+        assert _compute_type_labels({}) == []

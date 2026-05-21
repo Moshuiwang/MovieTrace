@@ -335,6 +335,9 @@ def sync_table(
                 "A库总集数": int(rec["upstream_total_eps"]) if rec.get("upstream_total_eps") is not None else None,
                 "TMDB总集数": int(rec["tmdb_total_episodes"]) if rec.get("tmdb_total_episodes") is not None else None,
             }
+            labels = _compute_type_labels(rec)
+            if labels:
+                fields_extra["类型标签"] = labels
 
             # 只添加非空、非零的字段值到 fields
             for k, v in fields_extra.items():
@@ -457,6 +460,25 @@ def _derive_content_type(rec: dict) -> str:
         if ":tv:" in cid:
             return "tv"
     return "unknown"
+
+
+def _compute_type_labels(rec: dict) -> list[str]:
+    """Compute 类型标签 multi-select values: content_type + TMDb genre names."""
+    labels: list[str] = []
+    ct = rec.get("content_type") or ""
+    if ct:
+        labels.append(ct)
+    genres_raw = rec.get("genres_json")
+    if genres_raw:
+        try:
+            genres = json.loads(genres_raw) if isinstance(genres_raw, str) else genres_raw
+            for g in genres:
+                name = g.get("name", "") if isinstance(g, dict) else ""
+                if name and name not in labels:
+                    labels.append(name)
+        except (ValueError, TypeError):
+            pass
+    return labels
 
 
 def _names_from_json(raw: str | None) -> str | None:
