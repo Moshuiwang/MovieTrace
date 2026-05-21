@@ -591,6 +591,14 @@ def format_json(updates: list[dict]) -> str:
             "upstream_max_season": upstream,
             "source_summary_json": u.get("source_summary_json"),
             "imdb_id": u.get("imdb_id"),
+            "content_type": u.get("content_type"),
+            "match_confidence_low": u.get("match_confidence_low"),
+            "title_zh": u.get("title_zh"),
+            "overview_zh": u.get("overview_zh"),
+            "genres_json": u.get("genres_json"),
+            "networks_json": u.get("networks_json"),
+            "upstream_total_eps": u.get("upstream_total_eps"),
+            "tmdb_total_episodes": u.get("tmdb_total_episodes"),
         })
     return json.dumps(export, indent=2, ensure_ascii=False)
 
