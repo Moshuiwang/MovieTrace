@@ -835,18 +835,18 @@ class TestComputeTypeLabels:
 
     def test_compute_type_labels_movie(self):
         rec = {"content_type": "movie", "genres_json": '[{"id":28,"name":"Action"}]'}
-        assert _compute_type_labels(rec) == ["movie", "Action"]
+        assert _compute_type_labels(rec) == ["Action"]
 
     def test_compute_type_labels_tv_multi_genre(self):
         rec = {
             "content_type": "tv",
             "genres_json": '[{"id":18,"name":"Drama"},{"id":878,"name":"Science Fiction"}]',
         }
-        assert _compute_type_labels(rec) == ["tv", "Drama", "Science Fiction"]
+        assert _compute_type_labels(rec) == ["Drama", "Science Fiction"]
 
     def test_compute_type_labels_no_genres(self):
         rec = {"content_type": "tv", "genres_json": None}
-        assert _compute_type_labels(rec) == ["tv"]
+        assert _compute_type_labels(rec) == []
 
     def test_compute_type_labels_empty_rec(self):
         assert _compute_type_labels({}) == []
