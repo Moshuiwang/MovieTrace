@@ -1,0 +1,117 @@
+---
+name: git-workflow
+description: 分支、commit、push、PR、CI/CD、合并后同步的硬规则。任何需要提交或开 PR 的任务必读。
+include: ["**/*"]
+---
+
+# Git / PR 工作流规则
+
+## 目标
+
+所有变更必须可追溯、可独立 review、可由 CI/CD 验证。禁止把本地状态漂移、错误分支基底、未同步的 `STATE.md` 或未验证的 workflow 改动带进 PR。
+
+## 开工前
+
+在创建任务分支前必须确认基底：
+
+```bash
+git checkout main
+git pull --ff-only
+git status --short --branch
+```
+
+- `git status` 必须显示在 `main...origin/main`，且没有未提交改动。
+- 如有未提交改动，先判断是否是用户改动；不能为了开分支而丢弃或覆盖。
+- 从非 `main` 分支开出的任务分支必须视为高风险；发现后先 stash 本次改动，从 `main` 重建分支，再恢复改动。
+
+## 分支与提交
+
+- 每个任务包一个分支，命名使用 `feat/`、`fix/`、`refactor/`、`chore/`、`docs/` 前缀 + 任务编号或明确 slug。
+- commit message 使用 Conventional Commit：
+  - `feat:` 新功能
+  - `fix:` 修复
+  - `refactor:` 行为不变重构
+  - `docs(state):` 仅 `STATE.md`
+  - `docs(meta):` harness / 规则 / 流程文档
+  - `docs(decision):` ADR
+- commit 前必须运行并读取任务包要求的验证命令；纯文档变更至少运行 `git diff --check`。
+
+## PR 前检查
+
+创建 PR 前必须检查：
+
+```bash
+git status --short --branch
+git log --oneline --decorate --max-count=5
+git diff --check
+```
+
+还必须检查 `STATE.md`：
+
+- 当前任务状态不能仍写 `进行中`、`本地完成（待 PR）` 等过期状态。
+- 与本次 PR 直接相关的旧任务状态必须同步，例如已合并任务不能继续标 `待 PR`。
+- 如果发现表格里有明显过期状态，优先在当前 PR 中修掉；不要留到下一个补丁 PR，除非会扩大无关范围。
+
+PR 描述必须包含：
+
+- Summary：实际改动，不写泛泛而谈。
+- Tests：实际运行过的命令和关键结果。
+- 对 workflow / deploy 变更，必须说明 PR 阶段验证什么、main 合并后验证什么。
+
+## Workflow / CI/CD 改动
+
+改 `.github/workflows/**` 时必须额外说明 GitHub Actions 的时序限制：
+
+- PR check 使用 PR 分支里的 workflow。
+- `workflow_run` 触发的 auto-merge job 可能 checkout 的是合并前 `main` 上的 workflow。
+- 因此修改 auto-merge 自身时，本 PR 的 auto-merge run 不一定能自然验证新逻辑；必要时在合并后用新 workflow 手动触发一次 main CI/CD 验证。
+
+推荐验证：
+
+```bash
+python3 - <<'PY'
+import pathlib, yaml
+for path in [".github/workflows/ci.yml", ".github/workflows/auto-merge.yml"]:
+    yaml.safe_load(pathlib.Path(path).read_text())
+print("workflow yaml ok")
+PY
+```
+
+如 workflow 内嵌 Python，必须抽取或编译对应脚本片段，确认语法通过。
+
+## PR 后检查
+
+创建 PR 后必须：
+
+```bash
+gh pr checks <PR_NUMBER> --watch --interval 5
+gh pr view <PR_NUMBER> --json state,mergedAt,mergeCommit,statusCheckRollup,url
+```
+
+- PR 阶段 `deploy` / `notify` skipped 是正常的，只要配置限定 main 才 deploy。
+- 不能只看到 PR test 通过就结束；auto-merge 项目必须继续确认 PR 是否已合并。
+- 合并后必须检查 main CI/CD run，至少确认 `test`、`deploy`、`notify` 结果是否符合预期。
+
+## 合并后同步
+
+PR 合并后必须同步本地：
+
+```bash
+git checkout main
+git pull --ff-only
+git status --short --branch
+git log --oneline --decorate --max-count=3
+```
+
+- `HEAD` 必须是合并后的 `origin/main`。
+- 如果合并后发现 `STATE.md` 仍有过期状态，立刻修正；优先避免创建只为补状态漂移的后续 PR。
+
+## 本次复盘固化
+
+2026-05-23 连续 PR 暴露出以下问题，后续按本规则避免：
+
+- **错误分支基底**：P1.47 最初从本地非 main 分支开出，差点混入无关提交。后续开分支前必须先 `checkout main && pull --ff-only`。
+- **状态审计不足**：P1.42/P1.43/P1.44/P1.45/P1.46/P1.38 已随 PR #40 合并，但 `STATE.md` 仍写 `本地完成（待 PR）`，导致补开 PR #45。后续 PR 前必须审计相关任务状态。
+- **workflow 时序误判**：P1.53 修改 auto-merge dispatch 参数，但 PR #44 自己的 auto-merge run 仍用旧 main workflow；后续 workflow 改动必须明确“本 PR 能验证什么”和“合并后如何验证新路径”。
+- **PR 粒度偏碎**：本可在 #44 中同步的状态漂移被拖到 #45。后续发现直接相关的状态文档漂移，应在同一 PR 内修正。
+- **收尾不够清单化**：虽然最终都完成了 commit/push/PR/CI/main pull，但过程依赖临时判断。后续必须按本文档的开工、PR 前、PR 后、合并后四段检查执行。

@@ -13,10 +13,12 @@
 - [ ] **ADR** — 如有新决策或状态变更（Proposed→Accepted 等），更新对应 ADR 和 [docs/decisions/README.md](../decisions/README.md) 索引表
 - [ ] **CLAUDE.md / AGENTS.md** — 如有阶段变化、新模块、新约定，同步更新
 
-- [ ] **git commit** — 上述变更统一提交，message 前缀使用：
+- [ ] **PR 前 Git 检查** — 按 [`.claude/rules/50-git-workflow.md`](../../.claude/rules/50-git-workflow.md) 确认分支基底、`STATE.md` 任务状态、`git diff --check`、验证命令和 PR 描述
+- [ ] **git commit / push / PR** — 上述变更统一提交并走 PR；message 前缀使用：
   - `docs(meta):` — CLAUDE.md / AGENTS.md / STATE.md
   - `docs(state):` — 仅 STATE.md
   - `docs(decision):` — ADR 新增或状态变更
+- [ ] **PR 后检查** — 确认 PR checks、auto-merge、main CI/CD；合并后 `git checkout main && git pull --ff-only`
 
 ---
 

@@ -30,6 +30,7 @@
 | 反馈周报使用指南 | [`docs/operations/feedback_report_guide.md`](operations/feedback_report_guide.md) | P1.23 起改为 `export-feedback-report` 自动生成；说明字段含义 |
 | 排查故障 | [`docs/workflow/troubleshooting.md`](workflow/troubleshooting.md) | 排查方法论 |
 | 会话收尾 | [`docs/workflow/session-checklist.md`](workflow/session-checklist.md) | 收尾清单 |
+| Git / PR 工作流 | [`.claude/rules/50-git-workflow.md`](../.claude/rules/50-git-workflow.md) | 分支、commit、push、PR、CI/CD、合并后同步规则 |
 | 完成任务汇报 | [`docs/workflow/report-format.md`](workflow/report-format.md) | 报告格式 |
 | 写新任务包 | [`docs/tasks/TEMPLATE.md`](tasks/TEMPLATE.md) | 任务包模板 |
 | 写新 ADR | [`docs/decisions/README.md`](decisions/README.md) | ADR 索引和写法 |
