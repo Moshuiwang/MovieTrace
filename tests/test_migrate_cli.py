@@ -1,8 +1,8 @@
 """Tests for `movietrace migrate` CLI (P1.31).
 
 Covers:
-- Fresh DB → applies all migrations through 017
-- Pre-existing v15 DB (simulates 2026-05-19 prod state minus one) → upgraded to 017
+- Fresh DB → applies all migrations through 018
+- Pre-existing v15 DB (simulates 2026-05-19 prod state minus one) → upgraded to 018
 - Idempotency: second run is a no-op with exit 0
 - Failure path: initialize_database raising → exit 1 with stderr message
 """
@@ -67,7 +67,7 @@ def _canonical_items_sql(db_path: Path) -> str:
 
 
 class MigrateCLITest(unittest.TestCase):
-    def test_fresh_db_migrates_to_v17(self):
+    def test_fresh_db_migrates_to_v18(self):
         from movietrace.cli import cmd_migrate
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "fresh.db"
@@ -77,12 +77,12 @@ class MigrateCLITest(unittest.TestCase):
 
             self.assertEqual(rc, 0)
             versions = _versions(db)
-            self.assertEqual(max(versions), 17)
+            self.assertEqual(max(versions), 18)
             sql = _canonical_items_sql(db)
             for col in ("title_zh", "overview_zh", "genres_json", "networks_json"):
                 self.assertIn(col, sql, f"{col} missing after migrate")
 
-    def test_v15_db_upgrades_to_v17(self):
+    def test_v15_db_upgrades_to_v18(self):
         """Simulates the 2026-05-19 production scenario (modulo one version)."""
         from movietrace.cli import cmd_migrate
         with tempfile.TemporaryDirectory() as tmp:
@@ -95,14 +95,15 @@ class MigrateCLITest(unittest.TestCase):
 
             self.assertEqual(rc, 0)
             versions_after = _versions(db)
-            self.assertEqual(max(versions_after), 17)
+            self.assertEqual(max(versions_after), 18)
             self.assertIn(16, versions_after)
             self.assertIn(17, versions_after)
+            self.assertIn(18, versions_after)
 
-    def test_migrate_is_idempotent_on_v17(self):
+    def test_migrate_is_idempotent_on_v18(self):
         from movietrace.cli import cmd_migrate
         with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "v17.db"
+            db = Path(tmp) / "v18.db"
             ns = argparse.Namespace(db=str(db))
 
             self.assertEqual(cmd_migrate(ns), 0)
@@ -112,7 +113,7 @@ class MigrateCLITest(unittest.TestCase):
             second = _versions(db)
 
             self.assertEqual(first, second)
-            self.assertEqual(max(second), 17)
+            self.assertEqual(max(second), 18)
 
     def test_migrate_returns_1_on_failure(self):
         from movietrace import cli as cli_mod

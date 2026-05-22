@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 
 SCHEMA_SQL = """
@@ -76,6 +76,22 @@ create unique index if not exists ux_api_cache_source_key
 on api_cache(source, cache_key);
 
 insert or ignore into schema_migrations(version) values (1);
+
+create table if not exists feishu_sync_failures (
+    id integer primary key autoincrement,
+    synced_at text not null default current_timestamp,
+    table_id text not null,
+    record_id text,
+    operation text not null,
+    payload_json text not null,
+    error_code text,
+    error_message text,
+    retry_count integer not null default 0,
+    resolved_at text
+);
+
+create index if not exists ix_feishu_sync_failures_unresolved
+on feishu_sync_failures(table_id, resolved_at);
 """
 
 
@@ -123,4 +139,5 @@ def initialize_database(path: str | Path) -> None:
         _apply_migration(conn, 15, _load_migration_sql("015_api_cache_unique_key.sql"))
         _apply_migration(conn, 16, _load_migration_sql("016_drop_legacy_tables.sql"))
         _apply_migration(conn, 17, _load_migration_sql("017_canonical_zh_fields.sql"))
+        _apply_migration(conn, 18, _load_migration_sql("018_feishu_sync_failures.sql"))
         conn.commit()

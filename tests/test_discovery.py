@@ -891,11 +891,17 @@ class TestSoapGenreDowngrade:
                     ),
                 ]
 
+            # P1.42: Mock source_dates to return fresh dates for all sources
+            def mock_resolve_source_dates(*args, **kwargs):
+                return {"flixpatrol": "2026-05-13", "tmdb": "2026-05-13", "trakt": "2026-05-13"}
+
             with patch("movietrace.pipeline.discovery._load_secrets", return_value={"omdb": {}, "tmdb": {}}):
                 with patch("movietrace.pipeline.discovery._ensure_fp_data",
                            return_value={"planned_calls": 0, "actual_calls": 0}):
-                    with patch("movietrace.pipeline.multi_source_merge.merge_three_sources", side_effect=mock_merge):
-                        result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
+                    with patch("movietrace.pipeline.discovery._resolve_source_dates_with_fallback",
+                               side_effect=mock_resolve_source_dates):
+                        with patch("movietrace.pipeline.multi_source_merge.merge_three_sources", side_effect=mock_merge):
+                            result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
 
             candidates = result.get("candidates", [])
             assert len(candidates) >= 1, f"Expected at least 1 candidate, got {len(candidates)}"

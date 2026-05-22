@@ -1,11 +1,60 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from movietrace.pipeline.entity_matching import BaselineItem, ExternalSearchResult
-from movietrace.logging.api_usage import fingerprint_key
+from movietrace.logging.api_usage import fingerprint_key, log_api_call
 from movietrace.sources.http import get_json
+
+
+def _search_cache_key(media_type: str, query: str) -> str:
+    """Generate cache key for TMDb search results.
+
+    Format: tmdb:search:{media_type}:{query_norm}
+    query_norm = query.strip().lower()
+    """
+    query_norm = query.strip().lower()
+    return f"tmdb:search:{media_type}:{query_norm}"
+
+
+def _read_search_cache(
+    conn: sqlite3.Connection,
+    cache_key: str,
+    ttl_hours: int,
+) -> dict | None:
+    """Read TMDb search result from api_cache. Returns None on miss or expiry."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    row = conn.execute(
+        """select response_json from api_cache
+           where source = 'tmdb' and cache_key = ? and fetched_at >= ?""",
+        (cache_key, cutoff),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        data = json.loads(row[0])
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_search_cache(
+    conn: sqlite3.Connection,
+    cache_key: str,
+    data: dict,
+) -> None:
+    """Write TMDb search result to api_cache (insert or replace)."""
+    conn.execute(
+        """insert or replace into api_cache (source, cache_key, response_json)
+           values ('tmdb', ?, ?)""",
+        (cache_key, json.dumps(data, ensure_ascii=False)),
+    )
+    conn.commit()
 
 
 class TmdbSearchClient:
@@ -16,12 +65,14 @@ class TmdbSearchClient:
         base_url: str = "https://api.themoviedb.org/3",
         db_path: str = "",
         request_date: str = "",
+        conn: sqlite3.Connection | None = None,
     ):
         self.bearer_token = bearer_token
         self.base_url = base_url.rstrip("/")
         self._db_path = db_path
         self._request_date = request_date
         self._key_fp = fingerprint_key(bearer_token)
+        self._conn = conn
 
     def _log_ctx(self, endpoint: str, operation: str) -> dict | None:
         if not self._db_path or not self._request_date:
@@ -34,6 +85,21 @@ class TmdbSearchClient:
             "request_date": self._request_date,
             "key_fingerprint": self._key_fp,
         }
+
+    def _log_cache_hit(self, endpoint: str, operation: str) -> None:
+        """Write cache_hit row to api_usage_log if db_path and request_date are set."""
+        if not self._db_path or not self._request_date:
+            return
+        log_api_call(
+            db_path=self._db_path,
+            service="tmdb",
+            endpoint=endpoint,
+            operation=operation,
+            request_date=self._request_date,
+            status="cache_hit",
+            cache_status="hit",
+            key_fingerprint=self._key_fp,
+        )
 
     def search(
         self, query: str, baseline_item: BaselineItem
@@ -51,8 +117,16 @@ class TmdbSearchClient:
             return []
         return parse_tmdb_search_results(payload)
 
-    def search_tv(self, query: str) -> list[ExternalSearchResult]:
-        """Search /search/tv — returns only TV results."""
+    def search_tv(self, query: str, cache_ttl_hours: int = 72) -> list[ExternalSearchResult]:
+        """Search /search/tv — returns only TV results. Results cached for 72h by default."""
+        cache_key = _search_cache_key("tv", query)
+
+        if self._conn is not None:
+            cached = _read_search_cache(self._conn, cache_key, cache_ttl_hours)
+            if cached is not None:
+                self._log_cache_hit("/search/tv", "tmdb_search.search_tv")
+                return parse_tmdb_search_results(cached, default_media_type="tv")
+
         payload = get_json(
             f"{self.base_url}/search/tv",
             params={"query": query, "include_adult": "false", "language": "en-US"},
@@ -64,10 +138,20 @@ class TmdbSearchClient:
         )
         if not isinstance(payload, dict):
             return []
+        if self._conn is not None:
+            _write_search_cache(self._conn, cache_key, payload)
         return parse_tmdb_search_results(payload, default_media_type="tv")
 
-    def search_movie(self, query: str) -> list[ExternalSearchResult]:
-        """Search /search/movie — returns only movie results."""
+    def search_movie(self, query: str, cache_ttl_hours: int = 72) -> list[ExternalSearchResult]:
+        """Search /search/movie — returns only movie results. Results cached for 72h by default."""
+        cache_key = _search_cache_key("movie", query)
+
+        if self._conn is not None:
+            cached = _read_search_cache(self._conn, cache_key, cache_ttl_hours)
+            if cached is not None:
+                self._log_cache_hit("/search/movie", "tmdb_search.search_movie")
+                return parse_tmdb_search_results(cached, default_media_type="movie")
+
         payload = get_json(
             f"{self.base_url}/search/movie",
             params={"query": query, "include_adult": "false", "language": "en-US"},
@@ -79,6 +163,8 @@ class TmdbSearchClient:
         )
         if not isinstance(payload, dict):
             return []
+        if self._conn is not None:
+            _write_search_cache(self._conn, cache_key, payload)
         return parse_tmdb_search_results(payload, default_media_type="movie")
 
 

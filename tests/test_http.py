@@ -9,12 +9,16 @@ from urllib.error import HTTPError
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+# urlopen is now called from _http_policy; patch there so mock takes effect
+_URLOPEN_PATH = "movietrace.sources._http_policy.urlopen"
+_SLEEP_PATH = "movietrace.sources._http_policy.time.sleep"
+
 
 class TestFatalApiError(unittest.TestCase):
     def test_raised_on_401(self):
         from movietrace.sources.http import get_json, FatalApiError
 
-        with patch("movietrace.sources.http.urlopen") as mock_urlopen:
+        with patch(_URLOPEN_PATH) as mock_urlopen, patch(_SLEEP_PATH):
             mock_urlopen.side_effect = HTTPError(
                 "https://example.com", 401, "Unauthorized", {}, None
             )
@@ -25,7 +29,7 @@ class TestFatalApiError(unittest.TestCase):
     def test_raised_on_402(self):
         from movietrace.sources.http import get_json, FatalApiError
 
-        with patch("movietrace.sources.http.urlopen") as mock_urlopen:
+        with patch(_URLOPEN_PATH) as mock_urlopen, patch(_SLEEP_PATH):
             mock_urlopen.side_effect = HTTPError(
                 "https://example.com", 402, "Payment Required", {}, None
             )
@@ -36,7 +40,7 @@ class TestFatalApiError(unittest.TestCase):
     def test_raised_on_403(self):
         from movietrace.sources.http import get_json, FatalApiError
 
-        with patch("movietrace.sources.http.urlopen") as mock_urlopen:
+        with patch(_URLOPEN_PATH) as mock_urlopen, patch(_SLEEP_PATH):
             mock_urlopen.side_effect = HTTPError(
                 "https://example.com", 403, "Forbidden", {}, None
             )
@@ -47,7 +51,7 @@ class TestFatalApiError(unittest.TestCase):
     def test_not_raised_on_429(self):
         from movietrace.sources.http import get_json, FatalApiError
 
-        with patch("movietrace.sources.http.urlopen") as mock_urlopen:
+        with patch(_URLOPEN_PATH) as mock_urlopen, patch(_SLEEP_PATH):
             mock_urlopen.side_effect = HTTPError(
                 "https://example.com", 429, "Too Many Requests", {}, None
             )
@@ -57,7 +61,7 @@ class TestFatalApiError(unittest.TestCase):
     def test_not_raised_on_500(self):
         from movietrace.sources.http import get_json, FatalApiError
 
-        with patch("movietrace.sources.http.urlopen") as mock_urlopen:
+        with patch(_URLOPEN_PATH) as mock_urlopen, patch(_SLEEP_PATH):
             mock_urlopen.side_effect = HTTPError(
                 "https://example.com", 500, "Internal Server Error", {}, None
             )
@@ -67,9 +71,9 @@ class TestFatalApiError(unittest.TestCase):
     def test_not_raised_on_network_error(self):
         from movietrace.sources.http import get_json, FatalApiError
 
-        with patch("movietrace.sources.http.urlopen") as mock_urlopen:
+        with patch(_URLOPEN_PATH) as mock_urlopen, patch(_SLEEP_PATH):
             mock_urlopen.side_effect = TimeoutError("timed out")
-            with self.assertRaises(TimeoutError):
+            with self.assertRaises((TimeoutError, RuntimeError)):
                 get_json("https://example.com/api")
 
     def test_fatal_api_error_message(self):

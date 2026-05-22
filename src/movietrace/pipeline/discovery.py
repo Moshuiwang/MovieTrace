@@ -329,13 +329,31 @@ def run_discovery(
             d and d != snapshot_date
             for d in source_dates.values()
         )
-        source_status = {
-            source: {
-                "status": "fresh" if (d == snapshot_date) else ("fallback" if d else "failed_no_fallback"),
-                "snapshot_date": d,
-            }
-            for source, d in source_dates.items()
+
+        _table_map = {
+            "flixpatrol": "flixpatrol_top10",
+            "tmdb": "tmdb_trending",
+            "trakt": "trakt_trending",
         }
+        source_status = {}
+        for source, d in source_dates.items():
+            if d == snapshot_date:
+                status = "fresh"
+                cached_count = None
+            elif d:
+                status = "fallback"
+                table = _table_map.get(source, "")
+                cached_count = conn.execute(
+                    f"select count(*) from {table} where snapshot_date = ?",
+                    (d,),
+                ).fetchone()[0] if table else 0
+            else:
+                status = "failed_no_fallback"
+                cached_count = None
+            entry: dict = {"status": status, "snapshot_date": d}
+            if cached_count is not None:
+                entry["cached_count"] = cached_count
+            source_status[source] = entry
 
         # Step 2: Multi-source merge
         from movietrace.pipeline.multi_source_merge import merge_three_sources
@@ -351,6 +369,11 @@ def run_discovery(
                     "source_fallback_used": fallback_used,
                 },
             }
+
+        # P1.42-A: Mark fresh signal on each candidate (before enrichment)
+        # fresh_sources = set of sources with effective_date == snapshot_date
+        # This will be used later to filter out pure-fallback candidates
+        fresh_sources = {s for s, d in source_dates.items() if d == snapshot_date}
 
         # Step 3: Enrichment
         secrets = _load_secrets()
@@ -388,6 +411,9 @@ def run_discovery(
             c_dict["priority"] = map_priority(hot, cfg.get("priority_thresholds"))
             c_dict["reason_text"] = _build_reason_text(c, breakdown)
             c_dict["snapshot_date"] = snapshot_date
+            # P1.42-A: Add has_fresh_signal based on contributing sources
+            contributing = c.source_flags or set()
+            c_dict["has_fresh_signal"] = bool(contributing & fresh_sources)
             scored.append(c_dict)
 
         # Sort by hot_score desc
@@ -407,6 +433,13 @@ def run_discovery(
         # Step 5: Threshold filter (with Soap bypass)
         threshold = (cfg.get("priority_thresholds") or {}).get("P2", 50)
         passed = [s for s in scored if s.get("hot_score", 0) >= threshold or s.get("is_soap")]
+
+        # P1.42-B: Filter out pure fallback candidates (unless Soap bypass)
+        # Keep only candidates with fresh signal or Soap exemption
+        suppressed_fallback_only = len(passed) - len([c for c in passed if c.get("has_fresh_signal") or c.get("is_soap")])
+        passed = [c for c in passed if c.get("has_fresh_signal") or c.get("is_soap")]
+        if suppressed_fallback_only > 0:
+            logger.info("P1.42: Suppressed %d pure-fallback-only candidates", suppressed_fallback_only)
 
         # P1.24-B: 仅对 passed 集合计算 row_duration_hours
         # (避免对被阈值过滤的候选浪费 TMDb season detail 调用)
@@ -440,6 +473,7 @@ def run_discovery(
         stats["source_status"] = source_status
         stats["source_effective_dates"] = source_dates
         stats["source_fallback_used"] = fallback_used
+        stats["suppressed_fallback_only"] = suppressed_fallback_only
 
         # P1.9: Auto-register candidates without canonical_item
         auto_registered = 0

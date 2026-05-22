@@ -10,6 +10,9 @@ Table and fields are pre-created via Feishu UI/API; this module does NOT auto-cr
 from __future__ import annotations
 
 import json
+import logging
+import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -25,7 +28,6 @@ from movietrace.pipeline.scoring import (
 UTC = timezone.utc
 
 from movietrace.feishu.baseline import fetch_tenant_access_token
-import time
 
 from movietrace.feishu._http import (
     OPEN_API_BASE,
@@ -40,6 +42,7 @@ from movietrace.feishu.notify import send_alert, send_text
 from movietrace.sources.omdb import format_imdb_id
 
 TZ = ZoneInfo("Asia/Shanghai")
+logger = logging.getLogger(__name__)
 
 
 def _score_breakdown_from_raw(ss: dict) -> dict:
@@ -148,6 +151,176 @@ def _list_records_for_date(
     return lookup
 
 
+# ── Retry / failure persistence helpers ──────────────────────────────────────
+
+
+def _batch_with_retry(fn, *args, max_retries: int = 3, base_delay: float = 1.0, **kwargs):
+    """指数退避重试。fn 抛异常时按 base_delay * 2^attempt 等待。
+    超过 max_retries 仍失败 → 重新抛出最后一次异常（由调用方持久化）。"""
+    last_exc: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            last_exc = exc
+            delay = base_delay * (2 ** attempt)
+            logger.warning(
+                "feishu batch retry attempt=%d/%d delay=%.1fs error=%s",
+                attempt + 1, max_retries, delay, str(exc)[:200],
+            )
+            time.sleep(delay)
+    raise last_exc  # type: ignore[misc]
+
+
+def _persist_failures(
+    conn: sqlite3.Connection | None,
+    table_id: str,
+    operation: str,
+    records: list[dict],
+    error_message: str,
+    retry_count: int,
+) -> None:
+    """将整批失败的 record fields 写入 feishu_sync_failures 表。
+    records 中每个元素可能是 {'fields': ...}（create）或 {'record_id': ..., 'fields': ...}（update）。
+    conn 为 None 时跳过持久化（仅警告）。
+    """
+    if conn is None:
+        logger.warning(
+            "feishu sync failure persistence skipped (no db conn): table=%s op=%s count=%d",
+            table_id, operation, len(records),
+        )
+        return
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    for rec in records:
+        if operation == "create":
+            record_id = None
+            payload = json.dumps(rec.get("fields", rec), ensure_ascii=False)
+        else:
+            record_id = rec.get("record_id")
+            payload = json.dumps(rec.get("fields", rec), ensure_ascii=False)
+        conn.execute(
+            """
+            insert into feishu_sync_failures
+                (synced_at, table_id, record_id, operation, payload_json, error_message, retry_count)
+            values (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (now, table_id, record_id, operation, payload, error_message[:500], retry_count),
+        )
+    conn.commit()
+
+
+def _replay_unresolved_failures(
+    conn: sqlite3.Connection | None,
+    token: str,
+    app_token: str,
+    table_id: str,
+    notify_chat_id: str = "",
+    app_id: str = "",
+    app_secret: str = "",
+    notify_chat_id_type: str = "chat_id",
+) -> dict:
+    """次日重做：查询未解决的失败记录，重新 batch_create/batch_update。
+    成功 → resolved_at = now；失败 → retry_count += 1；retry_count >= 10 → IM 告警。
+    返回 {'replayed': N, 'resolved': N, 'still_failed': N}。
+    """
+    if conn is None:
+        return {"replayed": 0, "resolved": 0, "still_failed": 0}
+
+    rows = conn.execute(
+        """
+        select id, operation, record_id, payload_json, retry_count
+        from feishu_sync_failures
+        where table_id = ? and resolved_at is null
+        order by id
+        """,
+        (table_id,),
+    ).fetchall()
+
+    if not rows:
+        return {"replayed": 0, "resolved": 0, "still_failed": 0}
+
+    logger.info("replay unresolved failures: table=%s count=%d", table_id, len(rows))
+
+    creates = [(row[0], json.loads(row[3]), row[4]) for row in rows if row[1] == "create"]
+    updates = [(row[0], row[2], json.loads(row[3]), row[4]) for row in rows if row[1] == "update"]
+
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    resolved_count = 0
+    still_failed = 0
+
+    # Replay creates
+    if creates:
+        create_batch = [{"fields": fields} for _, fields, _ in creates]
+        try:
+            _batch_with_retry(batch_create_records, token, app_token, table_id, create_batch)
+            # success — mark all resolved
+            for row_id, _, _ in creates:
+                conn.execute(
+                    "update feishu_sync_failures set resolved_at = ? where id = ?",
+                    (now, row_id),
+                )
+            resolved_count += len(creates)
+        except Exception as exc:
+            for row_id, _, rc in creates:
+                new_rc = rc + 1
+                conn.execute(
+                    "update feishu_sync_failures set retry_count = ? where id = ?",
+                    (new_rc, row_id),
+                )
+                still_failed += 1
+                if new_rc >= 10:
+                    logger.error(
+                        "feishu sync failure exceeded retry_count>=10: table=%s id=%d op=create",
+                        table_id, row_id,
+                    )
+                    if notify_chat_id:
+                        try:
+                            send_alert(
+                                notify_chat_id, "error", "飞书同步失败（需人工介入）",
+                                detail=f"table={table_id} op=create id={row_id} error={str(exc)[:200]}",
+                                app_id=app_id, app_secret=app_secret,
+                                receive_id_type=notify_chat_id_type,
+                            )
+                        except Exception as alert_exc:
+                            logger.error("send_alert failed (non-fatal): %s", alert_exc)
+
+    # Replay updates
+    for row_id, record_id, fields, rc in updates:
+        update_payload = [{"record_id": record_id, "fields": fields}]
+        try:
+            _batch_with_retry(batch_update_records, token, app_token, table_id, update_payload)
+            conn.execute(
+                "update feishu_sync_failures set resolved_at = ? where id = ?",
+                (now, row_id),
+            )
+            resolved_count += 1
+        except Exception as exc:
+            new_rc = rc + 1
+            conn.execute(
+                "update feishu_sync_failures set retry_count = ? where id = ?",
+                (new_rc, row_id),
+            )
+            still_failed += 1
+            if new_rc >= 10:
+                logger.error(
+                    "feishu sync failure exceeded retry_count>=10: table=%s id=%d op=update",
+                    table_id, row_id,
+                )
+                if notify_chat_id:
+                    try:
+                        send_alert(
+                            notify_chat_id, "error", "飞书同步失败（需人工介入）",
+                            detail=f"table={table_id} op=update record_id={record_id} error={str(exc)[:200]}",
+                            app_id=app_id, app_secret=app_secret,
+                            receive_id_type=notify_chat_id_type,
+                        )
+                    except Exception as alert_exc:
+                        logger.error("send_alert failed (non-fatal): %s", alert_exc)
+
+    conn.commit()
+    return {"replayed": len(rows), "resolved": resolved_count, "still_failed": still_failed}
+
+
 # ── Main sync function ────────────────────────────────────────────────────
 
 def sync_table(
@@ -161,11 +334,15 @@ def sync_table(
     dry_run: bool = False,
     notify_chat_id: str = "",
     notify_chat_id_type: str = "chat_id",
+    conn: sqlite3.Connection | None = None,
 ) -> dict:
     """Sync latest.json records to a Feishu bitable by field_id.
 
     Table and fields must already exist (pre-created via UI or setup scripts).
     Unique key: run_date + content_update_id.
+
+    conn: optional SQLite connection for failure persistence and replay.
+          If None, retry logic still runs but failures are not persisted.
 
     Returns stats dict with keys: total, created, updated, errors.
     """
@@ -193,6 +370,19 @@ def sync_table(
     # 1. Get token
     print("获取飞书 token...")
     token = fetch_tenant_access_token(app_id, app_secret)
+
+    # 1b. 次日重做：先处理上次失败的 records（在主同步之前）
+    replay_result = _replay_unresolved_failures(
+        conn, token, app_token, table_id,
+        notify_chat_id=notify_chat_id,
+        app_id=app_id, app_secret=app_secret,
+        notify_chat_id_type=notify_chat_id_type,
+    )
+    if replay_result["replayed"] > 0:
+        print(
+            f"  [replay] 处理上次失败: replayed={replay_result['replayed']} "
+            f"resolved={replay_result['resolved']} still_failed={replay_result['still_failed']}"
+        )
 
     # 幂等保证字段存在；失败 → IM 告警后抛出（不静默继续，避免写入丢字段）
     print("ensure 飞书字段...")
@@ -384,26 +574,82 @@ def sync_table(
             stats["errors"] += 1
             print(f"  ERROR [{i+1}] {rec.get('content_update_id', '?')}: {e}")
 
-    # 4. Batch create new records (100 per batch for safety)
+    # 4. Batch create new records (100 per batch for safety) — with retry + failure persistence
     batch_size = 100
+    create_failed_total = 0
     for start in range(0, len(to_create), batch_size):
         batch = to_create[start:start + batch_size]
         try:
-            batch_create_records(token, app_token, table_id, batch)
+            _batch_with_retry(batch_create_records, token, app_token, table_id, batch)
         except Exception as e:
-            print(f"  ERROR batch create [{start}:{start+len(batch)}]: {e}")
-            stats["errors"] += len(batch)
-            stats["created"] -= len(batch)
+            logger.error(
+                "batch create failed after retries [%d:%d] table=%s error=%s",
+                start, start + len(batch), table_id, str(e)[:200],
+            )
+            # 拆分单条重试一次
+            single_failed: list[dict] = []
+            for record in batch:
+                try:
+                    batch_create_records(token, app_token, table_id, [record])
+                except Exception:
+                    single_failed.append(record)
+            if single_failed:
+                _persist_failures(
+                    conn, table_id, "create", single_failed,
+                    error_message=str(e)[:500], retry_count=3,
+                )
+                create_failed_total += len(single_failed)
+                stats["errors"] += len(single_failed)
+                stats["created"] -= len(single_failed)
 
-    # 5. Batch update existing records (500 per call via _http)
+    if create_failed_total > 0 and notify_chat_id:
+        try:
+            send_alert(
+                notify_chat_id, "error", "飞书同步失败",
+                detail=f"table={table_id} created_failed={create_failed_total}",
+                app_id=app_id, app_secret=app_secret,
+                receive_id_type=notify_chat_id_type,
+            )
+        except Exception as alert_exc:
+            logger.error("send_alert failed (non-fatal): %s", alert_exc)
+
+    # 5. Batch update existing records (500 per call via _http) — with retry + failure persistence
+    update_failed_total = 0
     if to_update:
         updates = [{"record_id": rid, "fields": fields} for rid, fields in to_update]
         try:
-            batch_update_records(token, app_token, table_id, updates)
+            _batch_with_retry(batch_update_records, token, app_token, table_id, updates)
         except Exception as e:
-            print(f"  ERROR batch update {len(to_update)} records: {e}")
-            stats["errors"] += len(to_update)
-            stats["updated"] -= len(to_update)
+            logger.error(
+                "batch update failed after retries count=%d table=%s error=%s",
+                len(updates), table_id, str(e)[:200],
+            )
+            # 拆分单条重试一次
+            single_failed_upd: list[dict] = []
+            for upd in updates:
+                try:
+                    batch_update_records(token, app_token, table_id, [upd])
+                except Exception:
+                    single_failed_upd.append(upd)
+            if single_failed_upd:
+                _persist_failures(
+                    conn, table_id, "update", single_failed_upd,
+                    error_message=str(e)[:500], retry_count=3,
+                )
+                update_failed_total += len(single_failed_upd)
+                stats["errors"] += len(single_failed_upd)
+                stats["updated"] -= len(single_failed_upd)
+
+    if update_failed_total > 0 and notify_chat_id:
+        try:
+            send_alert(
+                notify_chat_id, "error", "飞书同步失败",
+                detail=f"table={table_id} updated_failed={update_failed_total}",
+                app_id=app_id, app_secret=app_secret,
+                receive_id_type=notify_chat_id_type,
+            )
+        except Exception as alert_exc:
+            logger.error("send_alert failed (non-fatal): %s", alert_exc)
 
     stats["new_discovery"] = new_discovery_count
     stats["new_season"] = new_season_count

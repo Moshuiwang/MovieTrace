@@ -850,3 +850,325 @@ class TestComputeTypeLabels:
 
     def test_compute_type_labels_empty_rec(self):
         assert _compute_type_labels({}) == []
+
+
+# ── P1.45: Retry + failure persistence tests ─────────────────────────────────
+
+
+import sqlite3
+import tempfile as _tempfile
+from pathlib import Path as _Path
+
+from movietrace.feishu.sync import (
+    _batch_with_retry,
+    _persist_failures,
+    _replay_unresolved_failures,
+)
+from movietrace.db.schema import initialize_database
+
+
+def _make_test_db() -> tuple[sqlite3.Connection, str]:
+    """Return an in-memory (temp-file) connection with migrations applied."""
+    tmpdir = _tempfile.mkdtemp()
+    db_path = _Path(tmpdir) / "test_p145.db"
+    initialize_database(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn, tmpdir
+
+
+class TestBatchWithRetry:
+    """P1.45: _batch_with_retry unit tests."""
+
+    def test_batch_create_retries_on_failure_with_backoff(self):
+        """mock batch_create 前 2 次抛异常、第 3 次成功；断言调用次数==3，sleep 总计==3s。"""
+        call_count = 0
+
+        def flaky_fn():
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise RuntimeError("transient error")
+            return "ok"
+
+        sleep_calls = []
+        with patch("movietrace.feishu.sync.time.sleep", side_effect=lambda s: sleep_calls.append(s)):
+            result = _batch_with_retry(flaky_fn, max_retries=3, base_delay=1.0)
+
+        assert result == "ok"
+        assert call_count == 3
+        # sleep called twice (after attempt 1 and 2): 1s and 2s
+        assert len(sleep_calls) == 2
+        assert sum(sleep_calls) == pytest.approx(3.0)
+
+    def test_batch_create_gives_up_after_3_retries_and_raises(self):
+        """mock 3 次全失败：_batch_with_retry 必须 raise 最后一次异常。"""
+        call_count = 0
+
+        def always_fail():
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError(f"fail #{call_count}")
+
+        with patch("movietrace.feishu.sync.time.sleep"):
+            with pytest.raises(RuntimeError, match="fail #3"):
+                _batch_with_retry(always_fail, max_retries=3, base_delay=0.0)
+
+        assert call_count == 3
+
+
+class TestBatchCreateGivesUpAndPersists:
+    """P1.45: 全失败时 feishu_sync_failures 写入 + send_alert 调用。"""
+
+    def _minimal_record(self) -> dict:
+        return {
+            "content_update_id": "discovery:tv:1396:2026-05-17",
+            "update_type": "new_discovery",
+            "priority": "P1",
+            "hot_score": 80.0,
+            "title": "Test Show",
+            "tmdb_id": "1396",
+            "source_data_status": {},
+            "event_written_at_utc": "2026-05-17 10:30:00",
+            "created_at": "2026-05-17 10:30:00",
+            "source_summary_json": json.dumps({"score_breakdown": {}}, ensure_ascii=False),
+        }
+
+    @patch("movietrace.feishu.sync.send_alert")
+    @patch("movietrace.feishu.sync.send_text")
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    @patch("movietrace.feishu.sync.time.sleep")
+    def test_batch_create_gives_up_after_3_retries_and_persists_failure(
+        self, mock_sleep, mock_upd, mock_create, mock_list, mock_ensure,
+        mock_token, mock_text, mock_alert,
+    ):
+        """全失败时 feishu_sync_failures 有对应记录，operation='create'，retry_count=3，send_alert 被调用。"""
+        mock_token.return_value = "token"
+        mock_ensure.return_value = {"created": [], "existed": [], "renamed": [], "errors": [], "dry_run": False}
+        mock_list.return_value = {}
+        mock_create.side_effect = RuntimeError("api error")
+
+        conn, tmpdir = _make_test_db()
+        try:
+            record = self._minimal_record()
+            with _tempfile.TemporaryDirectory() as td:
+                p = _Path(td) / "latest.json"
+                p.write_text(json.dumps([record], ensure_ascii=False))
+                sync_table(
+                    json_path=str(p), run_date="2026-05-17",
+                    app_id="a", app_secret="s", app_token="t",
+                    table_id="tbl_test",
+                    conn=conn,
+                    notify_chat_id="chat_xyz",
+                )
+
+            rows = conn.execute(
+                "select * from feishu_sync_failures where table_id='tbl_test'"
+            ).fetchall()
+            assert len(rows) >= 1
+            assert rows[0]["operation"] == "create"
+            assert rows[0]["retry_count"] == 3
+            assert rows[0]["resolved_at"] is None
+
+            mock_alert.assert_called()
+        finally:
+            conn.close()
+            import shutil; shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+class TestBatchUpdatePartialFailureSplitsAndPersists:
+    """P1.45: batch update 失败 → 拆单条重试 → 失败条目写入 failures 表。"""
+
+    @patch("movietrace.feishu.sync.send_alert")
+    @patch("movietrace.feishu.sync.send_text")
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    @patch("movietrace.feishu.sync.time.sleep")
+    def test_batch_update_partial_failure_splits_and_persists(
+        self, mock_sleep, mock_upd, mock_create, mock_list, mock_ensure,
+        mock_token, mock_text, mock_alert,
+    ):
+        """100 条 update 整批失败 → 拆单条 → 5 条仍失败 → 5 条进 feishu_sync_failures。"""
+        mock_token.return_value = "token"
+        mock_ensure.return_value = {"created": [], "existed": [], "renamed": [], "errors": [], "dry_run": False}
+        mock_create.return_value = None
+
+        # 构造 100 条记录（全部已存在 → update 路径）
+        n = 100
+        existing = {f"2026-05-17|discovery:tv:{i}:2026-05-17": f"rec_{i}" for i in range(n)}
+        mock_list.return_value = existing
+
+        # batch_update_records: 整批失败，但单条 rec_0..rec_4 也失败，其余成功
+        call_tracker = {"batch_calls": 0}
+        fail_ids = {f"rec_{i}" for i in range(5)}
+
+        def smart_update(token, app_token, table_id, records):
+            call_tracker["batch_calls"] += 1
+            if len(records) > 1:
+                raise RuntimeError("batch too large")
+            # single-record call
+            if records[0]["record_id"] in fail_ids:
+                raise RuntimeError("single record failed")
+            return None
+
+        mock_upd.side_effect = smart_update
+
+        import json as _json
+        records = [
+            {
+                "content_update_id": f"discovery:tv:{i}:2026-05-17",
+                "update_type": "new_discovery",
+                "priority": "P2",
+                "hot_score": 50.0,
+                "title": f"Show {i}",
+                "tmdb_id": str(i),
+                "source_data_status": {},
+                "event_written_at_utc": "2026-05-17 10:30:00",
+                "created_at": "2026-05-17 10:30:00",
+                "source_summary_json": _json.dumps({"score_breakdown": {}}, ensure_ascii=False),
+            }
+            for i in range(n)
+        ]
+
+        conn, tmpdir = _make_test_db()
+        try:
+            with _tempfile.TemporaryDirectory() as td:
+                p = _Path(td) / "latest.json"
+                p.write_text(_json.dumps(records, ensure_ascii=False))
+                sync_table(
+                    json_path=str(p), run_date="2026-05-17",
+                    app_id="a", app_secret="s", app_token="t",
+                    table_id="tbl_upd",
+                    conn=conn,
+                    notify_chat_id="chat_xyz",
+                )
+
+            failure_rows = conn.execute(
+                "select * from feishu_sync_failures where table_id='tbl_upd' and operation='update'"
+            ).fetchall()
+            assert len(failure_rows) == 5
+        finally:
+            conn.close()
+            import shutil; shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+class TestReplayUnresolvedFailures:
+    """P1.45: _replay_unresolved_failures tests."""
+
+    def _insert_failure(
+        self, conn: sqlite3.Connection, table_id: str, operation: str,
+        payload: dict, record_id: str | None = None,
+        retry_count: int = 0, resolved_at: str | None = None,
+    ) -> int:
+        cur = conn.execute(
+            """
+            insert into feishu_sync_failures
+                (table_id, record_id, operation, payload_json, retry_count, resolved_at)
+            values (?, ?, ?, ?, ?, ?)
+            """,
+            (table_id, record_id, operation, json.dumps(payload, ensure_ascii=False),
+             retry_count, resolved_at),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    @patch("movietrace.feishu.sync.time.sleep")
+    def test_replay_unresolved_failures_runs_first(
+        self, mock_sleep, mock_upd, mock_create,
+    ):
+        """预置 2 条 unresolved 失败；replay 成功后 resolved_at 不为 null。"""
+        mock_create.return_value = None
+        mock_upd.return_value = None
+
+        conn, tmpdir = _make_test_db()
+        try:
+            self._insert_failure(conn, "tbl_r", "create", {"title": "A"})
+            self._insert_failure(conn, "tbl_r", "create", {"title": "B"})
+
+            result = _replay_unresolved_failures(conn, "tok", "app_tok", "tbl_r")
+
+            assert result["replayed"] == 2
+            assert result["resolved"] == 2
+            assert result["still_failed"] == 0
+
+            rows = conn.execute(
+                "select resolved_at from feishu_sync_failures where table_id='tbl_r'"
+            ).fetchall()
+            for row in rows:
+                assert row[0] is not None, "resolved_at should be set"
+        finally:
+            conn.close()
+            import shutil; shutil.rmtree(tmpdir, ignore_errors=True)
+
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    @patch("movietrace.feishu.sync.time.sleep")
+    def test_replay_skips_resolved_failures(
+        self, mock_sleep, mock_upd, mock_create,
+    ):
+        """预置 1 条 resolved + 1 条 unresolved；只重做 unresolved 那条。"""
+        mock_create.return_value = None
+        mock_upd.return_value = None
+
+        conn, tmpdir = _make_test_db()
+        try:
+            self._insert_failure(
+                conn, "tbl_s", "create", {"title": "Resolved"},
+                resolved_at="2026-05-21 10:00:00",
+            )
+            unresolved_id = self._insert_failure(
+                conn, "tbl_s", "create", {"title": "Unresolved"},
+            )
+
+            result = _replay_unresolved_failures(conn, "tok", "app_tok", "tbl_s")
+
+            assert result["replayed"] == 1
+            assert result["resolved"] == 1
+
+            row = conn.execute(
+                "select resolved_at from feishu_sync_failures where id=?",
+                (unresolved_id,),
+            ).fetchone()
+            assert row[0] is not None
+        finally:
+            conn.close()
+            import shutil; shutil.rmtree(tmpdir, ignore_errors=True)
+
+    @patch("movietrace.feishu.sync.send_alert")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.time.sleep")
+    def test_high_retry_count_triggers_alert(
+        self, mock_sleep, mock_create, mock_alert,
+    ):
+        """预置 1 条 retry_count=9，重做仍失败 → retry_count 变 10 → send_alert 被调用。"""
+        mock_create.side_effect = RuntimeError("still broken")
+
+        conn, tmpdir = _make_test_db()
+        try:
+            self._insert_failure(
+                conn, "tbl_h", "create", {"title": "Hard Fail"},
+                retry_count=9,
+            )
+
+            result = _replay_unresolved_failures(
+                conn, "tok", "app_tok", "tbl_h",
+                notify_chat_id="chat_abc",
+                app_id="a", app_secret="s",
+            )
+
+            assert result["still_failed"] == 1
+            mock_alert.assert_called()
+            args = mock_alert.call_args[0]
+            assert args[0] == "chat_abc"
+        finally:
+            conn.close()
+            import shutil; shutil.rmtree(tmpdir, ignore_errors=True)
