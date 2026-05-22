@@ -521,7 +521,7 @@ def sync_table(
                 "中文名": rec.get("title_zh") or None,
                 "中文简介": rec.get("overview_zh") or None,
                 "类型": _names_from_json(rec.get("genres_json")),
-                "播出平台": _names_from_json(rec.get("networks_json")),
+                "播出平台": _names_list_from_json(rec.get("networks_json")),
                 "A库总集数": int(rec["upstream_total_eps"]) if rec.get("upstream_total_eps") is not None else None,
                 "TMDB总集数": int(rec["tmdb_total_episodes"]) if rec.get("tmdb_total_episodes") is not None else None,
             }
@@ -736,6 +736,20 @@ def _names_from_json(raw: str | None) -> str | None:
         if isinstance(items, list):
             names = [str(x["name"]) for x in items if isinstance(x, dict) and x.get("name")]
             return ", ".join(names) if names else None
+    except (json.JSONDecodeError, TypeError, KeyError):
+        pass
+    return None
+
+
+def _names_list_from_json(raw: str | None) -> list[str] | None:
+    """Extract list of names from a JSON array of {id, name} dicts (for multi-select fields)."""
+    if not raw:
+        return None
+    try:
+        items = json.loads(raw)
+        if isinstance(items, list):
+            names = [str(x["name"]) for x in items if isinstance(x, dict) and x.get("name")]
+            return names if names else None
     except (json.JSONDecodeError, TypeError, KeyError):
         pass
     return None
