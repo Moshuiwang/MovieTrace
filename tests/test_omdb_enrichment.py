@@ -309,6 +309,89 @@ class TestZhFields(unittest.TestCase):
         self.assertEqual(parsed[0]["name"], "Drama")
 
 
+class TestEnrichTmdbDetailsBatchCommit(unittest.TestCase):
+    """P1.43: Verify batch-commit semantics for enrich_with_tmdb_details."""
+
+    def _make_db(self):
+        from movietrace.db.schema import initialize_database, connect_database
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        db_path = Path(tmp) / "test_batch.db"
+        initialize_database(db_path)
+        return connect_database(db_path), str(db_path)
+
+    def _seed_canonical(self, conn, tmdb_id: int, media_type: str = "tv") -> int:
+        """Insert canonical_item + external_id, return canonical_item_id."""
+        key = f"tmdb:{media_type}:{tmdb_id}:season:1" if media_type == "tv" else f"tmdb:movie:{tmdb_id}"
+        conn.execute(
+            "insert into canonical_items(canonical_item_key, title, content_type, content_granularity) values (?, ?, ?, ?)",
+            (key, f"Show {tmdb_id}", media_type, "season" if media_type == "tv" else "movie"),
+        )
+        canonical_id = conn.execute("select last_insert_rowid()").fetchone()[0]
+        ext_id = f"{media_type}:{tmdb_id}"
+        conn.execute(
+            "insert into external_ids(canonical_item_id, source, external_id) values (?, ?, ?)",
+            (canonical_id, "tmdb", ext_id),
+        )
+        conn.commit()
+        return canonical_id
+
+    def test_enrich_rolls_back_on_mid_loop_error(self):
+        """P1.43: single-candidate error continues; committed writes include successful candidates only.
+
+        Strategy: 'single error continue, batch commit at end'.
+        - Candidate 1 returns valid detail → zh fields written at commit
+        - Candidate 2 raises RuntimeError in get_tmdb_detail_with_cache → caught by except, loop continues
+        - After loop: conn.commit() commits candidate-1 writes; candidate-2 was never written
+        """
+        from movietrace.pipeline.omdb_enrichment import enrich_with_tmdb_details
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+
+        conn, db_path = self._make_db()
+        cid1 = self._seed_canonical(conn, 1001, "tv")
+        cid2 = self._seed_canonical(conn, 1002, "tv")
+
+        c1 = MergedCandidate(tmdb_id=1001, imdb_id=None, title="Show 1001", media_type="tv")
+        c2 = MergedCandidate(tmdb_id=1002, imdb_id=None, title="Show 1002", media_type="tv")
+
+        detail_data_c1 = {
+            "release_date": "2024-01-01",
+            "original_language": "en",
+            "genres": [{"id": 18, "name": "Drama"}],
+        }
+        zh_data_c1 = {"name": "第一剧", "overview": "简介一"}
+
+        call_count = [0]
+
+        def mock_get_tmdb_detail(conn, client, tmdb_id, media_type, ttl_hours=24):
+            call_count[0] += 1
+            if tmdb_id == 1001:
+                return detail_data_c1, False
+            raise RuntimeError("simulated API failure for candidate 2")
+
+        def mock_fetch_zh(conn, client, tmdb_id, media_type, ttl_hours=24):
+            if tmdb_id == 1001:
+                return zh_data_c1, False
+            return None, False
+
+        with patch("movietrace.pipeline.omdb_enrichment.get_tmdb_detail_with_cache", side_effect=mock_get_tmdb_detail):
+            with patch("movietrace.pipeline.omdb_enrichment._fetch_zh_detail_with_cache", side_effect=mock_fetch_zh):
+                result = enrich_with_tmdb_details(conn, [c1, c2], "fake-token", db_path=db_path)
+
+        # Enriched count: only c1 succeeded
+        self.assertEqual(result["enriched"], 1)
+
+        # c1 zh fields must be written (committed)
+        row1 = conn.execute("select title_zh from canonical_items where id = ?", (cid1,)).fetchone()
+        self.assertEqual(row1[0], "第一剧")
+
+        # c2 zh fields must remain NULL (never written — error before any write)
+        row2 = conn.execute("select title_zh from canonical_items where id = ?", (cid2,)).fetchone()
+        self.assertIsNone(row2[0])
+
+        conn.close()
+
+
 class TestApplyTmdbDetailDataLastEpisode(unittest.TestCase):
     def _make_candidate(self):
         from movietrace.pipeline.multi_source_merge import MergedCandidate

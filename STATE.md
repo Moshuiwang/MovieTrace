@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-22 +08 · Claude Code CLI（Opus 4.7） · 分支 `feat/p1.42-fix-fallback-output-pollution`
-**测试：** 641 passed（P1.42 合并后，+50 新测试）
+**最后更新：** 2026-05-22 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `fix/p1.43-omdb-enrichment-batch-commit`
+**测试：** 642 passed（P1.43 完成后，+1 新测试 test_enrich_rolls_back_on_mid_loop_error）
 **Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段；P1.31 SCHEMA_VERSION 常量同步到 17）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -33,6 +33,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.40 | [p1.40-fix-json-export-missing-fields.md](docs/tasks/p1.40-fix-json-export-missing-fields.md) | bug fix | ✅ 已合并 (PR #36)，format_json 补充 8 个缺失字段（中文名/平台/集数等）|
 | P1.41 | [p1.41-feishu-type-label-field.md](docs/tasks/p1.41-feishu-type-label-field.md) | feat | ✅ 已合并 (PR #37 #38)，热点发现子表新增"类型标签"多选字段（TMDb genre 名称）|
 | P1.42 | [p1.42-fix-fallback-output-pollution.md](docs/tasks/p1.42-fix-fallback-output-pollution.md) | 架构审查 § 1.7（P0）| ✅ 本地完成（待 PR），纯 fallback 候选不写 content_updates / 不推飞书；新增 has_fresh_signal 判定 + suppressed_fallback_only stats |
+| P1.43 | [p1.43-omdb-enrichment-batch-commit.md](docs/tasks/p1.43-omdb-enrichment-batch-commit.md) | 架构审查 § 1.4 | ✅ 本地完成（待 PR），去掉 3 处循环内 micro-commit，改为批量提交；新增 test_enrich_rolls_back_on_mid_loop_error；642 passed |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
@@ -59,7 +60,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 |---|---|---|---|---|
 | P1.38 | fix-notify-bugs | Bug B-01 / B-02 | 修复飞书卡片缓存计数 0 + 重点内容重复（两 bug 共一 PR）| 无 |
 | P1.42 | [fix-fallback-output-pollution](docs/tasks/p1.42-fix-fallback-output-pollution.md) | 架构审查 § 1.7（P0）| 纯 fallback 候选不写 content_updates / 不推飞书；混合源照旧 | 无 |
-| P1.43 | [omdb-enrichment-batch-commit](docs/tasks/p1.43-omdb-enrichment-batch-commit.md) | 架构审查 § 1.4 | 去掉循环内 micro-commits，改批量事务 | 无 |
+| ~~P1.43~~ | ~~[omdb-enrichment-batch-commit](docs/tasks/p1.43-omdb-enrichment-batch-commit.md)~~ | ~~架构审查 § 1.4~~ | ~~去掉循环内 micro-commits，改批量事务~~ ✅ 本地完成（待 PR） | — |
 | P1.44 | [tmdb-search-cache](docs/tasks/p1.44-tmdb-search-cache.md) | 架构审查 § 1.5 | TMDb /search/tv\|movie 接入 api_cache，TTL 72h | 无 |
 | P1.45 | [feishu-sync-retry-and-failures-table](docs/tasks/p1.45-feishu-sync-retry-and-failures-table.md) | 架构审查 § 1.6 + 合规规则 23 | 显式重试（指数退避×3）+ 失败 record 持久化 + replay（含 migration 018）| 无 |
 | P1.46 | [http-policy-unification](docs/tasks/p1.46-http-policy-unification.md) | 架构审查 § 1.2 | stdlib 范围统一 HTTP 超时/重试/429 策略，**不引入新依赖** | 建议在 P1.45 之后或同窗口推进 |

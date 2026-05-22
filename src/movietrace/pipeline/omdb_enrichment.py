@@ -142,6 +142,7 @@ def enrich_with_omdb(
 
         time.sleep(1.0)  # polite between OMDb calls
 
+    conn.commit()
     logger.info(
         "OMDb enrichment: api_calls=%d cache_hits=%d enriched=%d of %d keys_used=%d keys_exhausted=%d",
         api_calls, cache_hits, enriched, len(candidates),
@@ -186,7 +187,6 @@ def _fetch_zh_detail_with_cache(
             "insert or replace into api_cache (source, cache_key, response_json) values (?, ?, ?)",
             ("tmdb", cache_key, json.dumps(data, ensure_ascii=False)),
         )
-        conn.commit()
         return data, False
     return None, False
 
@@ -215,7 +215,6 @@ def _update_canonical_zh_fields(
            where id = ?""",
         (title_zh or None, overview_zh or None, genres_json, networks_json, row[0]),
     )
-    conn.commit()
     return True
 
 
@@ -287,6 +286,7 @@ def enrich_with_tmdb_details(
             except Exception as exc:
                 logger.warning("zh-CN enrichment failed for %s (%s): %s", c.tmdb_id, c.media_type, exc)
 
+    conn.commit()
     logger.info(
         "TMDb detail enrichment: api_calls=%d cache_hits=%d enriched=%d of %d",
         api_calls, cache_hits, enriched, len(candidates),
@@ -323,7 +323,6 @@ def _write_cache(conn: sqlite3.Connection, key: str, data: dict, source: str = "
             "insert or replace into api_cache (source, cache_key, response_json) values (?, ?, ?)",
             (source, key, json.dumps(data, ensure_ascii=False)),
         )
-        conn.commit()
     except Exception as exc:
         logger.warning("Failed to write OMDb cache for %s: %s", key, exc)
 
