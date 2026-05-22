@@ -132,9 +132,15 @@ def _build_card(
     if important:
         elements.append({"tag": "hr"})
         lines = ["**🎯 重点内容（P0 / P1）**"]
-        for item in important[:10]:
-            pri = item.get("priority", "")
+        seen_titles: set[str] = set()
+        for item in important:
             title = item.get("title", "")
+            if title in seen_titles:
+                continue
+            seen_titles.add(title)
+            if len(lines) > 10:  # header line + 10 items
+                break
+            pri = item.get("priority", "")
             score = item.get("hot_score", 0)
             lines.append(f"[{pri}] {title}  →  {score:.1f} 分")
         elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "\n".join(lines)}})
@@ -164,7 +170,8 @@ def _build_card(
     def _prog_src_tag(src_key: str, fetched: int) -> str:
         info = source_status_prog.get(src_key, {})
         if info.get("status") == "fallback":
-            return f"⚠️ 缓存({info.get('snapshot_date', '?')}, {fetched}条)"
+            count = info.get("cached_count", fetched)
+            return f"⚠️ 缓存({info.get('snapshot_date', '?')}, {count}条)"
         if info.get("status") == "failed_no_fallback":
             return "❌ 无可用数据"
         return f"✓ {fetched}条新鲜"

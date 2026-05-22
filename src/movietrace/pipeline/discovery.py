@@ -329,13 +329,31 @@ def run_discovery(
             d and d != snapshot_date
             for d in source_dates.values()
         )
-        source_status = {
-            source: {
-                "status": "fresh" if (d == snapshot_date) else ("fallback" if d else "failed_no_fallback"),
-                "snapshot_date": d,
-            }
-            for source, d in source_dates.items()
+
+        _table_map = {
+            "flixpatrol": "flixpatrol_top10",
+            "tmdb": "tmdb_trending",
+            "trakt": "trakt_trending",
         }
+        source_status = {}
+        for source, d in source_dates.items():
+            if d == snapshot_date:
+                status = "fresh"
+                cached_count = None
+            elif d:
+                status = "fallback"
+                table = _table_map.get(source, "")
+                cached_count = conn.execute(
+                    f"select count(*) from {table} where snapshot_date = ?",
+                    (d,),
+                ).fetchone()[0] if table else 0
+            else:
+                status = "failed_no_fallback"
+                cached_count = None
+            entry: dict = {"status": status, "snapshot_date": d}
+            if cached_count is not None:
+                entry["cached_count"] = cached_count
+            source_status[source] = entry
 
         # Step 2: Multi-source merge
         from movietrace.pipeline.multi_source_merge import merge_three_sources
