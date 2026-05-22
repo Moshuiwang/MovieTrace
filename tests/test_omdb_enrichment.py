@@ -167,6 +167,80 @@ class OmdbEnrichmentTest(unittest.TestCase):
         self.assertEqual(result["keys_used"], 1)  # only key1 was tried
         self.assertEqual(result["enriched"], 0)
 
+    def test_enrich_omdb_logs_progress_every_20(self):
+        from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+
+        candidates = [
+            MergedCandidate(tmdb_id=i, imdb_id=f"tt{i:07d}", title=f"Test {i}", media_type="movie")
+            for i in range(1, 22)
+        ]
+        data = {"Response": "True", "imdbRating": "7.5", "imdbVotes": "1,000"}
+
+        with patch("movietrace.pipeline.omdb_enrichment._read_cache", return_value=None):
+            with patch("movietrace.pipeline.omdb_enrichment.OmdbDetailClient") as mock_client_cls:
+                mock_client = MagicMock()
+                mock_client.get_by_imdb_id.return_value = data
+                mock_client_cls.return_value = mock_client
+                with patch("movietrace.pipeline.omdb_enrichment.time.sleep", return_value=None):
+                    with self.assertLogs("movietrace.pipeline.omdb_enrichment", level="INFO") as log_capture:
+                        result = enrich_with_omdb(self.conn, candidates, ["fake-key"])
+
+        log_text = "\n".join(log_capture.output)
+        self.assertIn("OMDb enrichment: 20/21 (api=20 cache=0 enriched=20)", log_text)
+        self.assertIn("OMDb enrichment: 21/21 (api=21 cache=0 enriched=21)", log_text)
+        self.assertEqual(result["api_calls"], 21)
+        self.assertEqual(result["enriched"], 21)
+
+    def test_enrich_omdb_logs_progress_at_end_when_less_than_20(self):
+        from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+
+        candidates = [
+            MergedCandidate(tmdb_id=i, imdb_id=f"tt{i:07d}", title=f"Test {i}", media_type="movie")
+            for i in range(1, 6)
+        ]
+        data = {"Response": "True", "imdbRating": "7.5", "imdbVotes": "1,000"}
+
+        with patch("movietrace.pipeline.omdb_enrichment._read_cache", return_value=None):
+            with patch("movietrace.pipeline.omdb_enrichment.OmdbDetailClient") as mock_client_cls:
+                mock_client = MagicMock()
+                mock_client.get_by_imdb_id.return_value = data
+                mock_client_cls.return_value = mock_client
+                with patch("movietrace.pipeline.omdb_enrichment.time.sleep", return_value=None):
+                    with self.assertLogs("movietrace.pipeline.omdb_enrichment", level="INFO") as log_capture:
+                        result = enrich_with_omdb(self.conn, candidates, ["fake-key"])
+
+        log_text = "\n".join(log_capture.output)
+        self.assertIn("OMDb enrichment: 5/5 (api=5 cache=0 enriched=5)", log_text)
+        self.assertEqual(result["api_calls"], 5)
+        self.assertEqual(result["enriched"], 5)
+
+    def test_enrich_tmdb_detail_logs_progress_every_20(self):
+        from movietrace.pipeline.omdb_enrichment import enrich_with_tmdb_details
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+
+        candidates = [
+            MergedCandidate(tmdb_id=i, imdb_id=None, title=f"Show {i}", media_type="tv")
+            for i in range(1, 22)
+        ]
+        detail_data = {
+            "first_air_date": "2024-01-01",
+            "original_language": "en",
+            "genres": [{"id": 18, "name": "Drama"}],
+        }
+
+        with patch("movietrace.pipeline.omdb_enrichment.get_tmdb_detail_with_cache", return_value=(detail_data, False)):
+            with patch("movietrace.pipeline.omdb_enrichment._fetch_zh_detail_with_cache", return_value=({}, False)):
+                with self.assertLogs("movietrace.pipeline.omdb_enrichment", level="INFO") as log_capture:
+                    result = enrich_with_tmdb_details(self.conn, candidates, "fake-token", db_path=str(self.db_path))
+
+        log_text = "\n".join(log_capture.output)
+        self.assertIn("TMDb detail enrichment: 20/21 (api=20 cache=0 enriched=20)", log_text)
+        self.assertIn("TMDb detail enrichment: 21/21 (api=21 cache=0 enriched=21)", log_text)
+        self.assertEqual(result["api_calls"], 21)
+        self.assertEqual(result["enriched"], 21)
+
 
 class OmdbResolveKeysTest(unittest.TestCase):
     def test_new_format_api_keys_list(self):
