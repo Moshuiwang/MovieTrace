@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-23 07:30 +08 · Codex（GPT-5） · 分支 `docs/state-task-status-sync`
-**测试：** 状态同步无代码测试；最近远端 CI/CD 通过（PR #44，main run 26316823793 test/deploy/notify success）；最近全量基线 670 passed（P1.47）
+**最后更新：** 2026-05-23 07:55 +08 · Codex（GPT-5） · 分支 `docs/pr-confirmation-gate`
+**测试：** 流程文档变更无代码测试，`git diff --check` 通过；最近远端 CI/CD 通过（PR #44，main run 26316823793 test/deploy/notify success）；最近全量基线 670 passed（P1.47）
 **Schema：** version 18（P1.45 新增 migration 018 feishu_sync_failures 表；SCHEMA_VERSION 常量同步到 18）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -46,6 +46,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-23 **PR 创建改为人类确认门禁**（Agent 只有在人类事前或当下明确确认后才能创建 PR；`session-checklist` 不再把 PR 当默认收尾动作；相关小改优先合并进同一 PR 降低流程成本）
 - 2026-05-23 **P1.53 CD 飞书通知补 PR 信息 + 取消强制 journal**（main CD 通知成功/失败均包含 PR 编号、标题、作者、链接、test/deploy 结果；`session-checklist` 不再要求创建 `journal/`）
 - 2026-05-23 **P1.47 enrichment 进度日志**（OMDb + TMDb detail 循环每 20 条和尾批输出进度；dry-run 可见进度行；3 新测试；670 passed）
 - 2026-05-22 **P1.38 notify bug 修复**（fallback 标签读 cached_count 修复计数为 0；important 按 title 去重；667 passed）
@@ -82,7 +83,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 **审查未采纳项**（详见 [`docs/reviews/architecture_audit_2026_05.md § 二`](docs/reviews/architecture_audit_2026_05.md)）：
 - § 1.1 DB 长连接解耦 — 单进程 cron 无并发写入，锁风险不存在
-- § 1.3 异步 + 取消 sleep — OMDb 限制是每日配额而非 per-second，sleep 已由 P1.50 改为可配置
+- § 1.3 异步 + 取消 sleep — OMDb 限制是每日配额而非 per-second；sleep 调优已收敛为 P1.50 任务包
 - § 1.8 CLI Orchestrator 重构 — 投机性，违反 CLAUDE.md No Speculative Code 铁律
 
 ## 待修 Bug（已确认，纳入 P1.38）
