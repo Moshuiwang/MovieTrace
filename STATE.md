@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-23 07:24 +08 · Codex（GPT-5） · 分支 `fix/p1.53-cd-feishu-pr-notify`
-**测试：** P1.53 workflow 静态验证通过（YAML parse / notify inline Python compile / git diff --check）；最近全量基线 670 passed（P1.47）
+**最后更新：** 2026-05-23 07:30 +08 · Codex（GPT-5） · 分支 `docs/state-task-status-sync`
+**测试：** 状态同步无代码测试；最近远端 CI/CD 通过（PR #44，main run 26316823793 test/deploy/notify success）；最近全量基线 670 passed（P1.47）
 **Schema：** version 18（P1.45 新增 migration 018 feishu_sync_failures 表；SCHEMA_VERSION 常量同步到 18）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -32,14 +32,14 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.37 | [p1.37-progress-format-notify.md](docs/tasks/p1.37-progress-format-notify.md) | 进度通知 | ✅ 已合并 (PR #35)，[1/8] 进度格式 + enrichment 细节 + 飞书卡片进度 section |
 | P1.40 | [p1.40-fix-json-export-missing-fields.md](docs/tasks/p1.40-fix-json-export-missing-fields.md) | bug fix | ✅ 已合并 (PR #36)，format_json 补充 8 个缺失字段（中文名/平台/集数等）|
 | P1.41 | [p1.41-feishu-type-label-field.md](docs/tasks/p1.41-feishu-type-label-field.md) | feat | ✅ 已合并 (PR #37 #38)，热点发现子表新增"类型标签"多选字段（TMDb genre 名称）|
-| P1.42 | [p1.42-fix-fallback-output-pollution.md](docs/tasks/p1.42-fix-fallback-output-pollution.md) | 架构审查 § 1.7（P0）| ✅ 本地完成（待 PR），纯 fallback 候选不写 content_updates / 不推飞书；新增 has_fresh_signal 判定 + suppressed_fallback_only stats |
-| P1.43 | [p1.43-omdb-enrichment-batch-commit.md](docs/tasks/p1.43-omdb-enrichment-batch-commit.md) | 架构审查 § 1.4 | ✅ 本地完成（待 PR），去掉 3 处循环内 micro-commit，改为批量提交；新增 test_enrich_rolls_back_on_mid_loop_error；642 passed |
-| P1.45 | [p1.45-feishu-sync-retry-and-failures-table.md](docs/tasks/p1.45-feishu-sync-retry-and-failures-table.md) | 架构审查 § 1.6 + 合规规则 23 | ✅ 本地完成（待 PR），显式重试（指数退避×3）+ feishu_sync_failures 持久化 + replay；migration 018；655 passed |
-| P1.44 | [p1.44-tmdb-search-cache.md](docs/tasks/p1.44-tmdb-search-cache.md) | 架构审查 § 1.5 | ✅ 本地完成（待 PR），TmdbSearchClient.search_tv/movie 接入 api_cache 72h TTL；cache_hit usage log；5 新测试；660 passed |
-| P1.46 | [p1.46-http-policy-unification.md](docs/tasks/p1.46-http-policy-unification.md) | 架构审查 § 1.2 | ✅ 本地完成（待 PR），新增 _http_policy.py 共享层；两个 HTTP 入口接入 policy；7 新测试；667 passed |
-| P1.38 | — | Bug B-01 / B-02 | ✅ 本地完成（待 PR），fallback 标签读 cached_count 修复计数为 0；important 按 title 去重；667 passed |
+| P1.42 | [p1.42-fix-fallback-output-pollution.md](docs/tasks/p1.42-fix-fallback-output-pollution.md) | 架构审查 § 1.7（P0）| ✅ 已合并 (PR #40)，纯 fallback 候选不写 content_updates / 不推飞书；新增 has_fresh_signal 判定 + suppressed_fallback_only stats |
+| P1.43 | [p1.43-omdb-enrichment-batch-commit.md](docs/tasks/p1.43-omdb-enrichment-batch-commit.md) | 架构审查 § 1.4 | ✅ 已合并 (PR #40)，去掉 3 处循环内 micro-commit，改为批量提交；新增 test_enrich_rolls_back_on_mid_loop_error |
+| P1.45 | [p1.45-feishu-sync-retry-and-failures-table.md](docs/tasks/p1.45-feishu-sync-retry-and-failures-table.md) | 架构审查 § 1.6 + 合规规则 23 | ✅ 已合并 (PR #40)，显式重试（指数退避×3）+ feishu_sync_failures 持久化 + replay；migration 018 |
+| P1.44 | [p1.44-tmdb-search-cache.md](docs/tasks/p1.44-tmdb-search-cache.md) | 架构审查 § 1.5 | ✅ 已合并 (PR #40)，TmdbSearchClient.search_tv/movie 接入 api_cache 72h TTL；cache_hit usage log；5 新测试 |
+| P1.46 | [p1.46-http-policy-unification.md](docs/tasks/p1.46-http-policy-unification.md) | 架构审查 § 1.2 | ✅ 已合并 (PR #40)，新增 _http_policy.py 共享层；两个 HTTP 入口接入 policy；7 新测试 |
+| P1.38 | — | Bug B-01 / B-02 | ✅ 已合并 (PR #40)，fallback 标签读 cached_count 修复计数为 0；important 按 title 去重 |
 | P1.47 | [p1.47-omdb-enrichment-progress-log.md](docs/tasks/p1.47-omdb-enrichment-progress-log.md) | 可观测性 | ✅ 已合并 (PR #43)，OMDb + TMDb detail enrichment 每 20 条/尾批输出进度日志；3 新测试；670 passed |
-| P1.53 | [p1.53-cd-feishu-pr-notify.md](docs/tasks/p1.53-cd-feishu-pr-notify.md) | CI/CD 通知 | ✅ 本地完成（待 PR），auto-merge dispatch 传 PR number；CD 飞书通知成功/失败均补 PR 详情；取消强制 journal 规则 |
+| P1.53 | [p1.53-cd-feishu-pr-notify.md](docs/tasks/p1.53-cd-feishu-pr-notify.md) | CI/CD 通知 | ✅ 已合并 (PR #44)，auto-merge dispatch 传 PR number；CD 飞书通知成功/失败均补 PR 详情；取消强制 journal 规则 |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
@@ -57,7 +57,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** P1.53 本地完成，待 PR / 远端 CI/CD 验证
+- **进行中：** 无（P1.53 已合并，远端 CI/CD 已通过）
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 - **待决策：** 无
 - **P1.39 已完成**：生产日志 SSH 拉取方案已落地（`scripts/fetch-prod-logs.sh`），Logtail 接入决策放弃
