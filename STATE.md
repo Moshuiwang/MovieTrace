@@ -1,13 +1,13 @@
 # 项目状态快照
 
 > AI 冷启动 3 秒回答：现在停在哪儿、有没有阻塞、下一步做什么。
-> **更新策略：** 每次 commit 前更新；"近期变更"段只滚动保留 3 条，旧条目随 commit 移交 `journal/` + `git log`。
+> **更新策略：** 每次 commit 前更新；"近期变更"段只滚动保留 3 条，旧条目随 commit 移交 `git log` / PR 记录。
 > **不在此处：** 历史 Phase → [`docs/history/phase1_state_archive.md`](docs/history/phase1_state_archive.md)（先 `rg`）· 技术地图 → [`docs/context_map.md`](docs/context_map.md) · 日常运行 → [`docs/operations/runbook.md`](docs/operations/runbook.md)。
 
 ---
 
-**最后更新：** 2026-05-23 07:14 +08 · Codex（GPT-5） · 分支 `feat/p1.47-omdb-progress-log`
-**测试：** 670 passed（P1.47 完成后，新增 3 个进度日志测试）
+**最后更新：** 2026-05-23 07:24 +08 · Codex（GPT-5） · 分支 `fix/p1.53-cd-feishu-pr-notify`
+**测试：** P1.53 workflow 静态验证通过（YAML parse / notify inline Python compile / git diff --check）；最近全量基线 670 passed（P1.47）
 **Schema：** version 18（P1.45 新增 migration 018 feishu_sync_failures 表；SCHEMA_VERSION 常量同步到 18）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -38,13 +38,15 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.44 | [p1.44-tmdb-search-cache.md](docs/tasks/p1.44-tmdb-search-cache.md) | 架构审查 § 1.5 | ✅ 本地完成（待 PR），TmdbSearchClient.search_tv/movie 接入 api_cache 72h TTL；cache_hit usage log；5 新测试；660 passed |
 | P1.46 | [p1.46-http-policy-unification.md](docs/tasks/p1.46-http-policy-unification.md) | 架构审查 § 1.2 | ✅ 本地完成（待 PR），新增 _http_policy.py 共享层；两个 HTTP 入口接入 policy；7 新测试；667 passed |
 | P1.38 | — | Bug B-01 / B-02 | ✅ 本地完成（待 PR），fallback 标签读 cached_count 修复计数为 0；important 按 title 去重；667 passed |
-| P1.47 | [p1.47-omdb-enrichment-progress-log.md](docs/tasks/p1.47-omdb-enrichment-progress-log.md) | 可观测性 | ✅ 本地完成（待 PR），OMDb + TMDb detail enrichment 每 20 条/尾批输出进度日志；3 新测试；670 passed |
+| P1.47 | [p1.47-omdb-enrichment-progress-log.md](docs/tasks/p1.47-omdb-enrichment-progress-log.md) | 可观测性 | ✅ 已合并 (PR #43)，OMDb + TMDb detail enrichment 每 20 条/尾批输出进度日志；3 新测试；670 passed |
+| P1.53 | [p1.53-cd-feishu-pr-notify.md](docs/tasks/p1.53-cd-feishu-pr-notify.md) | CI/CD 通知 | ✅ 本地完成（待 PR），auto-merge dispatch 传 PR number；CD 飞书通知成功/失败均补 PR 详情；取消强制 journal 规则 |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-23 **P1.53 CD 飞书通知补 PR 信息 + 取消强制 journal**（main CD 通知成功/失败均包含 PR 编号、标题、作者、链接、test/deploy 结果；`session-checklist` 不再要求创建 `journal/`）
 - 2026-05-23 **P1.47 enrichment 进度日志**（OMDb + TMDb detail 循环每 20 条和尾批输出进度；dry-run 可见进度行；3 新测试；670 passed）
 - 2026-05-22 **P1.38 notify bug 修复**（fallback 标签读 cached_count 修复计数为 0；important 按 title 去重；667 passed）
 - 2026-05-22 **P1.46 HTTP policy 统一**（新增 _http_policy.py；两个 HTTP 入口接入 policy；统一超时/5xx重试/429限速处理；7 新测试；667 passed）
@@ -55,7 +57,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** 无（P1.38 已完成）
+- **进行中：** P1.53 本地完成，待 PR / 远端 CI/CD 验证
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 - **待决策：** 无
 - **P1.39 已完成**：生产日志 SSH 拉取方案已落地（`scripts/fetch-prod-logs.sh`），Logtail 接入决策放弃

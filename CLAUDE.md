@@ -58,4 +58,4 @@ git checkout main && git pull           # 合并后同步本地 main
 | 改 `src/movietrace/sources/**` | [`.claude/rules/22-sources-compliance.md`](.claude/rules/22-sources-compliance.md) |
 | 改 `src/movietrace/feishu/**` · `feedback/**` | [`.claude/rules/23-feishu-integration.md`](.claude/rules/23-feishu-integration.md) |
 | 改 `tests/**` | [`.claude/rules/30-testing.md`](.claude/rules/30-testing.md) |
-| 任务包 / 日报 / ADR / 收尾 | [`docs/tasks/TEMPLATE.md`](docs/tasks/TEMPLATE.md) · [`docs/workflow/journal-spec.md`](docs/workflow/journal-spec.md) · [`docs/decisions/README.md`](docs/decisions/README.md) · [`docs/workflow/session-checklist.md`](docs/workflow/session-checklist.md) |
+| 任务包 / ADR / 收尾 | [`docs/tasks/TEMPLATE.md`](docs/tasks/TEMPLATE.md) · [`docs/decisions/README.md`](docs/decisions/README.md) · [`docs/workflow/session-checklist.md`](docs/workflow/session-checklist.md) |

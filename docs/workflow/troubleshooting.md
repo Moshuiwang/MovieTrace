@@ -67,5 +67,5 @@
 ## 通用原则
 
 - 排查不动产品代码——先复现、定位、报告，再走任务包流程修复
-- 排查记录写到日报或 journal，重大问题升级为 ADR
+- 排查记录写到任务包、STATE.md 或 PR 描述，重大问题升级为 ADR
 - 不清楚时报告"现象 + 已排除 + 下一步"，不靠猜测推进（[`.claude/rules/00-core-behaviors.md`](../../.claude/rules/00-core-behaviors.md) § 失败信号）

@@ -80,7 +80,7 @@ jobs:
 
           export PR_NUMBER
           DISPATCH_OK=false
-          if gh workflow run CI --ref main; then
+          if gh workflow run CI --ref main -f pr_number="$PR_NUMBER"; then
             sleep 5  # 给 GitHub 几秒钟创建 run
             for i in $(seq 1 10); do
               LATEST_STATUS=$(gh run list --workflow CI --branch main --limit 1 --json status --jq '.[0].status' 2>/dev/null || echo "")

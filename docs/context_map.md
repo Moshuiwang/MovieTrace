@@ -29,7 +29,6 @@
 | 飞书运营字段规范 | [`docs/operations/feishu_feedback_spec.md`](operations/feishu_feedback_spec.md) | P1.23 新增：运营怎么填、填了之后怎么影响系统 |
 | 反馈周报使用指南 | [`docs/operations/feedback_report_guide.md`](operations/feedback_report_guide.md) | P1.23 起改为 `export-feedback-report` 自动生成；说明字段含义 |
 | 排查故障 | [`docs/workflow/troubleshooting.md`](workflow/troubleshooting.md) | 排查方法论 |
-| 写日报 | [`docs/workflow/journal-spec.md`](workflow/journal-spec.md) | 日报格式（含 token 字段精确值）|
 | 会话收尾 | [`docs/workflow/session-checklist.md`](workflow/session-checklist.md) | 收尾清单 |
 | 完成任务汇报 | [`docs/workflow/report-format.md`](workflow/report-format.md) | 报告格式 |
 | 写新任务包 | [`docs/tasks/TEMPLATE.md`](tasks/TEMPLATE.md) | 任务包模板 |
@@ -51,7 +50,7 @@
 |------|------|---------------|
 | Phase 1 全历史 | [`docs/history/phase1_state_archive.md`](history/phase1_state_archive.md) | `Phase 1.7` `P1.8-D` `virtual_series` |
 | 已完成任务包 | [`docs/tasks/p1.*.md`](tasks/) | `OMDb` `migration 012` `FatalApiError` |
-| 历史日报 | [`journal/`](../journal/) | `2026-05-13` `daily-discover` |
+| 历史 journal 存档 | [`journal/`](../journal/) | 仅查历史，不再新增 |
 | 旧验证报告 | [`reports/`](../reports/) | `flixpatrol_zero` `e2e_validation` |
 | 参考资料 | [`docs/reference/`](reference/) | 外部 API 文档片段、字段映射 |
 
