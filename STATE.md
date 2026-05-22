@@ -61,20 +61,25 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 ## 即将立项的任务包
 
 > 任务包立项后在此登记；合并后移入"最近完成任务包"表并从本节删除。
-> **推进顺序：** P1.42（P0）→ P1.43（最便宜）→ P1.45（合规线）→ P1.44 → P1.46；P1.38 可与上述并行。
+> **并行策略：P1.51 与其余五个完全无文件交集，可随时并行开工。P1.47→P1.48→P1.49→P1.50→P1.52 均压在 `omdb_enrichment.py`，必须串行。**
+>
+> ```
+> ┌─ P1.47 → P1.48 → P1.49 → P1.50 → P1.52
+> └─ P1.51 ─────────────────────────────────  (独立并行)
+> ```
 
-| 编号 | 名称 | 来源 | 说明 | 阻塞？ |
+| 编号 | 名称 | 来源 | 说明 | 并行？ |
 |---|---|---|---|---|
-| ~~P1.38~~ | ~~fix-notify-bugs~~ | ~~Bug B-01 / B-02~~ | ~~修复飞书卡片缓存计数 0 + 重点内容重复~~ ✅ 本地完成（待 PR） | — |
-| P1.42 | [fix-fallback-output-pollution](docs/tasks/p1.42-fix-fallback-output-pollution.md) | 架构审查 § 1.7（P0）| 纯 fallback 候选不写 content_updates / 不推飞书；混合源照旧 | 无 |
-| ~~P1.43~~ | ~~[omdb-enrichment-batch-commit](docs/tasks/p1.43-omdb-enrichment-batch-commit.md)~~ | ~~架构审查 § 1.4~~ | ~~去掉循环内 micro-commits，改批量事务~~ ✅ 本地完成（待 PR） | — |
-| ~~P1.44~~ | ~~[tmdb-search-cache](docs/tasks/p1.44-tmdb-search-cache.md)~~ | ~~架构审查 § 1.5~~ | ~~TMDb /search/tv\|movie 接入 api_cache，TTL 72h~~ ✅ 本地完成（待 PR） | — |
-| ~~P1.45~~ | ~~[feishu-sync-retry-and-failures-table](docs/tasks/p1.45-feishu-sync-retry-and-failures-table.md)~~ | ~~架构审查 § 1.6 + 合规规则 23~~ | ~~显式重试（指数退避×3）+ 失败 record 持久化 + replay（含 migration 018）~~ ✅ 本地完成（待 PR） | — |
-| ~~P1.46~~ | ~~[http-policy-unification](docs/tasks/p1.46-http-policy-unification.md)~~ | ~~架构审查 § 1.2~~ | ~~stdlib 范围统一 HTTP 超时/重试/429 策略，**不引入新依赖**~~ ✅ 本地完成（待 PR） | — |
+| P1.47 | [enrichment-progress-log](docs/tasks/p1.47-omdb-enrichment-progress-log.md) | 可观测性 | OMDb + TMDb detail 循环每 20 条打一行进度日志 | 串行链头 |
+| P1.48 | [pipeline-heartbeat](docs/tasks/p1.48-pipeline-heartbeat.md) | 可观测性 | 全流程心跳文件 + check-pipeline-health.sh | P1.47 后 |
+| P1.49 | [enrichment-cache-ttl-tuning](docs/tasks/p1.49-enrichment-cache-ttl-tuning.md) | 性能 | OMDb / TMDb detail 缓存 TTL 24h → 72h | P1.48 后 |
+| P1.50 | [omdb-sleep-tuning](docs/tasks/p1.50-omdb-sleep-tuning.md) | 性能 | OMDb 请求间隔 1.0s → 0.2s 可配置化 + quota_errors 可观测 | P1.49 后 |
+| P1.51 | [fix-double-api-logging](docs/tasks/p1.51-fix-double-api-logging.md) | bug | 传输层+业务层各写一次 api_usage_log 导致统计虚高 2×；改 `_http_policy.py`/`tmdb.py`/`feishu/_http.py` | **P1.47 并行** |
+| P1.52 | [canonical-first-enrichment](docs/tasks/p1.52-canonical-first-enrichment.md) | refactor | TMDb detail 优先查 canonical_items，已入库剧集跳过 API；系统运行几天后实施 | P1.50 后 |
 
 **审查未采纳项**（详见 [`docs/reviews/architecture_audit_2026_05.md § 二`](docs/reviews/architecture_audit_2026_05.md)）：
 - § 1.1 DB 长连接解耦 — 单进程 cron 无并发写入，锁风险不存在
-- § 1.3 异步 + 取消 sleep — OMDb `sleep(1)` 是合规要求，60 秒可接受
+- § 1.3 异步 + 取消 sleep — OMDb 限制是每日配额而非 per-second，sleep 已由 P1.50 改为可配置
 - § 1.8 CLI Orchestrator 重构 — 投机性，违反 CLAUDE.md No Speculative Code 铁律
 
 ## 待修 Bug（已确认，纳入 P1.38）
