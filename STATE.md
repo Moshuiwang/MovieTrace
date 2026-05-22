@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-22 +08 · Claude Code CLI（Opus 4.7） · 分支 `docs/p1.42-p1.46-task-packages`
-**测试：** 591 passed（P1.40+P1.41 合并后，+6 新测试）
+**最后更新：** 2026-05-22 +08 · Claude Code CLI（Opus 4.7） · 分支 `feat/p1.42-fix-fallback-output-pollution`
+**测试：** 641 passed（P1.42 合并后，+50 新测试）
 **Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段；P1.31 SCHEMA_VERSION 常量同步到 17）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -32,19 +32,20 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.37 | [p1.37-progress-format-notify.md](docs/tasks/p1.37-progress-format-notify.md) | 进度通知 | ✅ 已合并 (PR #35)，[1/8] 进度格式 + enrichment 细节 + 飞书卡片进度 section |
 | P1.40 | [p1.40-fix-json-export-missing-fields.md](docs/tasks/p1.40-fix-json-export-missing-fields.md) | bug fix | ✅ 已合并 (PR #36)，format_json 补充 8 个缺失字段（中文名/平台/集数等）|
 | P1.41 | [p1.41-feishu-type-label-field.md](docs/tasks/p1.41-feishu-type-label-field.md) | feat | ✅ 已合并 (PR #37 #38)，热点发现子表新增"类型标签"多选字段（TMDb genre 名称）|
+| P1.42 | [p1.42-fix-fallback-output-pollution.md](docs/tasks/p1.42-fix-fallback-output-pollution.md) | 架构审查 § 1.7（P0）| ✅ 本地完成（待 PR），纯 fallback 候选不写 content_updates / 不推飞书；新增 has_fresh_signal 判定 + suppressed_fallback_only stats |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-22 **P1.42 fallback 输出污染修复**（has_fresh_signal 判定基于 source_flags & fresh_sources；Step 5 阈值过滤后追加 fallback 过滤，保留 Soap bypass；stats 新增 suppressed_fallback_only；新增 2 条单测 + 1 条 fixture 调整；641 passed）
 - 2026-05-22 **架构审查 + 5 个任务包立项**（[`docs/reviews/architecture_audit_2026_05.md`](docs/reviews/architecture_audit_2026_05.md)）：审查 8 大痛点，立项 5 个（P1.42-P1.46），拒绝 3 项（1.1 DB 解耦 / 1.3 异步 / 1.8 CLI 重构——投机性或场景不符）
 - 2026-05-21 **P1.40 export_writer 缺字段修复**（format_json 补充 8 个字段：title_zh/overview_zh/genres_json/networks_json/upstream_total_eps/tmdb_total_episodes/content_type/match_confidence_low；464/465 记录有中文名；PR #36）
-- 2026-05-21 **P1.41 飞书类型标签字段**（新增 _compute_type_labels()，热点发现子表写入 TMDb genre 名称多选；修复 fields_extra["类型"] 覆盖 content_type 的旧 bug；dev 验证 465 条全量 sync 通过；PR #37 #38）
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** 无
+- **进行中：** P1.43 → P1.45 → P1.44 → P1.46 + P1.38 由 subagent 队列推进（本地 commit 不开 PR）
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 - **待决策：** 无
 - **P1.39 已完成**：生产日志 SSH 拉取方案已落地（`scripts/fetch-prod-logs.sh`），Logtail 接入决策放弃

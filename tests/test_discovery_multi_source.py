@@ -159,6 +159,171 @@ class DiscoveryMultiSourceTest(unittest.TestCase):
         self.assertIn("written", result)
         self.assertEqual(result["written"], 0)
 
+    def test_pure_fallback_candidates_not_written(self):
+        """P1.42: Pure fallback-only candidates should not be written to content_updates."""
+        from movietrace.pipeline.discovery import run_discovery
+
+        # Snapshot is today (2026-05-22), but only insert fallback data from yesterday
+        # FP: today (fresh)
+        self.conn.execute(
+            """insert into flixpatrol_top10
+               (fp_id, title, content_type, platform, country, snapshot_date,
+                ranking, days_total, tmdb_id, imdb_id, raw_payload_json)
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("fp2", "The Witcher", "tv_show", "netflix", "us", "2026-05-22",
+             2, 10, 71912, "3962222", "{}"),
+        )
+        # TMDb: yesterday (fallback)
+        self.conn.execute(
+            """insert into tmdb_trending
+               (tmdb_id, media_type, title, popularity, vote_average, vote_count,
+                release_date, original_language, source_endpoint, source_page,
+                snapshot_date, raw_payload_json)
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (888888, "tv", "Stranger Things", 450.0, 8.7, 10000,
+             "2016-07-15", "en", "trending/day", 1, "2026-05-21", "{}"),
+        )
+        # Trakt: yesterday (fallback)
+        self.conn.execute(
+            """insert into trakt_trending
+               (trakt_id, tmdb_id, imdb_id, media_type, title, watchers, rating, votes,
+                source_endpoint, snapshot_date, raw_payload_json)
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (999999, 888888, "tt4574334", "show", "Stranger Things", 6000, 8.5, 40000,
+             "shows/trending", "2026-05-21", "{}"),
+        )
+        # Register both to avoid auto-registration noise
+        self.conn.execute(
+            "insert into canonical_items (canonical_item_key, title, content_type, content_granularity) "
+            "values (?, ?, ?, ?)",
+            ("tmdb:tv:71912", "The Witcher", "tv", "season"),
+        )
+        self.conn.execute(
+            "insert into external_ids (canonical_item_id, source, external_id) values (?, 'tmdb', ?)",
+            (3, "71912"),
+        )
+        self.conn.execute(
+            "insert into canonical_items (canonical_item_key, title, content_type, content_granularity) "
+            "values (?, ?, ?, ?)",
+            ("tmdb:tv:888888", "Stranger Things", "tv", "season"),
+        )
+        self.conn.execute(
+            "insert into external_ids (canonical_item_id, source, external_id) values (?, 'tmdb', ?)",
+            (4, "888888"),
+        )
+        self.conn.commit()
+
+        # Simulate source_dates where FP is fresh (today) but TMDb/Trakt are fallback (yesterday)
+        source_dates = {
+            "flixpatrol": "2026-05-22",    # fresh
+            "tmdb": "2026-05-21",          # fallback
+            "trakt": "2026-05-21",         # fallback
+        }
+
+        with patch("movietrace.pipeline.discovery._load_secrets", return_value={
+            "omdb": {"api_key": "fake-omdb-key"},
+            "tmdb": {"api_read_access_token": "fake-tmdb-token"},
+        }):
+            with patch("movietrace.pipeline.omdb_enrichment.enrich_with_omdb", return_value={
+                "api_calls": 0, "cache_hits": 0, "enriched": 0,
+            }):
+                with patch("movietrace.pipeline.omdb_enrichment.enrich_with_tmdb_details", return_value={
+                    "api_calls": 0, "cache_hits": 0, "enriched": 0,
+                }):
+                    result = run_discovery(
+                        date_from="2026-05-22",
+                        dry_run=False,
+                        db_path=str(self.db_path),
+                    )
+
+        stats = result.get("stats", {})
+
+        # Stranger Things is pure fallback (only in TMDb+Trakt fallback, not in FP fresh)
+        # It should be suppressed
+        suppressed = stats.get("suppressed_fallback_only", 0)
+        self.assertGreaterEqual(suppressed, 1, "Should suppress at least 1 pure-fallback candidate")
+
+        # Check content_updates: Stranger Things (canonical_item_id 4) should NOT be written
+        written = self.conn.execute(
+            "select count(*) from content_updates where canonical_item_id = ?",
+            (4,),
+        ).fetchone()[0]
+        self.assertEqual(written, 0, "Stranger Things (pure fallback) should not be written")
+
+    def test_mixed_fresh_and_fallback_passes(self):
+        """P1.42: Mixed sources (fresh + fallback) should pass through."""
+        from movietrace.pipeline.discovery import run_discovery
+
+        # Insert data: same tmdb_id in both FP (today, fresh) and TMDb (yesterday, fallback)
+        # This is a "mixed" candidate that should pass through
+
+        # FP: today (fresh)
+        self.conn.execute(
+            """insert into flixpatrol_top10
+               (fp_id, title, content_type, platform, country, snapshot_date,
+                ranking, days_total, tmdb_id, imdb_id, raw_payload_json)
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("fp3", "Breaking Bad", "tv_show", "netflix", "us", "2026-05-22",
+             1, 100, 1396, "0903747", "{}"),
+        )
+        # TMDb: yesterday (fallback) with same tmdb_id
+        self.conn.execute(
+            """insert into tmdb_trending
+               (tmdb_id, media_type, title, popularity, vote_average, vote_count,
+                release_date, original_language, source_endpoint, source_page,
+                snapshot_date, raw_payload_json)
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (1396, "tv", "Breaking Bad", 800.0, 9.5, 50000,
+             "2008-01-20", "en", "trending/day", 1, "2026-05-21", "{}"),
+        )
+        # Trakt: today (fresh) with same tmdb_id to boost score further
+        self.conn.execute(
+            """insert into trakt_trending
+               (trakt_id, tmdb_id, imdb_id, media_type, title, watchers, rating, votes,
+                source_endpoint, snapshot_date, raw_payload_json)
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (1, 1396, "tt0903747", "show", "Breaking Bad", 8000, 9.3, 100000,
+             "shows/trending", "2026-05-22", "{}"),
+        )
+        self.conn.commit()
+
+        with patch("movietrace.pipeline.discovery._load_secrets", return_value={
+            "omdb": {"api_key": "fake-omdb-key"},
+            "tmdb": {"api_read_access_token": "fake-tmdb-token"},
+        }):
+            with patch("movietrace.pipeline.omdb_enrichment.enrich_with_omdb", return_value={
+                "api_calls": 0, "cache_hits": 0, "enriched": 0,
+            }):
+                with patch("movietrace.pipeline.omdb_enrichment.enrich_with_tmdb_details", return_value={
+                    "api_calls": 0, "cache_hits": 0, "enriched": 0,
+                }):
+                    result = run_discovery(
+                        date_from="2026-05-22",
+                        dry_run=False,
+                        db_path=str(self.db_path),
+                    )
+
+        stats = result.get("stats", {})
+        passed = result.get("candidates", [])
+
+        # Breaking Bad has FP (fresh) contribution, so it should have has_fresh_signal=True
+        # and should NOT be suppressed
+
+        self.assertGreaterEqual(len(passed), 1, "Should have at least 1 candidate passed threshold")
+
+        # Verify that Breaking Bad has fresh signal
+        breaking_bad = [c for c in passed if c.get("tmdb_id") == 1396]
+        self.assertEqual(len(breaking_bad), 1, "Breaking Bad should be in passed candidates")
+        self.assertTrue(breaking_bad[0].get("has_fresh_signal"), "Breaking Bad should have has_fresh_signal=True")
+
+        # Check that content_updates was written (suppress_fallback_only should be 0)
+        suppressed = stats.get("suppressed_fallback_only", 0)
+        self.assertEqual(suppressed, 0, "No pure-fallback candidates should be suppressed when mixed sources present")
+
+        # Verify content_updates was written
+        written = stats.get("written", 0)
+        self.assertGreaterEqual(written, 1, "At least 1 content_update should be written")
+
 
 if __name__ == "__main__":
     unittest.main()
