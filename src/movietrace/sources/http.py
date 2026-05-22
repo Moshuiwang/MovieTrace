@@ -8,9 +8,14 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from movietrace.sources._http_policy import HttpPolicy, request_with_policy
+
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0"
 )
+
+# Default policy for sources/http — timeout comes from HttpPolicy.timeout
+_DEFAULT_SOURCES_POLICY = HttpPolicy()
 
 
 class FatalApiError(RuntimeError):
@@ -28,35 +33,50 @@ def get_json(
     timeout: int = 20,
     log_context: dict | None = None,
 ) -> object:
-    full_url = url
-    if params:
-        full_url = f"{url}?{urlencode(params)}"
     merged_headers = {"User-Agent": DEFAULT_USER_AGENT}
     if headers:
         merged_headers.update(headers)
-    request = Request(full_url, headers=merged_headers)
+
+    # Build a policy that respects the caller-supplied timeout; other defaults
+    # come from HttpPolicy (retry, backoff, etc.)
+    policy = HttpPolicy(timeout=float(timeout))
+
     start = time.monotonic()
     try:
-        with urlopen(request, timeout=timeout) as response:
-            http_status = response.status
-            raw = response.read()
-            if response.headers.get("Content-Encoding") == "gzip":
-                raw = gzip.decompress(raw)
-            body = raw.decode("utf-8")
-        result = json.loads(body)
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-        _log_success(log_context, http_status, elapsed_ms, result)
-        return result
-    except HTTPError as exc:
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-        _log_error(log_context, exc, elapsed_ms)
-        if exc.code in (401, 402, 403):
-            raise FatalApiError(exc.code, str(exc)) from exc
-        raise
-    except Exception as exc:
+        status, raw_body, _resp_headers = request_with_policy(
+            url,
+            headers=merged_headers,
+            params=params,
+            policy=policy,
+            log_context=log_context,
+        )
+    except RuntimeError as exc:
+        # Retries exhausted for 5xx / network errors
         elapsed_ms = int((time.monotonic() - start) * 1000)
         _log_error(log_context, exc, elapsed_ms)
         raise
+
+    elapsed_ms = int((time.monotonic() - start) * 1000)
+
+    if status in (401, 402, 403):
+        exc = HTTPError(url, status, f"HTTP {status}", {}, None)
+        _log_error(log_context, exc, elapsed_ms)
+        raise FatalApiError(status, str(exc))
+
+    if status >= 400:
+        exc = HTTPError(url, status, f"HTTP {status}", {}, None)
+        _log_error(log_context, exc, elapsed_ms)
+        raise exc
+
+    # Decompress if needed
+    raw = raw_body
+    if _resp_headers.get("content-encoding") == "gzip":
+        raw = gzip.decompress(raw)
+    body = raw.decode("utf-8")
+    result = json.loads(body)
+
+    _log_success(log_context, status, elapsed_ms, result)
+    return result
 
 
 def _log_success(
@@ -110,9 +130,12 @@ def _log_error(
 
         error_msg = str(exc)
         http_status = None
-        m = re.search(r"HTTP Error (\d{3})", error_msg)
-        if m:
-            http_status = int(m.group(1))
+        if isinstance(exc, HTTPError):
+            http_status = exc.code
+        else:
+            m = re.search(r"HTTP Error (\d{3})", error_msg)
+            if m:
+                http_status = int(m.group(1))
         rate_limited = http_status == 429
 
         # OMDb 401 is a quota/authorization error (key expired or limit reached)
@@ -139,4 +162,3 @@ def _log_error(
         )
     except Exception:
         pass
-

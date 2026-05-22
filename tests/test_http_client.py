@@ -12,6 +12,9 @@ from unittest.mock import MagicMock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+# urlopen is now called from _http_policy; patch there so mock takes effect
+_URLOPEN_PATH = "movietrace.sources._http_policy.urlopen"
+
 
 def _make_mock_response(body_bytes: bytes, content_encoding: str | None = None) -> MagicMock:
     """Build a mock urlopen context manager response."""
@@ -41,7 +44,7 @@ class TestGetJsonGzip(unittest.TestCase):
 
         mock_ctx = _make_mock_response(compressed, content_encoding="gzip")
 
-        with patch("movietrace.sources.http.urlopen", return_value=mock_ctx):
+        with patch(_URLOPEN_PATH, return_value=mock_ctx):
             result = get_json("https://api.tmdb.org/3/trending/movie/week")
 
         self.assertEqual(result, payload)
@@ -56,7 +59,7 @@ class TestGetJsonGzip(unittest.TestCase):
 
         mock_ctx = _make_mock_response(body_bytes, content_encoding=None)
 
-        with patch("movietrace.sources.http.urlopen", return_value=mock_ctx):
+        with patch(_URLOPEN_PATH, return_value=mock_ctx):
             result = get_json("https://api.tmdb.org/3/movie/popular")
 
         self.assertEqual(result, payload)

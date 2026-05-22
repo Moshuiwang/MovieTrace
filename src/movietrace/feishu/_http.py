@@ -11,7 +11,15 @@ import secrets
 import urllib.request
 import urllib.error
 
+from movietrace.sources._http_policy import HttpPolicy, request_with_policy
+
 OPEN_API_BASE = "https://open.feishu.cn/open-apis"
+
+# Policy for Feishu JSON calls: no 5xx auto-retry (app-layer retry in P1.45
+# handles Feishu business failures; transport 5xx should surface quickly)
+_FEISHU_JSON_POLICY = HttpPolicy(timeout=30.0, max_retries=0)
+# Policy for media upload: longer timeout, no retry
+_FEISHU_UPLOAD_POLICY = HttpPolicy(timeout=60.0, max_retries=0)
 
 
 def build_multipart_body(
@@ -74,14 +82,18 @@ def upload_media_file(
         "Authorization": f"Bearer {token}",
         "Content-Type": f"multipart/form-data; boundary={boundary}",
     }
-    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        body_err = e.read().decode("utf-8", errors="replace")[:300]
+    status, resp_body, _resp_headers = request_with_policy(
+        url,
+        method="POST",
+        headers=headers,
+        data=body,
+        policy=_FEISHU_UPLOAD_POLICY,
+    )
+    if status >= 400:
+        body_err = resp_body.decode("utf-8", errors="replace")[:300]
         body_err = re.sub(r'"access_token"\s*:\s*"[^"]+"', '"access_token":"***"', body_err)
-        raise RuntimeError(f"Feishu upload_all HTTP {e.code}: {body_err}") from e
+        raise RuntimeError(f"Feishu upload_all HTTP {status}: {body_err}")
+    result = json.loads(resp_body.decode("utf-8"))
 
     if result.get("code") != 0:
         code = result.get("code")
@@ -113,15 +125,19 @@ def request_json(
     data = None
     if payload is not None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")[:200]
+    status, resp_body, _resp_headers = request_with_policy(
+        url,
+        method=method,
+        headers=headers,
+        data=data,
+        policy=_FEISHU_JSON_POLICY,
+    )
+    if status >= 400:
+        body = resp_body.decode("utf-8", errors="replace")[:200]
         # Mask tokens that might appear in error responses
         body = re.sub(r'"access_token"\s*:\s*"[^"]+"', '"access_token":"***"', body)
-        raise RuntimeError(f"Feishu API HTTP {e.code}: {body}") from e
+        raise RuntimeError(f"Feishu API HTTP {status}: {body}")
+    return json.loads(resp_body.decode("utf-8"))
 
 
 def batch_create_records(
