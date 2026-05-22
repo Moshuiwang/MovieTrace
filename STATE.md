@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-22 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `feat/p1.46-http-policy-unification`
-**测试：** 667 passed（P1.46 完成后，+7 新测试：policy 层 2xx/5xx 重试/放弃/429/429超限/4xx/网络错误）
+**最后更新：** 2026-05-22 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `fix/p1.38-notify-bugs`
+**测试：** 667 passed（P1.38 完成后，0 新测试，与 P1.46 基线持平）
 **Schema：** version 18（P1.45 新增 migration 018 feishu_sync_failures 表；SCHEMA_VERSION 常量同步到 18）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -37,12 +37,14 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.45 | [p1.45-feishu-sync-retry-and-failures-table.md](docs/tasks/p1.45-feishu-sync-retry-and-failures-table.md) | 架构审查 § 1.6 + 合规规则 23 | ✅ 本地完成（待 PR），显式重试（指数退避×3）+ feishu_sync_failures 持久化 + replay；migration 018；655 passed |
 | P1.44 | [p1.44-tmdb-search-cache.md](docs/tasks/p1.44-tmdb-search-cache.md) | 架构审查 § 1.5 | ✅ 本地完成（待 PR），TmdbSearchClient.search_tv/movie 接入 api_cache 72h TTL；cache_hit usage log；5 新测试；660 passed |
 | P1.46 | [p1.46-http-policy-unification.md](docs/tasks/p1.46-http-policy-unification.md) | 架构审查 § 1.2 | ✅ 本地完成（待 PR），新增 _http_policy.py 共享层；两个 HTTP 入口接入 policy；7 新测试；667 passed |
+| P1.38 | — | Bug B-01 / B-02 | ✅ 本地完成（待 PR），fallback 标签读 cached_count 修复计数为 0；important 按 title 去重；667 passed |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-22 **P1.38 notify bug 修复**（fallback 标签读 cached_count 修复计数为 0；important 按 title 去重；667 passed）
 - 2026-05-22 **P1.46 HTTP policy 统一**（新增 _http_policy.py；两个 HTTP 入口接入 policy；统一超时/5xx重试/429限速处理；7 新测试；667 passed）
 - 2026-05-22 **P1.44 TMDb search cache**（TmdbSearchClient.search_tv/movie 接入 api_cache 72h TTL；cache 命中写 cache_hit 到 api_usage_log；5 新测试；660 passed）
 - 2026-05-22 **P1.45 飞书 sync 显式重试 + 失败持久化**（_batch_with_retry 指数退避×3 + feishu_sync_failures 表持久化 + _replay_unresolved_failures 次日重做；migration 018；655 passed）
@@ -51,7 +53,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** P1.44 → P1.46 + P1.38 由 subagent 队列推进（本地 commit 不开 PR）
+- **进行中：** 无（P1.38 已完成）
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 - **待决策：** 无
 - **P1.39 已完成**：生产日志 SSH 拉取方案已落地（`scripts/fetch-prod-logs.sh`），Logtail 接入决策放弃
@@ -63,7 +65,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 | 编号 | 名称 | 来源 | 说明 | 阻塞？ |
 |---|---|---|---|---|
-| P1.38 | fix-notify-bugs | Bug B-01 / B-02 | 修复飞书卡片缓存计数 0 + 重点内容重复（两 bug 共一 PR）| 无 |
+| ~~P1.38~~ | ~~fix-notify-bugs~~ | ~~Bug B-01 / B-02~~ | ~~修复飞书卡片缓存计数 0 + 重点内容重复~~ ✅ 本地完成（待 PR） | — |
 | P1.42 | [fix-fallback-output-pollution](docs/tasks/p1.42-fix-fallback-output-pollution.md) | 架构审查 § 1.7（P0）| 纯 fallback 候选不写 content_updates / 不推飞书；混合源照旧 | 无 |
 | ~~P1.43~~ | ~~[omdb-enrichment-batch-commit](docs/tasks/p1.43-omdb-enrichment-batch-commit.md)~~ | ~~架构审查 § 1.4~~ | ~~去掉循环内 micro-commits，改批量事务~~ ✅ 本地完成（待 PR） | — |
 | ~~P1.44~~ | ~~[tmdb-search-cache](docs/tasks/p1.44-tmdb-search-cache.md)~~ | ~~架构审查 § 1.5~~ | ~~TMDb /search/tv\|movie 接入 api_cache，TTL 72h~~ ✅ 本地完成（待 PR） | — |
