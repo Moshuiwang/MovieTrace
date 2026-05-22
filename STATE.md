@@ -6,9 +6,9 @@
 
 ---
 
-**最后更新：** 2026-05-22 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `fix/p1.43-omdb-enrichment-batch-commit`
-**测试：** 642 passed（P1.43 完成后，+1 新测试 test_enrich_rolls_back_on_mid_loop_error）
-**Schema：** version 17（P1.28 新增 migration 017 canonical_items zh-CN 字段；P1.31 SCHEMA_VERSION 常量同步到 17）
+**最后更新：** 2026-05-22 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `feat/p1.45-feishu-sync-retry-and-failures-table`
+**测试：** 655 passed（P1.45 完成后，+13 新测试：6 migration + 6 retry/persistence + 1 migrate-cli 版本更新）
+**Schema：** version 18（P1.45 新增 migration 018 feishu_sync_failures 表；SCHEMA_VERSION 常量同步到 18）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
 ---
@@ -34,19 +34,20 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.41 | [p1.41-feishu-type-label-field.md](docs/tasks/p1.41-feishu-type-label-field.md) | feat | ✅ 已合并 (PR #37 #38)，热点发现子表新增"类型标签"多选字段（TMDb genre 名称）|
 | P1.42 | [p1.42-fix-fallback-output-pollution.md](docs/tasks/p1.42-fix-fallback-output-pollution.md) | 架构审查 § 1.7（P0）| ✅ 本地完成（待 PR），纯 fallback 候选不写 content_updates / 不推飞书；新增 has_fresh_signal 判定 + suppressed_fallback_only stats |
 | P1.43 | [p1.43-omdb-enrichment-batch-commit.md](docs/tasks/p1.43-omdb-enrichment-batch-commit.md) | 架构审查 § 1.4 | ✅ 本地完成（待 PR），去掉 3 处循环内 micro-commit，改为批量提交；新增 test_enrich_rolls_back_on_mid_loop_error；642 passed |
+| P1.45 | [p1.45-feishu-sync-retry-and-failures-table.md](docs/tasks/p1.45-feishu-sync-retry-and-failures-table.md) | 架构审查 § 1.6 + 合规规则 23 | ✅ 本地完成（待 PR），显式重试（指数退避×3）+ feishu_sync_failures 持久化 + replay；migration 018；655 passed |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
-- 2026-05-22 **P1.42 fallback 输出污染修复**（has_fresh_signal 判定基于 source_flags & fresh_sources；Step 5 阈值过滤后追加 fallback 过滤，保留 Soap bypass；stats 新增 suppressed_fallback_only；新增 2 条单测 + 1 条 fixture 调整；641 passed）
+- 2026-05-22 **P1.45 飞书 sync 显式重试 + 失败持久化**（_batch_with_retry 指数退避×3 + feishu_sync_failures 表持久化 + _replay_unresolved_failures 次日重做；migration 018；655 passed）
+- 2026-05-22 **P1.42+P1.43 fallback 污染修复 + OMDb 批量提交**（has_fresh_signal 判定；OMDb loop 改批量事务；642 passed）
 - 2026-05-22 **架构审查 + 5 个任务包立项**（[`docs/reviews/architecture_audit_2026_05.md`](docs/reviews/architecture_audit_2026_05.md)）：审查 8 大痛点，立项 5 个（P1.42-P1.46），拒绝 3 项（1.1 DB 解耦 / 1.3 异步 / 1.8 CLI 重构——投机性或场景不符）
-- 2026-05-21 **P1.40 export_writer 缺字段修复**（format_json 补充 8 个字段：title_zh/overview_zh/genres_json/networks_json/upstream_total_eps/tmdb_total_episodes/content_type/match_confidence_low；464/465 记录有中文名；PR #36）
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** P1.43 → P1.45 → P1.44 → P1.46 + P1.38 由 subagent 队列推进（本地 commit 不开 PR）
+- **进行中：** P1.44 → P1.46 + P1.38 由 subagent 队列推进（本地 commit 不开 PR）
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 - **待决策：** 无
 - **P1.39 已完成**：生产日志 SSH 拉取方案已落地（`scripts/fetch-prod-logs.sh`），Logtail 接入决策放弃
@@ -62,8 +63,8 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.42 | [fix-fallback-output-pollution](docs/tasks/p1.42-fix-fallback-output-pollution.md) | 架构审查 § 1.7（P0）| 纯 fallback 候选不写 content_updates / 不推飞书；混合源照旧 | 无 |
 | ~~P1.43~~ | ~~[omdb-enrichment-batch-commit](docs/tasks/p1.43-omdb-enrichment-batch-commit.md)~~ | ~~架构审查 § 1.4~~ | ~~去掉循环内 micro-commits，改批量事务~~ ✅ 本地完成（待 PR） | — |
 | P1.44 | [tmdb-search-cache](docs/tasks/p1.44-tmdb-search-cache.md) | 架构审查 § 1.5 | TMDb /search/tv\|movie 接入 api_cache，TTL 72h | 无 |
-| P1.45 | [feishu-sync-retry-and-failures-table](docs/tasks/p1.45-feishu-sync-retry-and-failures-table.md) | 架构审查 § 1.6 + 合规规则 23 | 显式重试（指数退避×3）+ 失败 record 持久化 + replay（含 migration 018）| 无 |
-| P1.46 | [http-policy-unification](docs/tasks/p1.46-http-policy-unification.md) | 架构审查 § 1.2 | stdlib 范围统一 HTTP 超时/重试/429 策略，**不引入新依赖** | 建议在 P1.45 之后或同窗口推进 |
+| ~~P1.45~~ | ~~[feishu-sync-retry-and-failures-table](docs/tasks/p1.45-feishu-sync-retry-and-failures-table.md)~~ | ~~架构审查 § 1.6 + 合规规则 23~~ | ~~显式重试（指数退避×3）+ 失败 record 持久化 + replay（含 migration 018）~~ ✅ 本地完成（待 PR） | — |
+| P1.46 | [http-policy-unification](docs/tasks/p1.46-http-policy-unification.md) | 架构审查 § 1.2 | stdlib 范围统一 HTTP 超时/重试/429 策略，**不引入新依赖** | 无 |
 
 **审查未采纳项**（详见 [`docs/reviews/architecture_audit_2026_05.md § 二`](docs/reviews/architecture_audit_2026_05.md)）：
 - § 1.1 DB 长连接解耦 — 单进程 cron 无并发写入，锁风险不存在
