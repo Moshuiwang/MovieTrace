@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-22 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `feat/p1.45-feishu-sync-retry-and-failures-table`
-**测试：** 655 passed（P1.45 完成后，+13 新测试：6 migration + 6 retry/persistence + 1 migrate-cli 版本更新）
+**最后更新：** 2026-05-22 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `feat/p1.44-tmdb-search-cache`
+**测试：** 660 passed（P1.44 完成后，+5 新测试：search_tv/movie 缓存读写 + TTL 过期 + TV/movie cache 独立 + cache_hit usage log）
 **Schema：** version 18（P1.45 新增 migration 018 feishu_sync_failures 表；SCHEMA_VERSION 常量同步到 18）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -35,12 +35,14 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.42 | [p1.42-fix-fallback-output-pollution.md](docs/tasks/p1.42-fix-fallback-output-pollution.md) | 架构审查 § 1.7（P0）| ✅ 本地完成（待 PR），纯 fallback 候选不写 content_updates / 不推飞书；新增 has_fresh_signal 判定 + suppressed_fallback_only stats |
 | P1.43 | [p1.43-omdb-enrichment-batch-commit.md](docs/tasks/p1.43-omdb-enrichment-batch-commit.md) | 架构审查 § 1.4 | ✅ 本地完成（待 PR），去掉 3 处循环内 micro-commit，改为批量提交；新增 test_enrich_rolls_back_on_mid_loop_error；642 passed |
 | P1.45 | [p1.45-feishu-sync-retry-and-failures-table.md](docs/tasks/p1.45-feishu-sync-retry-and-failures-table.md) | 架构审查 § 1.6 + 合规规则 23 | ✅ 本地完成（待 PR），显式重试（指数退避×3）+ feishu_sync_failures 持久化 + replay；migration 018；655 passed |
+| P1.44 | [p1.44-tmdb-search-cache.md](docs/tasks/p1.44-tmdb-search-cache.md) | 架构审查 § 1.5 | ✅ 本地完成（待 PR），TmdbSearchClient.search_tv/movie 接入 api_cache 72h TTL；cache_hit usage log；5 新测试；660 passed |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-22 **P1.44 TMDb search cache**（TmdbSearchClient.search_tv/movie 接入 api_cache 72h TTL；cache 命中写 cache_hit 到 api_usage_log；5 新测试；660 passed）
 - 2026-05-22 **P1.45 飞书 sync 显式重试 + 失败持久化**（_batch_with_retry 指数退避×3 + feishu_sync_failures 表持久化 + _replay_unresolved_failures 次日重做；migration 018；655 passed）
 - 2026-05-22 **P1.42+P1.43 fallback 污染修复 + OMDb 批量提交**（has_fresh_signal 判定；OMDb loop 改批量事务；642 passed）
 - 2026-05-22 **架构审查 + 5 个任务包立项**（[`docs/reviews/architecture_audit_2026_05.md`](docs/reviews/architecture_audit_2026_05.md)）：审查 8 大痛点，立项 5 个（P1.42-P1.46），拒绝 3 项（1.1 DB 解耦 / 1.3 异步 / 1.8 CLI 重构——投机性或场景不符）
@@ -62,7 +64,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.38 | fix-notify-bugs | Bug B-01 / B-02 | 修复飞书卡片缓存计数 0 + 重点内容重复（两 bug 共一 PR）| 无 |
 | P1.42 | [fix-fallback-output-pollution](docs/tasks/p1.42-fix-fallback-output-pollution.md) | 架构审查 § 1.7（P0）| 纯 fallback 候选不写 content_updates / 不推飞书；混合源照旧 | 无 |
 | ~~P1.43~~ | ~~[omdb-enrichment-batch-commit](docs/tasks/p1.43-omdb-enrichment-batch-commit.md)~~ | ~~架构审查 § 1.4~~ | ~~去掉循环内 micro-commits，改批量事务~~ ✅ 本地完成（待 PR） | — |
-| P1.44 | [tmdb-search-cache](docs/tasks/p1.44-tmdb-search-cache.md) | 架构审查 § 1.5 | TMDb /search/tv\|movie 接入 api_cache，TTL 72h | 无 |
+| ~~P1.44~~ | ~~[tmdb-search-cache](docs/tasks/p1.44-tmdb-search-cache.md)~~ | ~~架构审查 § 1.5~~ | ~~TMDb /search/tv\|movie 接入 api_cache，TTL 72h~~ ✅ 本地完成（待 PR） | — |
 | ~~P1.45~~ | ~~[feishu-sync-retry-and-failures-table](docs/tasks/p1.45-feishu-sync-retry-and-failures-table.md)~~ | ~~架构审查 § 1.6 + 合规规则 23~~ | ~~显式重试（指数退避×3）+ 失败 record 持久化 + replay（含 migration 018）~~ ✅ 本地完成（待 PR） | — |
 | P1.46 | [http-policy-unification](docs/tasks/p1.46-http-policy-unification.md) | 架构审查 § 1.2 | stdlib 范围统一 HTTP 超时/重试/429 策略，**不引入新依赖** | 无 |
 
