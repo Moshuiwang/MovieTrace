@@ -86,61 +86,69 @@ def enrich_with_omdb(
     cache_hits = 0
     enriched = 0
 
-    for c in candidates:
-        if not active_keys:
-            logger.warning(
-                "OMDb circuit breaker: all %d keys exhausted (%d calls made) — stopping",
-                len(dead_keys), api_calls,
-            )
-            break
-
-        if not c.imdb_id:
-            continue
-
-        formatted = format_imdb_id(c.imdb_id)
-        if not formatted:
-            continue
-
-        # Check cache (valid regardless of which key fetched it)
-        cached = _read_cache(conn, f"omdb:{formatted}", cache_ttl_hours, source="omdb")
-        if cached:
-            cache_hits += 1
-            _apply_omdb_data(c, cached)
-            enriched += 1
-            continue
-
-        # Try each active key for this candidate
-        enriched_for_candidate = False
-        for key in active_keys:
-            tried_keys.add(key)
-            client = OmdbDetailClient(key, db_path=db_path, request_date=request_date)
-            try:
-                data = client.get_by_imdb_id(formatted)
-                api_calls += 1
-                enriched_for_candidate = True
-                break
-            except FatalApiError as exc:
-                api_calls += 1
-                dead_keys.add(key)
+    for idx, c in enumerate(candidates):
+        try:
+            if not active_keys:
                 logger.warning(
-                    "OMDb key %s HTTP %s — marked dead, trying next key",
-                    fingerprint_key(key), exc.status_code,
+                    "OMDb circuit breaker: all %d keys exhausted (%d calls made) — stopping",
+                    len(dead_keys), api_calls,
                 )
+                break
+
+            if not c.imdb_id:
                 continue
-            except Exception as exc:
-                api_calls += 1
-                logger.warning("OMDb lookup failed for %s: %s", formatted, exc)
-                break  # non-fatal error, don't retry with other keys
 
-        # Remove dead keys from active list
-        active_keys = [k for k in active_keys if k not in dead_keys]
+            formatted = format_imdb_id(c.imdb_id)
+            if not formatted:
+                continue
 
-        if enriched_for_candidate and data:
-            _write_cache(conn, f"omdb:{formatted}", data, source="omdb")
-            _apply_omdb_data(c, data)
-            enriched += 1
+            # Check cache (valid regardless of which key fetched it)
+            cached = _read_cache(conn, f"omdb:{formatted}", cache_ttl_hours, source="omdb")
+            if cached:
+                cache_hits += 1
+                _apply_omdb_data(c, cached)
+                enriched += 1
+                continue
 
-        time.sleep(1.0)  # polite between OMDb calls
+            # Try each active key for this candidate
+            enriched_for_candidate = False
+            for key in active_keys:
+                tried_keys.add(key)
+                client = OmdbDetailClient(key, db_path=db_path, request_date=request_date)
+                try:
+                    data = client.get_by_imdb_id(formatted)
+                    api_calls += 1
+                    enriched_for_candidate = True
+                    break
+                except FatalApiError as exc:
+                    api_calls += 1
+                    dead_keys.add(key)
+                    logger.warning(
+                        "OMDb key %s HTTP %s — marked dead, trying next key",
+                        fingerprint_key(key), exc.status_code,
+                    )
+                    continue
+                except Exception as exc:
+                    api_calls += 1
+                    logger.warning("OMDb lookup failed for %s: %s", formatted, exc)
+                    break  # non-fatal error, don't retry with other keys
+
+            # Remove dead keys from active list
+            active_keys = [k for k in active_keys if k not in dead_keys]
+
+            if enriched_for_candidate and data:
+                _write_cache(conn, f"omdb:{formatted}", data, source="omdb")
+                _apply_omdb_data(c, data)
+                enriched += 1
+
+            time.sleep(1.0)  # polite between OMDb calls
+        finally:
+            completed = idx + 1
+            if completed % 20 == 0 or completed == len(candidates):
+                logger.info(
+                    "OMDb enrichment: %d/%d (api=%d cache=%d enriched=%d)",
+                    completed, len(candidates), api_calls, cache_hits, enriched,
+                )
 
     conn.commit()
     logger.info(
@@ -236,55 +244,63 @@ def enrich_with_tmdb_details(
     cache_hits = 0
     enriched = 0
 
-    for c in candidates:
-        if not c.tmdb_id:
-            continue
-        # Skip if we already have good data from TMDb trending
-        # P1.9-hotfix-B: TV candidates also need last_air_date (not in trending payload)
-        if c.tmdb_data and c.tmdb_data.get("release_date") and c.tmdb_data.get("original_language"):
-            if c.media_type != "tv" or c.tmdb_data.get("last_air_date"):
+    for idx, c in enumerate(candidates):
+        try:
+            if not c.tmdb_id:
+                continue
+            # Skip if we already have good data from TMDb trending
+            # P1.9-hotfix-B: TV candidates also need last_air_date (not in trending payload)
+            if c.tmdb_data and c.tmdb_data.get("release_date") and c.tmdb_data.get("original_language"):
+                if c.media_type != "tv" or c.tmdb_data.get("last_air_date"):
+                    continue
+
+            try:
+                data, cache_hit = get_tmdb_detail_with_cache(
+                    conn,
+                    client,
+                    c.tmdb_id,
+                    c.media_type,
+                    ttl_hours=cache_ttl_hours,
+                )
+                if cache_hit:
+                    cache_hits += 1
+                else:
+                    api_calls += 1
+            except Exception as exc:
+                logger.warning("TMDb detail failed for %s (%s): %s", c.tmdb_id, c.media_type, exc)
                 continue
 
-        try:
-            data, cache_hit = get_tmdb_detail_with_cache(
-                conn,
-                client,
-                c.tmdb_id,
-                c.media_type,
-                ttl_hours=cache_ttl_hours,
-            )
-            if cache_hit:
-                cache_hits += 1
-            else:
-                api_calls += 1
-        except Exception as exc:
-            logger.warning("TMDb detail failed for %s (%s): %s", c.tmdb_id, c.media_type, exc)
-            continue
-
-        if data:
-            _apply_tmdb_detail_data(c, data)
-            enriched += 1
-            genres = data.get("genres")
-            genres_json = json.dumps(genres, ensure_ascii=False) if isinstance(genres, list) else None
-            networks = data.get("networks") if c.media_type in ("tv", "show") else None
-            networks_json = json.dumps(networks, ensure_ascii=False) if isinstance(networks, list) else None
-            try:
-                zh_data, _ = _fetch_zh_detail_with_cache(
-                    conn, client, c.tmdb_id, c.media_type, ttl_hours=cache_ttl_hours
+            if data:
+                _apply_tmdb_detail_data(c, data)
+                enriched += 1
+                genres = data.get("genres")
+                genres_json = json.dumps(genres, ensure_ascii=False) if isinstance(genres, list) else None
+                networks = data.get("networks") if c.media_type in ("tv", "show") else None
+                networks_json = json.dumps(networks, ensure_ascii=False) if isinstance(networks, list) else None
+                try:
+                    zh_data, _ = _fetch_zh_detail_with_cache(
+                        conn, client, c.tmdb_id, c.media_type, ttl_hours=cache_ttl_hours
+                    )
+                    title_zh = None
+                    overview_zh = None
+                    if zh_data:
+                        raw_title = zh_data.get("name") or zh_data.get("title")
+                        raw_overview = zh_data.get("overview")
+                        title_zh = str(raw_title).strip() if raw_title else None
+                        overview_zh = str(raw_overview).strip() if raw_overview else None
+                    _update_canonical_zh_fields(
+                        conn, c.tmdb_id, c.media_type,
+                        title_zh, overview_zh, genres_json, networks_json,
+                    )
+                except Exception as exc:
+                    logger.warning("zh-CN enrichment failed for %s (%s): %s", c.tmdb_id, c.media_type, exc)
+        finally:
+            completed = idx + 1
+            if completed % 20 == 0 or completed == len(candidates):
+                logger.info(
+                    "TMDb detail enrichment: %d/%d (api=%d cache=%d enriched=%d)",
+                    completed, len(candidates), api_calls, cache_hits, enriched,
                 )
-                title_zh = None
-                overview_zh = None
-                if zh_data:
-                    raw_title = zh_data.get("name") or zh_data.get("title")
-                    raw_overview = zh_data.get("overview")
-                    title_zh = str(raw_title).strip() if raw_title else None
-                    overview_zh = str(raw_overview).strip() if raw_overview else None
-                _update_canonical_zh_fields(
-                    conn, c.tmdb_id, c.media_type,
-                    title_zh, overview_zh, genres_json, networks_json,
-                )
-            except Exception as exc:
-                logger.warning("zh-CN enrichment failed for %s (%s): %s", c.tmdb_id, c.media_type, exc)
 
     conn.commit()
     logger.info(

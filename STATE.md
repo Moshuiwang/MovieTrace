@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-22 +08 · Claude Code CLI（Sonnet 4.6） · 分支 `fix/p1.38-notify-bugs`
-**测试：** 667 passed（P1.38 完成后，0 新测试，与 P1.46 基线持平）
+**最后更新：** 2026-05-23 07:14 +08 · Codex（GPT-5） · 分支 `feat/p1.47-omdb-progress-log`
+**测试：** 670 passed（P1.47 完成后，新增 3 个进度日志测试）
 **Schema：** version 18（P1.45 新增 migration 018 feishu_sync_failures 表；SCHEMA_VERSION 常量同步到 18）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -38,12 +38,14 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.44 | [p1.44-tmdb-search-cache.md](docs/tasks/p1.44-tmdb-search-cache.md) | 架构审查 § 1.5 | ✅ 本地完成（待 PR），TmdbSearchClient.search_tv/movie 接入 api_cache 72h TTL；cache_hit usage log；5 新测试；660 passed |
 | P1.46 | [p1.46-http-policy-unification.md](docs/tasks/p1.46-http-policy-unification.md) | 架构审查 § 1.2 | ✅ 本地完成（待 PR），新增 _http_policy.py 共享层；两个 HTTP 入口接入 policy；7 新测试；667 passed |
 | P1.38 | — | Bug B-01 / B-02 | ✅ 本地完成（待 PR），fallback 标签读 cached_count 修复计数为 0；important 按 title 去重；667 passed |
+| P1.47 | [p1.47-omdb-enrichment-progress-log.md](docs/tasks/p1.47-omdb-enrichment-progress-log.md) | 可观测性 | ✅ 本地完成（待 PR），OMDb + TMDb detail enrichment 每 20 条/尾批输出进度日志；3 新测试；670 passed |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-23 **P1.47 enrichment 进度日志**（OMDb + TMDb detail 循环每 20 条和尾批输出进度；dry-run 可见进度行；3 新测试；670 passed）
 - 2026-05-22 **P1.38 notify bug 修复**（fallback 标签读 cached_count 修复计数为 0；important 按 title 去重；667 passed）
 - 2026-05-22 **P1.46 HTTP policy 统一**（新增 _http_policy.py；两个 HTTP 入口接入 policy；统一超时/5xx重试/429限速处理；7 新测试；667 passed）
 - 2026-05-22 **P1.44 TMDb search cache**（TmdbSearchClient.search_tv/movie 接入 api_cache 72h TTL；cache 命中写 cache_hit 到 api_usage_log；5 新测试；660 passed）
@@ -61,20 +63,19 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 ## 即将立项的任务包
 
 > 任务包立项后在此登记；合并后移入"最近完成任务包"表并从本节删除。
-> **并行策略：P1.51 与其余五个完全无文件交集，可随时并行开工。P1.47→P1.48→P1.49→P1.50→P1.52 均压在 `omdb_enrichment.py`，必须串行。**
+> **并行策略：P1.51 与其余任务完全无文件交集，可随时并行开工。P1.48→P1.49→P1.50→P1.52 均压在 `omdb_enrichment.py`，必须串行。**
 >
 > ```
-> ┌─ P1.47 → P1.48 → P1.49 → P1.50 → P1.52
+> ┌─ P1.48 → P1.49 → P1.50 → P1.52
 > └─ P1.51 ─────────────────────────────────  (独立并行)
 > ```
 
 | 编号 | 名称 | 来源 | 说明 | 并行？ |
 |---|---|---|---|---|
-| P1.47 | [enrichment-progress-log](docs/tasks/p1.47-omdb-enrichment-progress-log.md) | 可观测性 | OMDb + TMDb detail 循环每 20 条打一行进度日志 | 串行链头 |
 | P1.48 | [pipeline-heartbeat](docs/tasks/p1.48-pipeline-heartbeat.md) | 可观测性 | 全流程心跳文件 + check-pipeline-health.sh | P1.47 后 |
 | P1.49 | [enrichment-cache-ttl-tuning](docs/tasks/p1.49-enrichment-cache-ttl-tuning.md) | 性能 | OMDb / TMDb detail 缓存 TTL 24h → 72h | P1.48 后 |
 | P1.50 | [omdb-sleep-tuning](docs/tasks/p1.50-omdb-sleep-tuning.md) | 性能 | OMDb 请求间隔 1.0s → 0.2s 可配置化 + quota_errors 可观测 | P1.49 后 |
-| P1.51 | [fix-double-api-logging](docs/tasks/p1.51-fix-double-api-logging.md) | bug | 传输层+业务层各写一次 api_usage_log 导致统计虚高 2×；改 `_http_policy.py`/`tmdb.py`/`feishu/_http.py` | **P1.47 并行** |
+| P1.51 | [fix-double-api-logging](docs/tasks/p1.51-fix-double-api-logging.md) | bug | 传输层+业务层各写一次 api_usage_log 导致统计虚高 2×；改 `_http_policy.py`/`tmdb.py`/`feishu/_http.py` | **独立并行** |
 | P1.52 | [canonical-first-enrichment](docs/tasks/p1.52-canonical-first-enrichment.md) | refactor | TMDb detail 优先查 canonical_items，已入库剧集跳过 API；系统运行几天后实施 | P1.50 后 |
 
 **审查未采纳项**（详见 [`docs/reviews/architecture_audit_2026_05.md § 二`](docs/reviews/architecture_audit_2026_05.md)）：
