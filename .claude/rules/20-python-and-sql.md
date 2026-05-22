@@ -38,6 +38,6 @@ include: ["src/**", "scripts/**"]
 ## 提交信息
 
 - Conventional Commit 前缀：`feat:` / `fix:` / `docs:` / `refactor:` / `test:` / `chore:`
-- 元文档变更子前缀：`docs(meta):` / `docs(state):` / `docs(journal):` / `docs(decision):`
+- 元文档变更子前缀：`docs(meta):` / `docs(state):` / `docs(decision):`
 - 不提交 API Key / Token / 飞书密钥 / `.env`；只提交脱敏示例
 - 不带 emoji（除非用户明确要求）

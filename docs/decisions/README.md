@@ -40,7 +40,7 @@
 - 任何"现在选 A 不选 B"且 B 是合理候选的判断
 
 不应该写：
-- 临时探索（写在 journal 即可）
+- 临时探索（写在任务包、PR 描述或本轮对话即可）
 - 显然不需要解释的事（如修复一个 typo）
 - 单文件实现细节（写 commit message 即可）
 
@@ -94,7 +94,7 @@
 
 ## 引用
 
-- 相关讨论：journal/YYYY-MM-DD_xxx.md
+- 相关讨论：PR / issue / 任务包链接
 - 相关任务：docs/tasks/xxx.md
 - 相关代码：commit xxxxxxx
 ```

@@ -35,7 +35,7 @@ PYTHONPATH=src python -m pytest -k "<pattern>"     # 关键词
 
 - Bug 修复必须补充或更新测试，证明回归被覆盖
 - 核心功能必须有测试**或**明确的人工验证步骤
-- 新功能 PR 必须列出"测试用例数变化"（journal-spec 要求）
+- 新功能 PR 必须在完成汇报或 PR 描述中列出"测试用例数变化"
 
 ## bs4 / 可选依赖处理
 
