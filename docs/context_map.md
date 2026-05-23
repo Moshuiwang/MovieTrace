@@ -44,6 +44,7 @@
 | 架构决策 | [`docs/decisions/`](decisions/) | 15 篇 ADR，关键看 0007（系统翻转）/ 0012（content_updates 事件化）/ 0014（schema 清理）/ 0015（飞书文档导入）|
 | 飞书运营同步背景 | [`docs/notes/feishu_ops_sync_requirements.md`](notes/feishu_ops_sync_requirements.md) | 运行观察期新增需求草案 |
 | V1 收口复盘 | [`docs/reviews/v1_closeout_review.md`](reviews/v1_closeout_review.md) | V1 能力和边界总结 |
+| Pipeline 阶段契约 | [`docs/reviews/current_fallback_logic_map_2026_05_23.md`](reviews/current_fallback_logic_map_2026_05_23.md) + [`docs/reviews/pipeline_stage_contract_recommendation_2026_05_23.md`](reviews/pipeline_stage_contract_recommendation_2026_05_23.md) | P1.56 来源：fallback 现状地图与阶段契约建议 |
 
 ### 第三层：历史层（默认不整篇读取，先 `rg` 再读片段）
 

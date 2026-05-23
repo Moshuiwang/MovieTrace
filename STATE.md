@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-23 18:56 +08 · Codex（GPT-5） · 分支 `fix/p1.41-feishu-type-label-cleanup`
-**测试：** 当前本地全量 689 passed（1 warning）；P1.41b 单文件 49 passed；`git diff --check` 通过；P1.48-P1.55 已合并 PR #49，main CI/CD test/deploy/notify 通过
+**最后更新：** 2026-05-23 23:53 +08 · Codex（GPT-5） · 分支 `refactor/p1.56-architecture-adjustments`
+**测试：** 当前本地全量 689 passed（1 warning）；P1.41b 单文件 49 passed；`git diff --check` 通过；P1.48-P1.55 已合并 PR #49，P1.41b 已合并 PR #50，main CI/CD test/deploy/notify 通过
 **Schema：** version 18（P1.45 新增 migration 018 feishu_sync_failures 表；SCHEMA_VERSION 常量同步到 18）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -47,13 +47,14 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.52 | [p1.52-canonical-first-enrichment.md](docs/tasks/p1.52-canonical-first-enrichment.md) | refactor | ✅ 已合并 (PR #49)，TMDb detail canonical_items 优先 |
 | P1.54 | [p1.54-api-usage-log-lock-timeout.md](docs/tasks/p1.54-api-usage-log-lock-timeout.md) | bug | ✅ 已合并 (PR #49)，api_usage_log 遇 SQLite 写锁 0.1s 快速放弃，避免 best-effort 日志拖慢 pipeline |
 | P1.55 | [p1.55-fix-canonical-enrichment-early-skip.md](docs/tasks/p1.55-fix-canonical-enrichment-early-skip.md) | review finding | ✅ 已合并 (PR #49)，canonical-first 仅在候选已有 release_date/original_language/TV last_air_date 时早退；缺字段继续走 TMDb detail |
-| P1.41b | [p1.41b-feishu-type-label-cleanup.md](docs/tasks/p1.41b-feishu-type-label-cleanup.md) | review finding | 🚧 本地进行中，修复“类型”字段被 genre 覆盖；“类型标签”只保留 TMDb genre 名称 |
+| P1.41b | [p1.41b-feishu-type-label-cleanup.md](docs/tasks/p1.41b-feishu-type-label-cleanup.md) | review finding | ✅ 已合并 (PR #50)，保留“类型”=movie/tv；“类型标签”只写 TMDb genre 名称 |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-23 **P1.56 pipeline 阶段契约任务包立项**（基于 fallback 现状地图与阶段契约建议，目标是轻量固化 source decision / merge contribution / TMDb detail skip / write gate；明确不做大规模 orchestrator 重构）
 - 2026-05-23 **P1.41b 飞书类型字段 cleanup**（PR #38 关闭未合并的 follow-up 重做：保留“类型”=movie/tv；“类型标签”只写 TMDb genre 名称；49 单测 + 689 全量通过）
 - 2026-05-23 **P1.48-P1.55 合并上线**（PR #49 squash merge；main CI/CD test/deploy/notify 均通过；包含 heartbeat、enrichment 性能、api_usage_log 锁修复、canonical-first 早退修复、开发 E2E runbook 固化）
 - 2026-05-23 **P1.55 canonical-first 早退修复**（canonical 命中先预填中文/类型/平台字段；只有候选已有 release_date/original_language/TV last_air_date 时才跳过 TMDb detail；新增 3 个缺字段回归用例；689 passed；dry-run 39s，TMDb detail api_calls=1 cache_hits=142 canonical_hits=10）
@@ -71,7 +72,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** P1.41b 飞书类型字段 cleanup，待验证和 PR
+- **进行中：** P1.56 pipeline 阶段契约任务包已创建，待执行
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 - **待决策：** 无
 - **P1.39 已完成**：生产日志 SSH 拉取方案已落地（`scripts/fetch-prod-logs.sh`），Logtail 接入决策放弃
@@ -80,7 +81,9 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 > 任务包立项后在此登记；合并后移入"最近完成任务包"表并从本节删除。
 
-无。
+| 编号 | 文件 | 来源 | 状态 |
+|---|---|---|---|
+| P1.56 | [p1.56-pipeline-stage-contracts.md](docs/tasks/p1.56-pipeline-stage-contracts.md) | fallback 现状地图 + pipeline stage contract recommendation | 📝 待执行 |
 
 **审查未采纳项**（详见 [`docs/reviews/architecture_audit_2026_05.md § 二`](docs/reviews/architecture_audit_2026_05.md)）：
 - § 1.1 DB 长连接解耦 — 单进程 cron 无并发写入，锁风险不存在
