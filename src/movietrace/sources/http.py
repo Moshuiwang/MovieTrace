@@ -32,14 +32,15 @@ def get_json(
     headers: dict[str, str] | None = None,
     timeout: int = 20,
     log_context: dict | None = None,
+    log_to_db: bool = False,
 ) -> object:
     merged_headers = {"User-Agent": DEFAULT_USER_AGENT}
     if headers:
         merged_headers.update(headers)
 
-    # Build a policy that respects the caller-supplied timeout; other defaults
-    # come from HttpPolicy (retry, backoff, etc.)
-    policy = HttpPolicy(timeout=float(timeout))
+    # get_json logs parsed success/error outcomes itself; keep transport DB
+    # logging off here so a single HTTP call does not write duplicate rows.
+    policy = HttpPolicy(timeout=float(timeout), log_to_db=log_to_db)
 
     start = time.monotonic()
     try:

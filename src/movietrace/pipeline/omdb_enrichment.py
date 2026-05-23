@@ -12,6 +12,7 @@ from movietrace.pipeline.tmdb_detail_cache import (
     read_tmdb_detail_cache,
     write_tmdb_detail_cache,
 )
+from movietrace.pipeline.heartbeat import ping as _hb_ping
 from movietrace.sources.http import FatalApiError
 from movietrace.sources.omdb import OmdbDetailClient, format_imdb_id
 from movietrace.sources.tmdb import TmdbDetailClient
@@ -62,22 +63,30 @@ def enrich_with_omdb(
     conn: sqlite3.Connection,
     candidates: list[MergedCandidate],
     omdb_api_keys: list[str],
-    cache_ttl_hours: int = 24,
+    cache_ttl_hours: int = 72,
+    inter_request_sleep: float = 0.2,
     *,
     db_path: str = "data/movietrace.db",
     request_date: str = "",
 ) -> dict:
-    """Enrich candidates with IMDb rating/votes via OMDb, with 24h cache.
+    """Enrich candidates with IMDb rating/votes via OMDb, with 72h cache.
 
     Supports multiple API keys: when a key returns 401/403, it is marked dead
     and the next key is tried for the current candidate. When all keys are
     exhausted, the circuit breaker stops all further OMDb requests.
 
     Returns {"api_calls": int, "cache_hits": int, "enriched": int,
-             "keys_used": int, "keys_exhausted": int}.
+             "keys_used": int, "keys_exhausted": int, "quota_errors": int}.
     """
     if not omdb_api_keys:
-        return {"api_calls": 0, "cache_hits": 0, "enriched": 0, "keys_used": 0, "keys_exhausted": 0}
+        return {
+            "api_calls": 0,
+            "cache_hits": 0,
+            "enriched": 0,
+            "keys_used": 0,
+            "keys_exhausted": 0,
+            "quota_errors": 0,
+        }
 
     active_keys = list(omdb_api_keys)
     dead_keys: set[str] = set()
@@ -85,6 +94,12 @@ def enrich_with_omdb(
     api_calls = 0
     cache_hits = 0
     enriched = 0
+    quota_errors = 0
+
+    logger.info(
+        "OMDb enrichment: starting %d candidates (sleep=%.1fs ttl=%dh)",
+        len(candidates), inter_request_sleep, cache_ttl_hours,
+    )
 
     for idx, c in enumerate(candidates):
         try:
@@ -112,17 +127,30 @@ def enrich_with_omdb(
 
             # Try each active key for this candidate
             enriched_for_candidate = False
+            data = None
             for key in active_keys:
                 tried_keys.add(key)
                 client = OmdbDetailClient(key, db_path=db_path, request_date=request_date)
                 try:
+                    quota_before = _count_omdb_quota_errors(db_path, request_date, fingerprint_key(key))
                     data = client.get_by_imdb_id(formatted)
                     api_calls += 1
-                    enriched_for_candidate = True
+                    quota_after = _count_omdb_quota_errors(db_path, request_date, fingerprint_key(key))
+                    if quota_after > quota_before:
+                        quota_errors += quota_after - quota_before
+                        dead_keys.add(key)
+                        logger.warning(
+                            "OMDb key %s quota exhausted — marked dead, trying next key",
+                            fingerprint_key(key),
+                        )
+                        continue
+                    enriched_for_candidate = data is not None
                     break
                 except FatalApiError as exc:
                     api_calls += 1
                     dead_keys.add(key)
+                    if exc.status_code in (401, 403) or "quota" in str(exc).lower():
+                        quota_errors += 1
                     logger.warning(
                         "OMDb key %s HTTP %s — marked dead, trying next key",
                         fingerprint_key(key), exc.status_code,
@@ -141,10 +169,12 @@ def enrich_with_omdb(
                 _apply_omdb_data(c, data)
                 enriched += 1
 
-            time.sleep(1.0)  # polite between OMDb calls
+            # OMDb is daily-quota limited; this fixed delay is only light client-side throttling.
+            time.sleep(inter_request_sleep)
         finally:
             completed = idx + 1
             if completed % 20 == 0 or completed == len(candidates):
+                _hb_ping("6/8 OMDb enrichment", f"{completed}/{len(candidates)}")
                 logger.info(
                     "OMDb enrichment: %d/%d (api=%d cache=%d enriched=%d)",
                     completed, len(candidates), api_calls, cache_hits, enriched,
@@ -152,9 +182,10 @@ def enrich_with_omdb(
 
     conn.commit()
     logger.info(
-        "OMDb enrichment: api_calls=%d cache_hits=%d enriched=%d of %d keys_used=%d keys_exhausted=%d",
+        "OMDb enrichment: api_calls=%d cache_hits=%d enriched=%d of %d "
+        "keys_used=%d keys_exhausted=%d quota_errors=%d sleep=%.1fs",
         api_calls, cache_hits, enriched, len(candidates),
-        len(tried_keys), len(dead_keys),
+        len(tried_keys), len(dead_keys), quota_errors, inter_request_sleep,
     )
     return {
         "api_calls": api_calls,
@@ -162,7 +193,26 @@ def enrich_with_omdb(
         "enriched": enriched,
         "keys_used": len(tried_keys),
         "keys_exhausted": len(dead_keys),
+        "quota_errors": quota_errors,
     }
+
+
+def _count_omdb_quota_errors(db_path: str, request_date: str, key_fp: str) -> int:
+    if not db_path or not request_date:
+        return 0
+    try:
+        with sqlite3.connect(db_path) as log_conn:
+            row = log_conn.execute(
+                """select count(*) from api_usage_log
+                   where service = 'omdb'
+                     and request_date = ?
+                     and key_fingerprint = ?
+                     and quota_error = 1""",
+                (request_date, key_fp),
+            ).fetchone()
+            return int(row[0] if row else 0)
+    except sqlite3.Error:
+        return 0
 
 
 def _fetch_zh_detail_with_cache(
@@ -230,7 +280,7 @@ def enrich_with_tmdb_details(
     conn: sqlite3.Connection,
     candidates: list[MergedCandidate],
     bearer_token: str,
-    cache_ttl_hours: int = 24,
+    cache_ttl_hours: int = 72,
     *,
     db_path: str = "data/movietrace.db",
     request_date: str = "",
@@ -242,16 +292,26 @@ def enrich_with_tmdb_details(
     client = TmdbDetailClient(bearer_token, db_path=db_path, request_date=request_date)
     api_calls = 0
     cache_hits = 0
+    canonical_hits = 0
     enriched = 0
 
     for idx, c in enumerate(candidates):
         try:
             if not c.tmdb_id:
                 continue
+            cached_enrichment = _load_canonical_enrichment(conn, c.tmdb_id, c.media_type)
+            if cached_enrichment and cached_enrichment.get("genres_json"):
+                _apply_canonical_enrichment(c, cached_enrichment)
+                canonical_hits += 1
+                enriched += 1
+                continue
+
             # Skip if we already have good data from TMDb trending
             # P1.9-hotfix-B: TV candidates also need last_air_date (not in trending payload)
             if c.tmdb_data and c.tmdb_data.get("release_date") and c.tmdb_data.get("original_language"):
                 if c.media_type != "tv" or c.tmdb_data.get("last_air_date"):
+                    if cached_enrichment and cached_enrichment.get("title_zh"):
+                        _apply_canonical_enrichment(c, cached_enrichment)
                     continue
 
             try:
@@ -297,17 +357,56 @@ def enrich_with_tmdb_details(
         finally:
             completed = idx + 1
             if completed % 20 == 0 or completed == len(candidates):
+                _hb_ping("6/8 TMDb detail enrichment", f"{completed}/{len(candidates)}")
                 logger.info(
-                    "TMDb detail enrichment: %d/%d (api=%d cache=%d enriched=%d)",
-                    completed, len(candidates), api_calls, cache_hits, enriched,
+                    "TMDb detail enrichment: %d/%d (api=%d cache=%d canonical=%d enriched=%d)",
+                    completed, len(candidates), api_calls, cache_hits, canonical_hits, enriched,
                 )
 
     conn.commit()
     logger.info(
-        "TMDb detail enrichment: api_calls=%d cache_hits=%d enriched=%d of %d",
-        api_calls, cache_hits, enriched, len(candidates),
+        "TMDb detail enrichment: api_calls=%d cache_hits=%d canonical_hits=%d enriched=%d of %d",
+        api_calls, cache_hits, canonical_hits, enriched, len(candidates),
     )
-    return {"api_calls": api_calls, "cache_hits": cache_hits, "enriched": enriched}
+    return {
+        "api_calls": api_calls,
+        "cache_hits": cache_hits,
+        "canonical_hits": canonical_hits,
+        "enriched": enriched,
+    }
+
+
+def _load_canonical_enrichment(
+    conn: sqlite3.Connection, tmdb_id: str | int, media_type: str
+) -> dict | None:
+    """Read persisted TMDb enrichment fields from canonical_items."""
+    normalized_type = "tv" if media_type in ("tv", "show") else "movie"
+    ext_id = f"{normalized_type}:{tmdb_id}"
+    row = conn.execute(
+        """select ci.genres_json, ci.title_zh, ci.overview_zh, ci.networks_json
+           from canonical_items ci
+           join external_ids ei on ci.id = ei.canonical_item_id
+           where ei.source = 'tmdb' and ei.external_id = ?""",
+        (ext_id,),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "genres_json": row[0],
+        "title_zh": row[1],
+        "overview_zh": row[2],
+        "networks_json": row[3],
+    }
+
+
+def _apply_canonical_enrichment(c: MergedCandidate, data: dict) -> None:
+    """Apply canonical_items enrichment fields to the candidate's TMDb payload."""
+    if not c.tmdb_data:
+        c.tmdb_data = {}
+    for key in ("genres_json", "title_zh", "overview_zh", "networks_json"):
+        value = data.get(key)
+        if value:
+            c.tmdb_data[key] = value
 
 
 def _read_cache(conn: sqlite3.Connection, key: str, ttl_hours: int, source: str = "tmdb") -> dict | None:
