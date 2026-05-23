@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-23 18:25 +08 · Codex（GPT-5） · 分支 `main`
-**测试：** 当前本地全量 689 passed（1 warning）；P1.55 单文件 38 passed；`daily-discover --dry-run` 39s 通过；`git diff --check` 通过
+**最后更新：** 2026-05-23 18:56 +08 · Codex（GPT-5） · 分支 `fix/p1.41-feishu-type-label-cleanup`
+**测试：** 当前本地全量 689 passed（1 warning）；P1.41b 单文件 49 passed；`git diff --check` 通过；P1.48-P1.55 已合并 PR #49，main CI/CD test/deploy/notify 通过
 **Schema：** version 18（P1.45 新增 migration 018 feishu_sync_failures 表；SCHEMA_VERSION 常量同步到 18）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -31,7 +31,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.36 | [p1.36-fp-fetch-lift-out.md](docs/tasks/p1.36-fp-fetch-lift-out.md) | 重构 | ✅ 已合并 (PR #34)，FP fetch 提出到 CLI 层 |
 | P1.37 | [p1.37-progress-format-notify.md](docs/tasks/p1.37-progress-format-notify.md) | 进度通知 | ✅ 已合并 (PR #35)，[1/8] 进度格式 + enrichment 细节 + 飞书卡片进度 section |
 | P1.40 | [p1.40-fix-json-export-missing-fields.md](docs/tasks/p1.40-fix-json-export-missing-fields.md) | bug fix | ✅ 已合并 (PR #36)，format_json 补充 8 个缺失字段（中文名/平台/集数等）|
-| P1.41 | [p1.41-feishu-type-label-field.md](docs/tasks/p1.41-feishu-type-label-field.md) | feat | ✅ 已合并 (PR #37 #38)，热点发现子表新增"类型标签"多选字段（TMDb genre 名称）|
+| P1.41 | [p1.41-feishu-type-label-field.md](docs/tasks/p1.41-feishu-type-label-field.md) | feat | ✅ 已合并 (PR #37)，热点发现子表新增"类型标签"多选字段；P1.41b cleanup 单独修复 |
 | P1.42 | [p1.42-fix-fallback-output-pollution.md](docs/tasks/p1.42-fix-fallback-output-pollution.md) | 架构审查 § 1.7（P0）| ✅ 已合并 (PR #40)，纯 fallback 候选不写 content_updates / 不推飞书；新增 has_fresh_signal 判定 + suppressed_fallback_only stats |
 | P1.43 | [p1.43-omdb-enrichment-batch-commit.md](docs/tasks/p1.43-omdb-enrichment-batch-commit.md) | 架构审查 § 1.4 | ✅ 已合并 (PR #40)，去掉 3 处循环内 micro-commit，改为批量提交；新增 test_enrich_rolls_back_on_mid_loop_error |
 | P1.45 | [p1.45-feishu-sync-retry-and-failures-table.md](docs/tasks/p1.45-feishu-sync-retry-and-failures-table.md) | 架构审查 § 1.6 + 合规规则 23 | ✅ 已合并 (PR #40)，显式重试（指数退避×3）+ feishu_sync_failures 持久化 + replay；migration 018 |
@@ -40,19 +40,22 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.38 | — | Bug B-01 / B-02 | ✅ 已合并 (PR #40)，fallback 标签读 cached_count 修复计数为 0；important 按 title 去重 |
 | P1.47 | [p1.47-omdb-enrichment-progress-log.md](docs/tasks/p1.47-omdb-enrichment-progress-log.md) | 可观测性 | ✅ 已合并 (PR #43)，OMDb + TMDb detail enrichment 每 20 条/尾批输出进度日志；3 新测试；670 passed |
 | P1.53 | [p1.53-cd-feishu-pr-notify.md](docs/tasks/p1.53-cd-feishu-pr-notify.md) | CI/CD 通知 | ✅ 已合并 (PR #44)，auto-merge dispatch 传 PR number；CD 飞书通知成功/失败均补 PR 详情；取消强制 journal 规则 |
-| P1.48 | [p1.48-pipeline-heartbeat.md](docs/tasks/p1.48-pipeline-heartbeat.md) | 可观测性 | ✅ 本地完成，daily-discover 心跳文件 + health check 脚本；heartbeat 单测 |
-| P1.49 | [p1.49-enrichment-cache-ttl-tuning.md](docs/tasks/p1.49-enrichment-cache-ttl-tuning.md) | 性能 | ✅ 本地完成，OMDb / TMDb detail TTL 24h → 72h |
-| P1.50 | [p1.50-omdb-sleep-tuning.md](docs/tasks/p1.50-omdb-sleep-tuning.md) | 性能 | ✅ 本地完成，OMDb sleep 默认 0.2s + quota_errors 可观测 |
-| P1.51 | [p1.51-fix-double-api-logging.md](docs/tasks/p1.51-fix-double-api-logging.md) | bug | ✅ 本地完成，HTTP transport/business api_usage_log 双写修复 |
-| P1.52 | [p1.52-canonical-first-enrichment.md](docs/tasks/p1.52-canonical-first-enrichment.md) | refactor | ✅ 本地完成，TMDb detail canonical_items 优先，dry-run api_calls=0 canonical_hits=111 |
-| P1.54 | [p1.54-api-usage-log-lock-timeout.md](docs/tasks/p1.54-api-usage-log-lock-timeout.md) | bug | ✅ 本地完成，api_usage_log 遇 SQLite 写锁 0.1s 快速放弃，避免 best-effort 日志拖慢 pipeline |
-| P1.55 | [p1.55-fix-canonical-enrichment-early-skip.md](docs/tasks/p1.55-fix-canonical-enrichment-early-skip.md) | review finding | ✅ 本地完成，canonical-first 仅在候选已有 release_date/original_language/TV last_air_date 时早退；缺字段继续走 TMDb detail |
+| P1.48 | [p1.48-pipeline-heartbeat.md](docs/tasks/p1.48-pipeline-heartbeat.md) | 可观测性 | ✅ 已合并 (PR #49)，daily-discover 心跳文件 + health check 脚本；heartbeat 单测 |
+| P1.49 | [p1.49-enrichment-cache-ttl-tuning.md](docs/tasks/p1.49-enrichment-cache-ttl-tuning.md) | 性能 | ✅ 已合并 (PR #49)，OMDb / TMDb detail TTL 24h → 72h |
+| P1.50 | [p1.50-omdb-sleep-tuning.md](docs/tasks/p1.50-omdb-sleep-tuning.md) | 性能 | ✅ 已合并 (PR #49)，OMDb sleep 默认 0.2s + quota_errors 可观测 |
+| P1.51 | [p1.51-fix-double-api-logging.md](docs/tasks/p1.51-fix-double-api-logging.md) | bug | ✅ 已合并 (PR #49)，HTTP transport/business api_usage_log 双写修复 |
+| P1.52 | [p1.52-canonical-first-enrichment.md](docs/tasks/p1.52-canonical-first-enrichment.md) | refactor | ✅ 已合并 (PR #49)，TMDb detail canonical_items 优先 |
+| P1.54 | [p1.54-api-usage-log-lock-timeout.md](docs/tasks/p1.54-api-usage-log-lock-timeout.md) | bug | ✅ 已合并 (PR #49)，api_usage_log 遇 SQLite 写锁 0.1s 快速放弃，避免 best-effort 日志拖慢 pipeline |
+| P1.55 | [p1.55-fix-canonical-enrichment-early-skip.md](docs/tasks/p1.55-fix-canonical-enrichment-early-skip.md) | review finding | ✅ 已合并 (PR #49)，canonical-first 仅在候选已有 release_date/original_language/TV last_air_date 时早退；缺字段继续走 TMDb detail |
+| P1.41b | [p1.41b-feishu-type-label-cleanup.md](docs/tasks/p1.41b-feishu-type-label-cleanup.md) | review finding | 🚧 本地进行中，修复“类型”字段被 genre 覆盖；“类型标签”只保留 TMDb genre 名称 |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-23 **P1.41b 飞书类型字段 cleanup**（PR #38 关闭未合并的 follow-up 重做：保留“类型”=movie/tv；“类型标签”只写 TMDb genre 名称；49 单测 + 689 全量通过）
+- 2026-05-23 **P1.48-P1.55 合并上线**（PR #49 squash merge；main CI/CD test/deploy/notify 均通过；包含 heartbeat、enrichment 性能、api_usage_log 锁修复、canonical-first 早退修复、开发 E2E runbook 固化）
 - 2026-05-23 **P1.55 canonical-first 早退修复**（canonical 命中先预填中文/类型/平台字段；只有候选已有 release_date/original_language/TV last_air_date 时才跳过 TMDb detail；新增 3 个缺字段回归用例；689 passed；dry-run 39s，TMDb detail api_calls=1 cache_hits=142 canonical_hits=10）
 - 2026-05-23 **PR 创建改为人类确认门禁**（Agent 只有在人类事前或当下明确确认后才能创建 PR；`session-checklist` 不再把 PR 当默认收尾动作；相关小改优先合并进同一 PR 降低流程成本）
 - 2026-05-23 **P1.54 生产 1 小时耗时根因修复**（生产 2026-05-23 discover 耗时 3693s；根因是 API 日志独立连接遇 enrichment 批量写事务锁默认等待约 5s；log_api_call 改为 0.1s 快速放弃；新增锁竞争回归测试）
@@ -68,7 +71,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** 无（P1.55 已本地完成，待人类决定是否创建 PR）
+- **进行中：** P1.41b 飞书类型字段 cleanup，待验证和 PR
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 - **待决策：** 无
 - **P1.39 已完成**：生产日志 SSH 拉取方案已落地（`scripts/fetch-prod-logs.sh`），Logtail 接入决策放弃
