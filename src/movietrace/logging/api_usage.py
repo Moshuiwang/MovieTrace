@@ -17,6 +17,7 @@ logger = logging.getLogger("movietrace.logging.api_usage")
 
 # Max length for error messages to avoid bloat
 MAX_ERROR_LEN = 500
+LOG_DB_TIMEOUT_SECONDS = 0.1
 
 
 def fingerprint_key(raw: str) -> str:
@@ -56,35 +57,33 @@ def log_api_call(
         safe = _sanitize_metadata(metadata)
         metadata_json = json.dumps(safe, ensure_ascii=False)
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("pragma foreign_keys = on")
-        conn.execute(
-            """insert into api_usage_log(
-                service, endpoint, operation, request_date, status,
-                http_status, cache_status, quota_error, rate_limited,
-                duration_ms, item_count, error_code, error_message,
-                key_fingerprint, metadata_json
-            ) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                service,
-                endpoint,
-                operation,
-                request_date,
-                status,
-                http_status,
-                cache_status,
-                1 if quota_error else 0,
-                1 if rate_limited else 0,
-                duration_ms,
-                item_count,
-                error_code,
-                error_message,
-                key_fingerprint,
-                metadata_json,
-            ),
-        )
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(str(db_path), timeout=LOG_DB_TIMEOUT_SECONDS) as conn:
+            conn.execute("pragma foreign_keys = on")
+            conn.execute(
+                """insert into api_usage_log(
+                    service, endpoint, operation, request_date, status,
+                    http_status, cache_status, quota_error, rate_limited,
+                    duration_ms, item_count, error_code, error_message,
+                    key_fingerprint, metadata_json
+                ) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    service,
+                    endpoint,
+                    operation,
+                    request_date,
+                    status,
+                    http_status,
+                    cache_status,
+                    1 if quota_error else 0,
+                    1 if rate_limited else 0,
+                    duration_ms,
+                    item_count,
+                    error_code,
+                    error_message,
+                    key_fingerprint,
+                    metadata_json,
+                ),
+            )
     except Exception:
         logger.debug("Failed to write api_usage_log row", exc_info=True)
 

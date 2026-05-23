@@ -2,6 +2,7 @@
 
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -249,6 +250,34 @@ class LogApiCallTest(unittest.TestCase):
         ).fetchone()
         self.assertEqual(row[0], 1)
         self.assertEqual(row[1], 0)
+
+    def test_log_api_call_returns_quickly_when_database_locked(self):
+        from movietrace.db.schema import connect_database
+        from movietrace.logging.api_usage import log_api_call
+
+        lock_conn = connect_database(self.db_path)
+        try:
+            lock_conn.execute("begin immediate")
+            started = time.monotonic()
+            log_api_call(
+                db_path=self.db_path,
+                service="tmdb",
+                endpoint="/locked",
+                request_date="2026-05-23",
+                status="success",
+                http_status=200,
+                key_fingerprint="fp",
+            )
+            elapsed = time.monotonic() - started
+        finally:
+            lock_conn.rollback()
+            lock_conn.close()
+
+        self.assertLess(elapsed, 1.0)
+        row = self.conn.execute(
+            "select count(*) from api_usage_log where endpoint = '/locked'"
+        ).fetchone()
+        self.assertEqual(row[0], 0)
 
 
 class ApiCallTrackerTest(unittest.TestCase):
