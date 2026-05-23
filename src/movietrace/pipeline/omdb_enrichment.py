@@ -300,19 +300,17 @@ def enrich_with_tmdb_details(
             if not c.tmdb_id:
                 continue
             cached_enrichment = _load_canonical_enrichment(conn, c.tmdb_id, c.media_type)
-            if cached_enrichment and cached_enrichment.get("genres_json"):
+            if cached_enrichment:
                 _apply_canonical_enrichment(c, cached_enrichment)
-                canonical_hits += 1
-                enriched += 1
-                continue
+                if cached_enrichment.get("genres_json") and _has_sufficient_tmdb_detail(c):
+                    canonical_hits += 1
+                    enriched += 1
+                    continue
 
             # Skip if we already have good data from TMDb trending
             # P1.9-hotfix-B: TV candidates also need last_air_date (not in trending payload)
-            if c.tmdb_data and c.tmdb_data.get("release_date") and c.tmdb_data.get("original_language"):
-                if c.media_type != "tv" or c.tmdb_data.get("last_air_date"):
-                    if cached_enrichment and cached_enrichment.get("title_zh"):
-                        _apply_canonical_enrichment(c, cached_enrichment)
-                    continue
+            if _has_sufficient_tmdb_detail(c):
+                continue
 
             try:
                 data, cache_hit = get_tmdb_detail_with_cache(
@@ -374,6 +372,17 @@ def enrich_with_tmdb_details(
         "canonical_hits": canonical_hits,
         "enriched": enriched,
     }
+
+
+def _has_sufficient_tmdb_detail(c: MergedCandidate) -> bool:
+    """Return True when detail API would not add required TMDb freshness fields."""
+    if not c.tmdb_data:
+        return False
+    if not c.tmdb_data.get("release_date") or not c.tmdb_data.get("original_language"):
+        return False
+    if c.media_type == "tv" and not c.tmdb_data.get("last_air_date"):
+        return False
+    return True
 
 
 def _load_canonical_enrichment(

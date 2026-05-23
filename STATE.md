@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-23 14:05 +08 · Codex（GPT-5） · 分支 `fix/p1.54-api-usage-log-lock-timeout`
-**测试：** 当前本地全量 686 passed（1 warning）；P1.54 单文件 16 passed；`daily-discover --dry-run` 43s 通过；heartbeat status=done；`git diff --check` 通过
+**最后更新：** 2026-05-23 18:25 +08 · Codex（GPT-5） · 分支 `main`
+**测试：** 当前本地全量 689 passed（1 warning）；P1.55 单文件 38 passed；`daily-discover --dry-run` 39s 通过；`git diff --check` 通过
 **Schema：** version 18（P1.45 新增 migration 018 feishu_sync_failures 表；SCHEMA_VERSION 常量同步到 18）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -46,12 +46,14 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.51 | [p1.51-fix-double-api-logging.md](docs/tasks/p1.51-fix-double-api-logging.md) | bug | ✅ 本地完成，HTTP transport/business api_usage_log 双写修复 |
 | P1.52 | [p1.52-canonical-first-enrichment.md](docs/tasks/p1.52-canonical-first-enrichment.md) | refactor | ✅ 本地完成，TMDb detail canonical_items 优先，dry-run api_calls=0 canonical_hits=111 |
 | P1.54 | [p1.54-api-usage-log-lock-timeout.md](docs/tasks/p1.54-api-usage-log-lock-timeout.md) | bug | ✅ 本地完成，api_usage_log 遇 SQLite 写锁 0.1s 快速放弃，避免 best-effort 日志拖慢 pipeline |
+| P1.55 | [p1.55-fix-canonical-enrichment-early-skip.md](docs/tasks/p1.55-fix-canonical-enrichment-early-skip.md) | review finding | ✅ 本地完成，canonical-first 仅在候选已有 release_date/original_language/TV last_air_date 时早退；缺字段继续走 TMDb detail |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
 **暂缓：** issue #4b（daily log 回填，单独 issue 后续做）
 
 **近 7 天关键变更：**
+- 2026-05-23 **P1.55 canonical-first 早退修复**（canonical 命中先预填中文/类型/平台字段；只有候选已有 release_date/original_language/TV last_air_date 时才跳过 TMDb detail；新增 3 个缺字段回归用例；689 passed；dry-run 39s，TMDb detail api_calls=1 cache_hits=142 canonical_hits=10）
 - 2026-05-23 **PR 创建改为人类确认门禁**（Agent 只有在人类事前或当下明确确认后才能创建 PR；`session-checklist` 不再把 PR 当默认收尾动作；相关小改优先合并进同一 PR 降低流程成本）
 - 2026-05-23 **P1.54 生产 1 小时耗时根因修复**（生产 2026-05-23 discover 耗时 3693s；根因是 API 日志独立连接遇 enrichment 批量写事务锁默认等待约 5s；log_api_call 改为 0.1s 快速放弃；新增锁竞争回归测试）
 - 2026-05-23 **P1.48-P1.52 本地完成**（pipeline heartbeat + health check；enrichment TTL 72h；OMDb sleep 0.2s + quota_errors；api_usage_log 双写修复；TMDb detail canonical-first；685 passed；dry-run 43s）
@@ -66,7 +68,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** 无（P1.54 已本地完成，用户要求不创建 PR）
+- **进行中：** 无（P1.55 已本地完成，待人类决定是否创建 PR）
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 - **待决策：** 无
 - **P1.39 已完成**：生产日志 SSH 拉取方案已落地（`scripts/fetch-prod-logs.sh`），Logtail 接入决策放弃

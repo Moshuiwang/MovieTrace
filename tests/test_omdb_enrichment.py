@@ -291,16 +291,14 @@ class OmdbEnrichmentTest(unittest.TestCase):
         sig = inspect.signature(enrich_with_tmdb_details)
         self.assertEqual(sig.parameters["cache_ttl_hours"].default, 72)
 
-    def test_enrich_tmdb_detail_skips_when_canonical_has_genres(self):
-        from movietrace.pipeline.omdb_enrichment import enrich_with_tmdb_details
-        from movietrace.pipeline.multi_source_merge import MergedCandidate
-
+    def _seed_canonical_tmdb_enrichment(self, tmdb_id=999, media_type="tv"):
+        normalized_type = "tv" if media_type in ("tv", "show") else "movie"
         self.conn.execute(
             "insert into canonical_items(canonical_item_key, title, content_type, content_granularity, genres_json, title_zh, overview_zh, networks_json) values (?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                "tmdb:tv:999:season:1",
+                f"tmdb:{normalized_type}:{tmdb_id}:season:1",
                 "Test Show",
-                "tv",
+                normalized_type,
                 "season",
                 '[{"id": 18, "name": "Drama"}]',
                 "测试剧",
@@ -311,17 +309,120 @@ class OmdbEnrichmentTest(unittest.TestCase):
         canonical_id = self.conn.execute("select last_insert_rowid()").fetchone()[0]
         self.conn.execute(
             "insert into external_ids(canonical_item_id, source, external_id) values (?, ?, ?)",
-            (canonical_id, "tmdb", "tv:999"),
+            (canonical_id, "tmdb", f"{normalized_type}:{tmdb_id}"),
         )
         self.conn.commit()
 
-        c = MergedCandidate(tmdb_id=999, imdb_id=None, title="Test Show", media_type="tv")
+    def test_enrich_tmdb_detail_skips_when_canonical_has_genres(self):
+        from movietrace.pipeline.omdb_enrichment import enrich_with_tmdb_details
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+
+        self._seed_canonical_tmdb_enrichment(tmdb_id=999)
+        c = MergedCandidate(
+            tmdb_id=999,
+            imdb_id=None,
+            title="Test Show",
+            media_type="tv",
+            tmdb_data={
+                "release_date": "2024-01-01",
+                "original_language": "en",
+                "last_air_date": "2024-02-01",
+            },
+        )
         with patch("movietrace.pipeline.omdb_enrichment.get_tmdb_detail_with_cache") as detail_mock:
             result = enrich_with_tmdb_details(self.conn, [c], "fake-token", db_path=str(self.db_path))
 
         detail_mock.assert_not_called()
         self.assertEqual(result["canonical_hits"], 1)
         self.assertEqual(result["enriched"], 1)
+        self.assertEqual(c.tmdb_data["title_zh"], "测试剧")
+
+    def test_enrich_tmdb_detail_calls_api_when_canonical_has_genres_but_missing_release_date(self):
+        from movietrace.pipeline.omdb_enrichment import enrich_with_tmdb_details
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+
+        self._seed_canonical_tmdb_enrichment(tmdb_id=1002, media_type="movie")
+        c = MergedCandidate(
+            tmdb_id=1002,
+            imdb_id=None,
+            title="Test Show",
+            media_type="movie",
+            tmdb_data={"original_language": "en"},
+        )
+        detail_data = {
+            "release_date": "2024-01-01",
+            "original_language": "en",
+            "genres": [{"id": 18, "name": "Drama"}],
+        }
+
+        with patch("movietrace.pipeline.omdb_enrichment.get_tmdb_detail_with_cache", return_value=(detail_data, False)) as detail_mock:
+            with patch("movietrace.pipeline.omdb_enrichment._fetch_zh_detail_with_cache", return_value=({}, False)):
+                result = enrich_with_tmdb_details(self.conn, [c], "fake-token", db_path=str(self.db_path))
+
+        detail_mock.assert_called_once()
+        self.assertEqual(result["api_calls"], 1)
+        self.assertEqual(result["canonical_hits"], 0)
+        self.assertEqual(result["enriched"], 1)
+        self.assertEqual(c.tmdb_data["release_date"], "2024-01-01")
+        self.assertEqual(c.tmdb_data["title_zh"], "测试剧")
+
+    def test_enrich_tmdb_detail_calls_api_when_canonical_has_genres_but_missing_original_language(self):
+        from movietrace.pipeline.omdb_enrichment import enrich_with_tmdb_details
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+
+        self._seed_canonical_tmdb_enrichment(tmdb_id=1003, media_type="movie")
+        c = MergedCandidate(
+            tmdb_id=1003,
+            imdb_id=None,
+            title="Test Show",
+            media_type="movie",
+            tmdb_data={"release_date": "2024-01-01"},
+        )
+        detail_data = {
+            "release_date": "2024-01-01",
+            "original_language": "en",
+            "genres": [{"id": 18, "name": "Drama"}],
+        }
+
+        with patch("movietrace.pipeline.omdb_enrichment.get_tmdb_detail_with_cache", return_value=(detail_data, False)) as detail_mock:
+            with patch("movietrace.pipeline.omdb_enrichment._fetch_zh_detail_with_cache", return_value=({}, False)):
+                result = enrich_with_tmdb_details(self.conn, [c], "fake-token", db_path=str(self.db_path))
+
+        detail_mock.assert_called_once()
+        self.assertEqual(result["api_calls"], 1)
+        self.assertEqual(result["canonical_hits"], 0)
+        self.assertEqual(result["enriched"], 1)
+        self.assertEqual(c.tmdb_data["original_language"], "en")
+        self.assertEqual(c.tmdb_data["title_zh"], "测试剧")
+
+    def test_enrich_tmdb_detail_calls_api_when_canonical_has_genres_but_tv_missing_last_air_date(self):
+        from movietrace.pipeline.omdb_enrichment import enrich_with_tmdb_details
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+
+        self._seed_canonical_tmdb_enrichment(tmdb_id=1004)
+        c = MergedCandidate(
+            tmdb_id=1004,
+            imdb_id=None,
+            title="Test Show",
+            media_type="tv",
+            tmdb_data={"release_date": "2024-01-01", "original_language": "en"},
+        )
+        detail_data = {
+            "first_air_date": "2024-01-01",
+            "original_language": "en",
+            "last_air_date": "2024-02-01",
+            "genres": [{"id": 18, "name": "Drama"}],
+        }
+
+        with patch("movietrace.pipeline.omdb_enrichment.get_tmdb_detail_with_cache", return_value=(detail_data, False)) as detail_mock:
+            with patch("movietrace.pipeline.omdb_enrichment._fetch_zh_detail_with_cache", return_value=({}, False)):
+                result = enrich_with_tmdb_details(self.conn, [c], "fake-token", db_path=str(self.db_path))
+
+        detail_mock.assert_called_once()
+        self.assertEqual(result["api_calls"], 1)
+        self.assertEqual(result["canonical_hits"], 0)
+        self.assertEqual(result["enriched"], 1)
+        self.assertEqual(c.tmdb_data["last_air_date"], "2024-02-01")
         self.assertEqual(c.tmdb_data["title_zh"], "测试剧")
 
     def test_enrich_tmdb_detail_calls_api_when_canonical_empty(self):

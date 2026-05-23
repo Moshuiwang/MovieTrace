@@ -1,7 +1,7 @@
 # MovieTrace 日常运行手册
 
 > **目的：** 让接手者能独立完成日常运行和排障。
-> **最后更新：** 2026-05-20
+> **最后更新：** 2026-05-23
 
 ---
 
@@ -76,7 +76,51 @@ PYTHONPATH=src python -m movietrace.cli export-recommendations --days 7
 PYTHONPATH=src python -m movietrace.cli export-recommendations --days 7 --output-dir reports/
 ```
 
-### 3.4 基线追踪（独立命令）
+### 3.4 开发环境端到端验收
+
+开发环境和生产环境不是同一目录，也不是同一个 SQLite 文件。开发环境完整验收默认跑真实 commit 链路，不用 `--dry-run`：
+
+```bash
+./scripts/local_e2e_run.sh
+```
+
+该脚本对齐生产 `scripts/daily_run.sh`：
+
+```text
+daily-discover → export-recommendations → sync-feishu-table → sync-feishu-doc → notify-feishu
+```
+
+开发验收关注：
+
+- 脚本退出码为 0
+- `reports/logs/local_e2e_*.log` 末尾显示 `状态: OK`
+- `reports/logs/discover_stats_YYYYMMDD.json` 中 `written` 符合预期
+- `reports/logs/sync_stats_YYYYMMDD.json` 中 `errors=0`
+- `data/pipeline_heartbeat.json` 中 `status=done`
+
+跑完后用 Feishu CLI 只读查多维表格：
+
+```bash
+source .venv/bin/activate
+PYTHONPATH=src python - <<'PY' > /tmp/movietrace_feishu_cli_env.sh
+from movietrace.config import load_secrets
+f = (load_secrets().get("feishu") or {})
+print("APP_TOKEN=" + f.get("base_app_token", ""))
+print("TABLE_ID=" + f.get("discovery_table_id", ""))
+PY
+source /tmp/movietrace_feishu_cli_env.sh
+
+RUN_DATE=$(date +%Y-%m-%d)
+feishu bitable record list "$APP_TOKEN" "$TABLE_ID" \
+  --page_size 5 \
+  --filter "{\"conjunction\":\"and\",\"conditions\":[{\"field_name\":\"同步批次\",\"operator\":\"is\",\"value\":[\"$RUN_DATE\"]}]}"
+
+rm -f /tmp/movietrace_feishu_cli_env.sh
+```
+
+注意：生产 cron 当前导出 `--days 1`，所以同一“同步批次”可能同时包含今日和昨日的 `content_update_id`。这属于生产口径，不是同步重复。
+
+### 3.5 基线追踪（独立命令）
 
 ```bash
 # 例行运行基线新季检测（按 TMDb 状态筛选仍可能更新的剧集）
@@ -102,10 +146,17 @@ PYTHONPATH=src python -m movietrace.cli export-baseline-updates --days 7
 | 评分计算 | 完整执行 | 完整执行 |
 | content_updates 写入 | **不写入** | 写入 |
 | canonical_items 注册 | **不注册** | 自动注册 |
+| 导出 latest 报告 | 不覆盖 | 覆盖 `reports/latest.*` |
+| 飞书多维表格同步 | 不同步 | 真实 upsert |
+| 飞书通知 | 不发送 | 真实发送 |
 | baseline local_max 回写 | 不适用于 `daily-discover` | 由独立 `baseline-track` 回写 |
 | 终端输出 | 显示 "would be registered" | 显示 "auto_registered" |
 
-**原则：不确定时先 dry-run，确认输出合理再 commit。**
+**原则：**
+
+- 开发环境完整验收：直接跑 `./scripts/local_e2e_run.sh` commit 模式，覆盖 DB 写入、导出、飞书 upsert、通知。
+- 单点调试或不想写表时：才使用 `daily-discover --dry-run`。
+- 生产环境人工补跑：仍按任务包或 runbook 明确步骤执行，不用开发环境的宽松标准替代生产门禁。
 
 ---
 
