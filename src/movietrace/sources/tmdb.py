@@ -112,6 +112,7 @@ class TmdbSearchClient:
                 "Accept": "application/json",
             },
             log_context=self._log_ctx("/search/multi", "tmdb_search.search"),
+            log_to_db=False,
         )
         if not isinstance(payload, dict):
             return []
@@ -135,6 +136,7 @@ class TmdbSearchClient:
                 "Accept": "application/json",
             },
             log_context=self._log_ctx("/search/tv", "tmdb_search.search_tv"),
+            log_to_db=False,
         )
         if not isinstance(payload, dict):
             return []
@@ -160,6 +162,7 @@ class TmdbSearchClient:
                 "Accept": "application/json",
             },
             log_context=self._log_ctx("/search/movie", "tmdb_search.search_movie"),
+            log_to_db=False,
         )
         if not isinstance(payload, dict):
             return []
@@ -248,6 +251,7 @@ class TmdbDetailClient:
                 "Accept": "application/json",
             },
             log_context=self._log_ctx(f"/tv/{tmdb_tv_id}", "tmdb_detail.get_tv_details"),
+            log_to_db=False,
         )
         if isinstance(payload, dict):
             return payload
@@ -263,6 +267,7 @@ class TmdbDetailClient:
                 "Accept": "application/json",
             },
             log_context=self._log_ctx(f"/movie/{tmdb_movie_id}", "tmdb_detail.get_movie_details"),
+            log_to_db=False,
         )
         if isinstance(payload, dict):
             return payload
@@ -277,6 +282,7 @@ class TmdbDetailClient:
                 "Accept": "application/json",
             },
             log_context=self._log_ctx(f"/tv/{tmdb_tv_id}/external_ids", "tmdb_detail.get_tv_external_ids"),
+            log_to_db=False,
         )
         if isinstance(payload, dict):
             return payload
@@ -291,6 +297,7 @@ class TmdbDetailClient:
                 "Accept": "application/json",
             },
             log_context=self._log_ctx(f"/movie/{tmdb_movie_id}/external_ids", "tmdb_detail.get_movie_external_ids"),
+            log_to_db=False,
         )
         if isinstance(payload, dict):
             return payload
@@ -315,6 +322,7 @@ class TmdbDetailClient:
                 "Accept": "application/json",
             },
             log_context=self._log_ctx(f"/tv/{tmdb_tv_id}/season/{season_number}", "tmdb_detail.get_tv_season_details"),
+            log_to_db=False,
         )
         if isinstance(payload, dict):
             return payload
@@ -363,6 +371,7 @@ class TmdbTrendingClient:
             params={"page": str(page), "language": "en-US"},
             headers=self._headers(),
             log_context=self._log_ctx("/trending/all/day", "tmdb_trending.fetch_trending_all_day"),
+            log_to_db=False,
         )
         if not isinstance(payload, dict):
             return []
@@ -375,6 +384,7 @@ class TmdbTrendingClient:
             params={"page": str(page), "language": "en-US"},
             headers=self._headers(),
             log_context=self._log_ctx("/tv/popular", "tmdb_trending.fetch_tv_popular"),
+            log_to_db=False,
         )
         if not isinstance(payload, dict):
             return []
@@ -391,6 +401,7 @@ class TmdbTrendingClient:
             params={"page": str(page), "language": "en-US"},
             headers=self._headers(),
             log_context=self._log_ctx("/movie/popular", "tmdb_trending.fetch_movie_popular"),
+            log_to_db=False,
         )
         if not isinstance(payload, dict):
             return []

@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 _URLOPEN_PATH = "movietrace.sources._http_policy.urlopen"
 _SLEEP_PATH = "movietrace.sources._http_policy.time.sleep"
+_LOG_API_CALL_PATH = "movietrace.logging.api_usage.log_api_call"
 
 
 def _make_mock_response(
@@ -51,6 +52,17 @@ def _make_http_error(
     # Patch read() so _read_http_error can read the body
     exc.read = lambda: body  # type: ignore[method-assign]
     return exc
+
+
+def _make_log_context() -> dict[str, str]:
+    return {
+        "db_path": ":memory:",
+        "service": "tmdb",
+        "endpoint": "/tv/1",
+        "operation": "test",
+        "request_date": "2026-05-23",
+        "key_fingerprint": "abc123",
+    }
 
 
 class TestRequestWithPolicy(unittest.TestCase):
@@ -189,6 +201,44 @@ class TestRequestWithPolicy(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertEqual(call_count, 3)
+
+    def test_request_with_policy_skips_db_log_when_disabled(self):
+        """HttpPolicy(log_to_db=False) suppresses transport DB logging."""
+        from movietrace.sources._http_policy import HttpPolicy, request_with_policy
+
+        policy = HttpPolicy(log_to_db=False)
+        mock_ctx = _make_mock_response(200, b'{"ok": true}')
+
+        with patch(_URLOPEN_PATH, return_value=mock_ctx), \
+             patch(_SLEEP_PATH), \
+             patch(_LOG_API_CALL_PATH) as mock_log_api_call:
+            status, _, _ = request_with_policy(
+                "https://example.com/api",
+                policy=policy,
+                log_context=_make_log_context(),
+            )
+
+        self.assertEqual(status, 200)
+        mock_log_api_call.assert_not_called()
+
+    def test_request_with_policy_writes_db_log_when_enabled(self):
+        """Default HttpPolicy writes one transport DB log when log_context exists."""
+        from movietrace.sources._http_policy import HttpPolicy, request_with_policy
+
+        policy = HttpPolicy()
+        mock_ctx = _make_mock_response(200, b'{"ok": true}')
+
+        with patch(_URLOPEN_PATH, return_value=mock_ctx), \
+             patch(_SLEEP_PATH), \
+             patch(_LOG_API_CALL_PATH) as mock_log_api_call:
+            status, _, _ = request_with_policy(
+                "https://example.com/api",
+                policy=policy,
+                log_context=_make_log_context(),
+            )
+
+        self.assertEqual(status, 200)
+        mock_log_api_call.assert_called_once()
 
 
 if __name__ == "__main__":
