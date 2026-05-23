@@ -17,9 +17,9 @@ OPEN_API_BASE = "https://open.feishu.cn/open-apis"
 
 # Policy for Feishu JSON calls: no 5xx auto-retry (app-layer retry in P1.45
 # handles Feishu business failures; transport 5xx should surface quickly)
-_FEISHU_JSON_POLICY = HttpPolicy(timeout=30.0, max_retries=0)
+_FEISHU_JSON_POLICY = HttpPolicy(timeout=30.0, max_retries=0, log_to_db=False)
 # Policy for media upload: longer timeout, no retry
-_FEISHU_UPLOAD_POLICY = HttpPolicy(timeout=60.0, max_retries=0)
+_FEISHU_UPLOAD_POLICY = HttpPolicy(timeout=60.0, max_retries=0, log_to_db=False)
 
 
 def build_multipart_body(

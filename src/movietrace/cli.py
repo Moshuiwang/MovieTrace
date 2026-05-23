@@ -27,6 +27,9 @@ from movietrace.db.schema import connect_database, initialize_database
 def cmd_daily_discover(args: argparse.Namespace) -> int:
     """Run the full multi-source daily discovery pipeline (P1.7-D)."""
     import time as _time
+    from movietrace.pipeline.heartbeat import done as heartbeat_done
+    from movietrace.pipeline.heartbeat import ping as heartbeat_ping
+
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     _run_start = _time.monotonic()
     report_date = _parse_date_arg(args.date) or date.today()
@@ -50,6 +53,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
 
     # ── Step 1: Fetch FlixPatrol data ────────────────────────────────────
     print("[1/8] 拉取 FlixPatrol 榜单数据...")
+    heartbeat_ping("1/8 FlixPatrol fetch")
     fp_result: dict = {}
     try:
         from movietrace.pipeline.discovery import _ensure_fp_data
@@ -79,6 +83,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
 
     # ── Step 2: Fetch TMDb trending ──────────────────────────────────────
     print("[2/8] 拉取 TMDb 热门数据...")
+    heartbeat_ping("2/8 TMDb fetch")
     tmdb_result = {}
     try:
         from movietrace.pipeline.tmdb_trending import fetch_and_store_tmdb_trending
@@ -102,6 +107,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
 
     # ── Step 3: Fetch Trakt trending ─────────────────────────────────────
     print("[3/8] 拉取 Trakt 热门数据...")
+    heartbeat_ping("3/8 Trakt fetch")
     trakt_result = {}
     try:
         trakt_client_id = (secrets.get("trakt") or {}).get("client_id", "")
@@ -130,6 +136,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
     # ── Step 4-8: run_discovery (merge + enrich + score + write) ─────────
     fallback_cfg = cfg.get("source_fallback")
     try:
+        heartbeat_ping("4/8 source date fallback")
         from movietrace.pipeline.discovery import run_discovery
         result = run_discovery(
             date_from=date_str, dry_run=dry_run,
@@ -149,6 +156,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
 
     # ── Step 4: Source date fallback decisions ────────────────────────────
     print("[4/8] 数据源日期回退决策...")
+    heartbeat_ping("4/8 source date fallback")
     source_names = [("flixpatrol", "FlixPatrol"), ("tmdb", "TMDb"), ("trakt", "Trakt")]
     for src_key, src_label in source_names:
         ss = source_status.get(src_key, {})
@@ -174,11 +182,13 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
     tmdb_rows = tmdb_result.get("inserted", 0)
     trakt_rows = trakt_result.get("inserted", 0)
     print(f"[5/8] 三源合并去重...")
+    heartbeat_ping("5/8 multi-source merge")
     print(f"  ✓  fp={fp_rows}  tmdb={tmdb_rows}  trakt={trakt_rows}  →  候选 {total_merged} 条")
     print()
 
     # ── Step 6: Enrichment ────────────────────────────────────────────────
     print("[6/8] 候选内容丰富化...")
+    heartbeat_ping("6/8 enrichment start")
     enrich_imdb = stats.get("enrich_imdb_backfill", {})
     enrich_omdb = stats.get("enrich_omdb", {})
     enrich_tmdb_detail = stats.get("enrich_tmdb_detail", {})
@@ -240,6 +250,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
 
     # ── Step 7: Duration estimation ───────────────────────────────────────
     print("[7/8] 预估引进时长计算...")
+    heartbeat_ping("7/8 export")
     candidates = result.get("candidates", [])
     total_passed = stats.get("total_passed", 0)
     elapsed_step7 = _time.monotonic() - _run_start
@@ -263,6 +274,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
 
     # ── Step 8: Score + filter + write ────────────────────────────────────
     print("[8/8] 热度打分 · 过滤 · 写入...")
+    heartbeat_ping("8/8 feishu sync")
     soap_count = sum(1 for c in result.get("all_scored", []) if c.get("is_soap"))
     total_scored = stats.get("total_merged", 0)
     p0 = stats.get("P0", 0)
@@ -310,6 +322,7 @@ def cmd_daily_discover(args: argparse.Namespace) -> int:
             json.dump(discover_out, _f, ensure_ascii=False, indent=2)
         print(f"Discover stats: {args.stats_out}")
 
+    heartbeat_done()
     return 0
 
 

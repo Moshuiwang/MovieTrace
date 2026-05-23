@@ -35,6 +35,7 @@ class HttpPolicy:
     respect_retry_after: bool = True              # honour 429 Retry-After header
     retry_on_status: tuple[int, ...] = (502, 503, 504)
     log_context_required: bool = True             # caller should pass log_context
+    log_to_db: bool = True                        # False skips transport api_usage_log write
 
 
 _DEFAULT_POLICY = HttpPolicy()
@@ -134,7 +135,7 @@ def request_with_policy(
 
             elapsed_ms = int((time.monotonic() - attempt_start) * 1000)
             logger.debug("HTTP %d %s (%dms)", status, full_url, elapsed_ms)
-            _log_transport(log_context, status, elapsed_ms, "ok")
+            _log_transport(log_context, policy, status, elapsed_ms, "ok")
             return status, body, resp_headers
 
         except HTTPError as exc:
@@ -152,12 +153,12 @@ def request_with_policy(
                         "429 Retry-After=%.0fs exceeds cap=%.0fs, giving up. url=%s",
                         wait, _MAX_RETRY_AFTER_SECONDS, full_url,
                     )
-                    _log_transport(log_context, 429, elapsed_ms, "rate_limited")
+                    _log_transport(log_context, policy, 429, elapsed_ms, "rate_limited")
                     return status, body, resp_headers
                 logger.debug(
                     "429 rate-limited, waiting %.1fs url=%s", wait, full_url
                 )
-                _log_transport(log_context, 429, elapsed_ms, "rate_limited")
+                _log_transport(log_context, policy, 429, elapsed_ms, "rate_limited")
                 time.sleep(wait)
                 # 429 wait does NOT increment attempt counter — one free pass
                 # But guard against infinite loop: if already had a 429 pass,
@@ -181,7 +182,7 @@ def request_with_policy(
                 logger.warning(
                     "HTTP %d (retryable) attempt=%d url=%s", status, attempt, full_url
                 )
-                _log_transport(log_context, status, elapsed_ms, "error")
+                _log_transport(log_context, policy, status, elapsed_ms, "error")
                 last_status = status
                 last_body = body
                 last_resp_headers = resp_headers
@@ -190,7 +191,7 @@ def request_with_policy(
                 continue
 
             # 4xx (non-429) and other non-retryable — return immediately
-            _log_transport(log_context, status, elapsed_ms, "error")
+            _log_transport(log_context, policy, status, elapsed_ms, "error")
             return status, body, resp_headers
 
         except (URLError, OSError) as exc:
@@ -202,7 +203,7 @@ def request_with_policy(
             logger.warning(
                 "Network error attempt=%d url=%s: %s", attempt, full_url, exc
             )
-            _log_transport(log_context, 0, elapsed_ms, "error")
+            _log_transport(log_context, policy, 0, elapsed_ms, "error")
             attempt += 1
             continue
 
@@ -217,11 +218,14 @@ def request_with_policy(
 
 def _log_transport(
     log_context: dict | None,
+    policy: HttpPolicy,
     status: int,
     duration_ms: int,
     outcome: str,
 ) -> None:
     """Write to api_usage_log if log_context provided. Swallows all errors."""
+    if not policy.log_to_db:
+        return
     if not log_context:
         return
     try:

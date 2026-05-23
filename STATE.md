@@ -6,8 +6,8 @@
 
 ---
 
-**最后更新：** 2026-05-23 07:55 +08 · Codex（GPT-5） · 分支 `docs/pr-confirmation-gate`
-**测试：** 流程文档变更无代码测试，`git diff --check` 通过；最近远端 CI/CD 通过（PR #44，main run 26316823793 test/deploy/notify success）；最近全量基线 670 passed（P1.47）
+**最后更新：** 2026-05-23 13:55 +08 · Codex（GPT-5） · 分支 `feat/p1.48-p1.52-ops-tuning`
+**测试：** 当前本地全量 685 passed（1 warning）；`daily-discover --dry-run` 43s 通过；heartbeat status=done；`git diff --check` 通过
 **Schema：** version 18（P1.45 新增 migration 018 feishu_sync_failures 表；SCHEMA_VERSION 常量同步到 18）
 **在线事故：** 2026-05-19 08:00 ✅ 完全闭环（P1.31 migration 017 已应用；P1.32 手动补跑 export+sync 均成功）
 
@@ -40,6 +40,11 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 | P1.38 | — | Bug B-01 / B-02 | ✅ 已合并 (PR #40)，fallback 标签读 cached_count 修复计数为 0；important 按 title 去重 |
 | P1.47 | [p1.47-omdb-enrichment-progress-log.md](docs/tasks/p1.47-omdb-enrichment-progress-log.md) | 可观测性 | ✅ 已合并 (PR #43)，OMDb + TMDb detail enrichment 每 20 条/尾批输出进度日志；3 新测试；670 passed |
 | P1.53 | [p1.53-cd-feishu-pr-notify.md](docs/tasks/p1.53-cd-feishu-pr-notify.md) | CI/CD 通知 | ✅ 已合并 (PR #44)，auto-merge dispatch 传 PR number；CD 飞书通知成功/失败均补 PR 详情；取消强制 journal 规则 |
+| P1.48 | [p1.48-pipeline-heartbeat.md](docs/tasks/p1.48-pipeline-heartbeat.md) | 可观测性 | ✅ 本地完成，daily-discover 心跳文件 + health check 脚本；heartbeat 单测 |
+| P1.49 | [p1.49-enrichment-cache-ttl-tuning.md](docs/tasks/p1.49-enrichment-cache-ttl-tuning.md) | 性能 | ✅ 本地完成，OMDb / TMDb detail TTL 24h → 72h |
+| P1.50 | [p1.50-omdb-sleep-tuning.md](docs/tasks/p1.50-omdb-sleep-tuning.md) | 性能 | ✅ 本地完成，OMDb sleep 默认 0.2s + quota_errors 可观测 |
+| P1.51 | [p1.51-fix-double-api-logging.md](docs/tasks/p1.51-fix-double-api-logging.md) | bug | ✅ 本地完成，HTTP transport/business api_usage_log 双写修复 |
+| P1.52 | [p1.52-canonical-first-enrichment.md](docs/tasks/p1.52-canonical-first-enrichment.md) | refactor | ✅ 本地完成，TMDb detail canonical_items 优先，dry-run api_calls=0 canonical_hits=111 |
 
 **Issues 状态：** #4 / #5 / #6 / #7 / #8 已关闭。#9（IMDB 编辑推荐源头）保持 OPEN（V2 backlog，合规原因跳过）。
 
@@ -47,6 +52,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 **近 7 天关键变更：**
 - 2026-05-23 **PR 创建改为人类确认门禁**（Agent 只有在人类事前或当下明确确认后才能创建 PR；`session-checklist` 不再把 PR 当默认收尾动作；相关小改优先合并进同一 PR 降低流程成本）
+- 2026-05-23 **P1.48-P1.52 本地完成**（pipeline heartbeat + health check；enrichment TTL 72h；OMDb sleep 0.2s + quota_errors；api_usage_log 双写修复；TMDb detail canonical-first；685 passed；dry-run 43s）
 - 2026-05-23 **P1.53 CD 飞书通知补 PR 信息 + 取消强制 journal**（main CD 通知成功/失败均包含 PR 编号、标题、作者、链接、test/deploy 结果；`session-checklist` 不再要求创建 `journal/`）
 - 2026-05-23 **P1.47 enrichment 进度日志**（OMDb + TMDb detail 循环每 20 条和尾批输出进度；dry-run 可见进度行；3 新测试；670 passed）
 - 2026-05-22 **P1.38 notify bug 修复**（fallback 标签读 cached_count 修复计数为 0；important 按 title 去重；667 passed）
@@ -58,7 +64,7 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 
 ## 进行中 / 阻塞 / 待决策
 
-- **进行中：** 无（P1.53 已合并，远端 CI/CD 已通过）
+- **进行中：** 生产 1 小时耗时排查，准备新修复任务包（用户要求本地合并，不开 PR）
 - **阻塞：** FlixPatrol API 订阅 402 Payment Required（脚本走 fallback）
 - **待决策：** 无
 - **P1.39 已完成**：生产日志 SSH 拉取方案已落地（`scripts/fetch-prod-logs.sh`），Logtail 接入决策放弃
@@ -66,20 +72,8 @@ Phase 0 → 1.30 全部完成并上线。P1.24 飞书字段已建好；P1.25–P
 ## 即将立项的任务包
 
 > 任务包立项后在此登记；合并后移入"最近完成任务包"表并从本节删除。
-> **并行策略：P1.51 与其余任务完全无文件交集，可随时并行开工。P1.48→P1.49→P1.50→P1.52 均压在 `omdb_enrichment.py`，必须串行。**
->
-> ```
-> ┌─ P1.48 → P1.49 → P1.50 → P1.52
-> └─ P1.51 ─────────────────────────────────  (独立并行)
-> ```
 
-| 编号 | 名称 | 来源 | 说明 | 并行？ |
-|---|---|---|---|---|
-| P1.48 | [pipeline-heartbeat](docs/tasks/p1.48-pipeline-heartbeat.md) | 可观测性 | 全流程心跳文件 + check-pipeline-health.sh | P1.47 后 |
-| P1.49 | [enrichment-cache-ttl-tuning](docs/tasks/p1.49-enrichment-cache-ttl-tuning.md) | 性能 | OMDb / TMDb detail 缓存 TTL 24h → 72h | P1.48 后 |
-| P1.50 | [omdb-sleep-tuning](docs/tasks/p1.50-omdb-sleep-tuning.md) | 性能 | OMDb 请求间隔 1.0s → 0.2s 可配置化 + quota_errors 可观测 | P1.49 后 |
-| P1.51 | [fix-double-api-logging](docs/tasks/p1.51-fix-double-api-logging.md) | bug | 传输层+业务层各写一次 api_usage_log 导致统计虚高 2×；改 `_http_policy.py`/`tmdb.py`/`feishu/_http.py` | **独立并行** |
-| P1.52 | [canonical-first-enrichment](docs/tasks/p1.52-canonical-first-enrichment.md) | refactor | TMDb detail 优先查 canonical_items，已入库剧集跳过 API；系统运行几天后实施 | P1.50 后 |
+待补：生产 1 小时耗时根因修复任务包。
 
 **审查未采纳项**（详见 [`docs/reviews/architecture_audit_2026_05.md § 二`](docs/reviews/architecture_audit_2026_05.md)）：
 - § 1.1 DB 长连接解耦 — 单进程 cron 无并发写入，锁风险不存在
