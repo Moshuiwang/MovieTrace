@@ -520,7 +520,6 @@ def sync_table(
                 "Trakt 热度分": float(sb.get("trakt_score") or 0),
                 "中文名": rec.get("title_zh") or None,
                 "中文简介": rec.get("overview_zh") or None,
-                "类型": _names_from_json(rec.get("genres_json")),
                 "播出平台": _names_list_from_json(rec.get("networks_json")),
                 "A库总集数": int(rec["upstream_total_eps"]) if rec.get("upstream_total_eps") is not None else None,
                 "TMDB总集数": int(rec["tmdb_total_episodes"]) if rec.get("tmdb_total_episodes") is not None else None,
@@ -709,11 +708,8 @@ def _derive_content_type(rec: dict) -> str:
 
 
 def _compute_type_labels(rec: dict) -> list[str]:
-    """Compute 类型标签 multi-select values: content_type + TMDb genre names."""
+    """Compute 类型标签 multi-select values: TMDb genre names only."""
     labels: list[str] = []
-    ct = rec.get("content_type") or ""
-    if ct:
-        labels.append(ct)
     genres_raw = rec.get("genres_json")
     if genres_raw:
         try:
