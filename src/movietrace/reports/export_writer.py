@@ -59,7 +59,10 @@ def _export_updates(
 ) -> dict:
     conn = connect_database(db_path)
     try:
-        updates = _load_content_updates(conn, days, report_kind=report_kind)
+        if report_kind == "hot":
+            updates = _load_current_discovery_rows(conn, days)
+        else:
+            updates = _load_content_updates(conn, days, report_kind=report_kind)
         funnel = _build_baseline_funnel(conn, len(updates)) if report_kind == "baseline" else None
     finally:
         conn.close()
@@ -204,6 +207,175 @@ def _load_content_updates(conn, days: int, *, report_kind: str = "all") -> list[
                 result[i]["stored_tmdb_number_of_seasons"] = cache_map[tmdb_id]
 
     # For movie records, backfill imdb_id from api_cache (TMDb detail response includes it).
+    need_imdb = []
+    for i, row in enumerate(result):
+        parts = (row["content_update_id"] or "").split(":")
+        if len(parts) >= 3 and parts[0] == "discovery" and parts[1] == "movie":
+            need_imdb.append((i, parts[2]))
+    if need_imdb:
+        imdb_keys = [f"tmdb:detail:{tmdb_id}:movie" for _, tmdb_id in need_imdb]
+        phs = ",".join("?" for _ in imdb_keys)
+        imdb_rows = conn.execute(
+            f"select cache_key, json_extract(response_json, '$.imdb_id') from api_cache where cache_key in ({phs})",
+            imdb_keys,
+        ).fetchall()
+        imdb_map = {r[0].split(":")[2]: r[1] for r in imdb_rows if r[1]}
+        for i, tmdb_id in need_imdb:
+            if tmdb_id in imdb_map:
+                result[i]["imdb_id"] = imdb_map[tmdb_id]
+
+    # Backfill tmdb_total_episodes: movies = 1; TV = sum of aired season episode_count.
+    today_str = date.today().isoformat()
+    tv_need_eps: list[tuple[int, str]] = []
+    for i, row in enumerate(result):
+        if row.get("content_type") == "movie":
+            result[i]["tmdb_total_episodes"] = 1
+            continue
+        tmdb_id = str(row.get("tmdb_tv_id") or "")
+        if not tmdb_id:
+            parts = (row.get("content_update_id") or "").split(":")
+            if len(parts) >= 3 and parts[0] == "discovery" and parts[1] == "tv":
+                tmdb_id = parts[2]
+        if tmdb_id:
+            tv_need_eps.append((i, tmdb_id))
+        else:
+            result[i]["tmdb_total_episodes"] = None
+
+    if tv_need_eps:
+        eps_keys = [f"tmdb:detail:{tmdb_id}:tv" for _, tmdb_id in tv_need_eps]
+        phs = ",".join("?" for _ in eps_keys)
+        eps_rows = conn.execute(
+            f"select cache_key, json_extract(response_json, '$.seasons') from api_cache where cache_key in ({phs})",
+            eps_keys,
+        ).fetchall()
+        tmdb_eps_map: dict[str, int] = {}
+        for ck, seasons_json in eps_rows:
+            if not seasons_json:
+                continue
+            try:
+                seasons = json.loads(seasons_json)
+                tid = ck.split(":")[2]
+                total = sum(
+                    s.get("episode_count", 0)
+                    for s in seasons
+                    if s.get("season_number", 0) > 0
+                    and (s.get("air_date") or "") <= today_str
+                    and s.get("air_date")
+                )
+                tmdb_eps_map[tid] = total
+            except (ValueError, TypeError):
+                pass
+        for i, tmdb_id in tv_need_eps:
+            result[i]["tmdb_total_episodes"] = tmdb_eps_map.get(tmdb_id)
+
+    return result
+
+
+def _load_current_discovery_rows(conn, days: int) -> list[dict]:
+    """Load discovery rows from current_discovery_items (not content_updates).
+
+    Uses last_discovered_date for the --days window so the semantics are
+    "items observed within the last N days", not "events written within N days".
+    """
+    import sqlite3 as _sqlite3
+    prev_factory = conn.row_factory
+    conn.row_factory = _sqlite3.Row
+    try:
+        rows = conn.execute(
+            """SELECT cdi.discovery_key, cdi.content_type, cdi.tmdb_id,
+                      cdi.title, cdi.title_zh, cdi.latest_priority,
+                      cdi.latest_hot_score, cdi.latest_source_summary_json,
+                      cdi.first_discovered_date, cdi.last_discovered_date,
+                      cdi.discovery_count, cdi.latest_baseline_match_status,
+                      cdi.latest_match_confidence_low,
+                      cdi.stable_metadata_json, cdi.updated_at,
+                      ci.overview_zh, ci.genres_json, ci.networks_json,
+                      vs.name as series_name, vs.tmdb_tv_id,
+                      vs.local_max_season, vs.tmdb_number_of_seasons,
+                      upstream_agg.upstream_max_season, upstream_agg.upstream_total_eps,
+                      movie_eps.movie_upstream_eps
+               FROM current_discovery_items cdi
+               LEFT JOIN canonical_items ci ON ci.id = cdi.canonical_item_id
+               LEFT JOIN virtual_series vs ON vs.id = ci.virtual_series_id
+               LEFT JOIN (
+                   select ci2.virtual_series_id,
+                          max(ci2.season_number) as upstream_max_season,
+                          sum(ep_cnt.cnt) as upstream_total_eps
+                   from canonical_items ci2
+                   join external_ids ei on ei.canonical_item_id = ci2.id and ei.source = 'upstream'
+                   left join (
+                       select fk_program_content_id, count(*) as cnt
+                       from upstream_episodes group by fk_program_content_id
+                   ) ep_cnt on ep_cnt.fk_program_content_id = cast(ei.external_id as integer)
+                   group by ci2.virtual_series_id
+               ) upstream_agg on upstream_agg.virtual_series_id = ci.virtual_series_id
+               LEFT JOIN (
+                   select ei2.canonical_item_id, count(ue.id) as movie_upstream_eps
+                   from external_ids ei2
+                   left join upstream_episodes ue on ue.fk_program_content_id = cast(ei2.external_id as integer)
+                   where ei2.source = 'upstream'
+                   group by ei2.canonical_item_id
+               ) movie_eps on movie_eps.canonical_item_id = ci.id
+               WHERE cdi.last_discovered_date >= DATE('now', ?)
+               ORDER BY cdi.latest_hot_score DESC""",
+            (f"-{days} days",),
+        ).fetchall()
+    finally:
+        # C1: always restore row_factory even if SELECT raises
+        conn.row_factory = prev_factory
+
+    result = [
+        {
+            "content_update_id": row["discovery_key"],
+            "update_type": "new_discovery",
+            "priority": row["latest_priority"],
+            "hot_score": row["latest_hot_score"],
+            "title": row["title"],
+            "title_zh": row["title_zh"],
+            "content_type": row["content_type"],
+            "match_confidence_low": row["latest_match_confidence_low"],
+            "source_summary_json": row["latest_source_summary_json"],
+            # A3: do NOT alias updated_at as created_at — that would make "today re-synced"
+            # look like "today first discovered". Use the true semantic fields instead.
+            # Callers that need a single event time should use last_discovered_date.
+            "series_name": row["series_name"],
+            "tmdb_tv_id": row["tmdb_tv_id"],
+            "stored_local_max_season": row["local_max_season"],
+            "stored_tmdb_number_of_seasons": row["tmdb_number_of_seasons"],
+            "upstream_max_season": row["upstream_max_season"],
+            "overview_zh": row["overview_zh"],
+            "genres_json": row["genres_json"],
+            "networks_json": row["networks_json"],
+            "upstream_total_eps": row["upstream_total_eps"] if row["content_type"] == "tv" else row["movie_upstream_eps"],
+            # Fields specific to current_discovery_items
+            "first_discovered_date": row["first_discovered_date"],
+            "last_discovered_date": row["last_discovered_date"],
+            "discovery_count": row["discovery_count"],
+        }
+        for row in rows
+    ]
+
+    # Backfill stored_tmdb_number_of_seasons from api_cache for TV items missing it.
+    need_cache = []
+    for i, row in enumerate(result):
+        if row["stored_tmdb_number_of_seasons"] is not None:
+            continue
+        parts = (row["content_update_id"] or "").split(":")
+        if len(parts) >= 3 and parts[0] == "discovery" and parts[1] == "tv":
+            need_cache.append((i, parts[2]))
+    if need_cache:
+        cache_keys = [f"tmdb:detail:{tmdb_id}:tv" for _, tmdb_id in need_cache]
+        phs = ",".join("?" for _ in cache_keys)
+        cache_rows = conn.execute(
+            f"select cache_key, json_extract(response_json, '$.number_of_seasons') from api_cache where cache_key in ({phs})",
+            cache_keys,
+        ).fetchall()
+        cache_map = {r[0].split(":")[2]: int(r[1]) for r in cache_rows if r[1] is not None}
+        for i, tmdb_id in need_cache:
+            if tmdb_id in cache_map:
+                result[i]["stored_tmdb_number_of_seasons"] = cache_map[tmdb_id]
+
+    # Backfill imdb_id for movie items from api_cache.
     need_imdb = []
     for i, row in enumerate(result):
         parts = (row["content_update_id"] or "").split(":")
@@ -419,24 +591,80 @@ def format_markdown(
             )
 
     if other:
-        lines.extend([
-            "",
-            "## 📋 其他更新",
-            "",
-            f"**数量：** {len(other)}",
-            "",
-            "| 标题 | 类型 | 优先级 | hot_score | 检测时间 |",
-            "|------|------|--------|-----------|----------|",
-        ])
+        # D1: discovery rows get 3 extra columns (首次发现 / 最近发现 / 发现次数);
+        # non-discovery rows use the original 5-column layout.
+        has_discovery = any(u.get("update_type") == "new_discovery" for u in other)
+        if has_discovery:
+            lines.extend([
+                "",
+                "## 📋 其他更新",
+                "",
+                f"**数量：** {len(other)}",
+                "",
+                "| 标题 | 类型 | 优先级 | hot_score | 检测时间 | 首次发现 | 最近发现 | 发现次数 |",
+                "|------|------|--------|-----------|----------|----------|----------|----------|",
+            ])
+        else:
+            lines.extend([
+                "",
+                "## 📋 其他更新",
+                "",
+                f"**数量：** {len(other)}",
+                "",
+                "| 标题 | 类型 | 优先级 | hot_score | 检测时间 |",
+                "|------|------|--------|-----------|----------|",
+            ])
         for u in other:
             hs = u.get("hot_score") or 0
-            lines.append(
-                f"| {_esc(u.get('title', 'N/A'))} "
-                f"| {u.get('update_type', 'N/A')} "
-                f"| {u.get('priority', 'N/A')} "
-                f"| {hs:.1f} "
-                f"| {u.get('created_at', 'N/A')[:16]} +08 |"
-            )
+            # A3: for discovery rows use last_discovered_date (true semantic);
+            # for other update types fall back to created_at.
+            if u.get("update_type") == "new_discovery":
+                time_val = u.get("last_discovered_date", "N/A") or "N/A"
+                time_display = str(time_val)[:10]  # YYYY-MM-DD only for date strings
+                if has_discovery:
+                    first_d = str(u.get("first_discovered_date") or "N/A")[:10]
+                    last_d = str(u.get("last_discovered_date") or "N/A")[:10]
+                    cnt = u.get("discovery_count") if u.get("discovery_count") is not None else "N/A"
+                    lines.append(
+                        f"| {_esc(u.get('title', 'N/A'))} "
+                        f"| {u.get('update_type', 'N/A')} "
+                        f"| {u.get('priority', 'N/A')} "
+                        f"| {hs:.1f} "
+                        f"| {time_display} "
+                        f"| {first_d} "
+                        f"| {last_d} "
+                        f"| {cnt} |"
+                    )
+                else:
+                    lines.append(
+                        f"| {_esc(u.get('title', 'N/A'))} "
+                        f"| {u.get('update_type', 'N/A')} "
+                        f"| {u.get('priority', 'N/A')} "
+                        f"| {hs:.1f} "
+                        f"| {time_display} |"
+                    )
+            else:
+                raw = u.get("created_at", "N/A") or "N/A"
+                time_display = str(raw)[:16]
+                if has_discovery:
+                    lines.append(
+                        f"| {_esc(u.get('title', 'N/A'))} "
+                        f"| {u.get('update_type', 'N/A')} "
+                        f"| {u.get('priority', 'N/A')} "
+                        f"| {hs:.1f} "
+                        f"| {time_display} "
+                        f"| N/A "
+                        f"| N/A "
+                        f"| N/A |"
+                    )
+                else:
+                    lines.append(
+                        f"| {_esc(u.get('title', 'N/A'))} "
+                        f"| {u.get('update_type', 'N/A')} "
+                        f"| {u.get('priority', 'N/A')} "
+                        f"| {hs:.1f} "
+                        f"| {time_display} |"
+                    )
 
     if not updates:
         lines.append("*暂无更新事件*")
@@ -584,8 +812,19 @@ def format_json(updates: list[dict]) -> str:
             "next_episode_to_air": source_info.get("next_episode_to_air"),
             "baseline_detected_at": source_info.get("baseline_detected_at")
             or source_info.get("detected_at"),
-            "event_written_at": _format_db_utc_time(u.get("created_at")),
-            "event_written_at_utc": u.get("created_at"),
+            # A3: for discovery rows, event_written_at reflects last_discovered_date
+            # (the most recent date it was observed), not the DB row's updated_at.
+            # For new_season rows, created_at is the real event timestamp.
+            "event_written_at": (
+                u.get("last_discovered_date")
+                if u.get("update_type") == "new_discovery"
+                else _format_db_utc_time(u.get("created_at"))
+            ),
+            "event_written_at_utc": (
+                u.get("last_discovered_date")
+                if u.get("update_type") == "new_discovery"
+                else u.get("created_at")
+            ),
             "source_data_status": source_info.get("source_data_status"),
             "created_at": u.get("created_at"),
             "upstream_max_season": upstream,
@@ -599,6 +838,9 @@ def format_json(updates: list[dict]) -> str:
             "networks_json": u.get("networks_json"),
             "upstream_total_eps": u.get("upstream_total_eps"),
             "tmdb_total_episodes": u.get("tmdb_total_episodes"),
+            "first_discovered_date": u.get("first_discovered_date"),
+            "last_discovered_date": u.get("last_discovered_date"),
+            "discovery_count": u.get("discovery_count"),
         })
     return json.dumps(export, indent=2, ensure_ascii=False)
 

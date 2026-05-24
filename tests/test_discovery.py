@@ -16,8 +16,11 @@ from movietrace.pipeline.discovery import (
     _compute_discovery_stats,
     _ensure_fp_data,
     _lookup_canonical_id,
+    _should_skip_enrichment,
     _write_content_updates,
+    _write_current_discovery_batch,
     run_discovery,
+    should_write_observation,
 )
 from movietrace.pipeline.multi_source_merge import MergedCandidate
 
@@ -853,12 +856,12 @@ class TestSoapGenreDowngrade:
                         result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
 
             candidates = result.get("candidates", [])
-            # 应该有 1 个候选，且被 Soap 降权到 P3
-            assert len(candidates) >= 1
-            soap_candidate = candidates[0]
-            assert soap_candidate.get("is_soap") == True
-            assert soap_candidate.get("priority") == "P3"
-            assert "Soap" in soap_candidate.get("ops_note", "")
+            # P1.57d: pure fallback Soap (has_fresh_signal=False) is suppressed at write gate.
+            # The DB has no rows for 2026-05-13, so source_dates will not be fresh → has_fresh_signal=False.
+            # Soap still bypasses the hot_score threshold, but should_write_observation returns False.
+            assert len(candidates) == 0
+            stats = result.get("stats", {})
+            assert stats.get("soap_pure_fallback_suppressed", 0) >= 1
         finally:
             os.unlink(db_path)
 
@@ -942,3 +945,970 @@ class TestComputeDiscoveryStatsFilteredOut:
         stats = _compute_discovery_stats(all_scored, passed, {})
         filtered_ids = [item["content_id"] for item in stats["filtered_out"]]
         assert "a" not in filtered_ids
+
+
+# ── P1.57d: should_write_observation 矩阵测试 ────────────────────────────────
+
+
+class TestShouldWriteObservation:
+    """Matrix tests for the observation eligibility gate (P1.57d)."""
+
+    def test_pure_fallback_returns_false(self):
+        """Pure source-date fallback (has_fresh_signal=False) → not eligible."""
+        candidate = {"has_fresh_signal": False, "is_soap": False}
+        assert should_write_observation(candidate) is False
+
+    def test_fresh_signal_returns_true(self):
+        """Candidate with fresh signal → eligible."""
+        candidate = {"has_fresh_signal": True, "is_soap": False}
+        assert should_write_observation(candidate) is True
+
+    def test_soap_pure_fallback_returns_false(self):
+        """Soap pure fallback (is_soap=True, has_fresh_signal=False) → not eligible.
+        P1.57d: Soap threshold exemption does not extend to the write gate."""
+        candidate = {"has_fresh_signal": False, "is_soap": True}
+        assert should_write_observation(candidate) is False
+
+    def test_soap_with_fresh_signal_returns_true(self):
+        """Soap with genuine fresh signal → eligible."""
+        candidate = {"has_fresh_signal": True, "is_soap": True}
+        assert should_write_observation(candidate) is True
+
+    def test_missing_has_fresh_signal_key_returns_false(self):
+        """Candidate dict missing has_fresh_signal key → falsy → not eligible."""
+        candidate = {"is_soap": False}
+        assert should_write_observation(candidate) is False
+
+    def test_empty_candidate_returns_false(self):
+        """Empty candidate dict → not eligible."""
+        assert should_write_observation({}) is False
+
+
+# ── P1.57d: soap_pure_fallback_suppressed 计数集成测试 ───────────────────────
+
+
+class TestSoapPureFallbackSuppressedCount:
+    """Integration tests verifying soap_pure_fallback_suppressed appears in stats."""
+
+    def test_soap_pure_fallback_counted_in_stats(self):
+        """When a Soap candidate has no fresh signal, soap_pure_fallback_suppressed >= 1."""
+        from movietrace.pipeline.discovery import run_discovery
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+
+            def mock_merge(*args, **kwargs):
+                from movietrace.pipeline.multi_source_merge import MergedCandidate
+                return [
+                    MergedCandidate(
+                        title="Soap No Signal",
+                        tmdb_id=10,
+                        imdb_id="tt0000010",
+                        media_type="tv",
+                        fp_items=[],
+                        tmdb_data={"genres": [{"id": 10766, "name": "Soap"}]},
+                        trakt_data=None,
+                        source_flags={"tmdb"},
+                    ),
+                ]
+
+            with patch("movietrace.pipeline.discovery._load_secrets", return_value={"omdb": {}, "tmdb": {}}):
+                with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                           return_value={"planned_calls": 0, "actual_calls": 0}):
+                    with patch("movietrace.pipeline.multi_source_merge.merge_three_sources",
+                               side_effect=mock_merge):
+                        result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
+
+            stats = result.get("stats", {})
+            assert "soap_pure_fallback_suppressed" in stats
+            assert stats["soap_pure_fallback_suppressed"] >= 1
+            assert stats["suppressed_fallback_only"] >= 1
+        finally:
+            os.unlink(db_path)
+
+    def test_soap_with_fresh_signal_not_counted(self):
+        """When a Soap candidate has fresh signal, soap_pure_fallback_suppressed == 0."""
+        from movietrace.pipeline.discovery import run_discovery
+        from movietrace.db.schema import initialize_database
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            initialize_database(db_path)
+
+            def mock_merge(*args, **kwargs):
+                from movietrace.pipeline.multi_source_merge import MergedCandidate
+                return [
+                    MergedCandidate(
+                        title="Soap With Signal",
+                        tmdb_id=11,
+                        imdb_id="tt0000011",
+                        media_type="tv",
+                        fp_items=[{"ranking": 1, "platform": "netflix", "days_total": 5}],
+                        tmdb_data={
+                            "popularity": 100,
+                            "vote_average": 7,
+                            "vote_count": 500,
+                            "genres": [{"id": 10766, "name": "Soap"}],
+                        },
+                        trakt_data=None,
+                        source_flags={"flixpatrol"},
+                    ),
+                ]
+
+            def mock_resolve_source_dates(*args, **kwargs):
+                return {"flixpatrol": "2026-05-13", "tmdb": "2026-05-13", "trakt": "2026-05-13"}
+
+            with patch("movietrace.pipeline.discovery._load_secrets", return_value={"omdb": {}, "tmdb": {}}):
+                with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                           return_value={"planned_calls": 0, "actual_calls": 0}):
+                    with patch("movietrace.pipeline.discovery._resolve_source_dates_with_fallback",
+                               side_effect=mock_resolve_source_dates):
+                        with patch("movietrace.pipeline.multi_source_merge.merge_three_sources",
+                                   side_effect=mock_merge):
+                            result = run_discovery(date_from="2026-05-13", dry_run=True, db_path=db_path)
+
+            stats = result.get("stats", {})
+            assert stats.get("soap_pure_fallback_suppressed", 0) == 0
+            # Soap with fresh signal passes through
+            candidates = result.get("candidates", [])
+            assert len(candidates) >= 1
+            assert candidates[0].get("is_soap") is True
+        finally:
+            os.unlink(db_path)
+
+
+# ── P1.57e: _write_current_discovery_batch unit tests ──────────────────
+
+
+def _seed_canonical_for_batch(conn, tmdb_id: int, media_type: str) -> int:
+    """Insert a minimal canonical_item + external_ids row, return canonical_item_id."""
+    content_type = "tv" if media_type in ("tv", "show") else "movie"
+    key = f"tmdb:{content_type}:{tmdb_id}"
+    cursor = conn.execute(
+        """INSERT INTO canonical_items
+           (canonical_item_key, title, content_type, content_granularity)
+           VALUES (?, ?, ?, ?)""",
+        (key, f"Title {tmdb_id}", content_type, content_type),
+    )
+    cid = cursor.lastrowid
+    ext_id = f"{content_type}:{tmdb_id}"
+    conn.execute(
+        "INSERT INTO external_ids (canonical_item_id, source, external_id) VALUES (?, 'tmdb', ?)",
+        (cid, ext_id),
+    )
+    conn.commit()
+    return cid
+
+
+class TestWriteCurrentDiscoveryBatch:
+    """Unit tests for _write_current_discovery_batch (P1.57e)."""
+
+    def _make_db(self):
+        from movietrace.db.schema import initialize_database
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        initialize_database(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute("pragma foreign_keys = on")
+        return conn, db_path
+
+    def _candidate(self, tmdb_id: int, media_type: str = "movie", has_fresh_signal: bool = True):
+        return {
+            "tmdb_id": tmdb_id,
+            "media_type": media_type,
+            "title": f"Title {tmdb_id}",
+            "hot_score": 80.0,
+            "priority": "P1",
+            "has_fresh_signal": has_fresh_signal,
+            "tmdb_data": {"popularity": 200.0, "vote_average": 7.5, "vote_count": 1000, "genres": []},
+            "fp_items": [],
+            "score_breakdown": {"flixpatrol_score": 50.0},
+        }
+
+    def test_eligible_candidate_creates_item_and_observation(self):
+        conn, db_path = self._make_db()
+        try:
+            _seed_canonical_for_batch(conn, 1001, "movie")
+            cand = self._candidate(1001, "movie")
+            stats = _write_current_discovery_batch(conn, [cand], "2026-05-20")
+            conn.commit()
+            assert stats["created"] == 1
+            assert stats["observations_written"] == 1
+            assert stats["skipped_source_date_fallback"] == 0
+            item = conn.execute(
+                "SELECT discovery_key, latest_hot_score FROM current_discovery_items"
+            ).fetchone()
+            assert item is not None
+            assert item[0] == "discovery:movie:1001"
+            assert abs(item[1] - 80.0) < 0.01
+            obs = conn.execute(
+                "SELECT hot_score FROM discovery_observations WHERE discovery_key='discovery:movie:1001'"
+            ).fetchone()
+            assert obs is not None
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_pure_fallback_candidate_skipped(self):
+        conn, db_path = self._make_db()
+        try:
+            _seed_canonical_for_batch(conn, 1002, "tv")
+            cand = self._candidate(1002, "tv", has_fresh_signal=False)
+            stats = _write_current_discovery_batch(conn, [cand], "2026-05-20")
+            conn.commit()
+            assert stats["skipped_source_date_fallback"] == 1
+            assert stats["created"] == 0
+            assert stats["observations_written"] == 0
+            count = conn.execute(
+                "SELECT count(*) FROM current_discovery_items"
+            ).fetchone()[0]
+            assert count == 0
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_second_call_same_date_counts_as_updated(self):
+        conn, db_path = self._make_db()
+        try:
+            _seed_canonical_for_batch(conn, 1003, "tv")
+            cand = self._candidate(1003, "tv")
+            stats1 = _write_current_discovery_batch(conn, [cand], "2026-05-20")
+            conn.commit()
+            assert stats1["created"] == 1
+            cand["hot_score"] = 90.0
+            stats2 = _write_current_discovery_batch(conn, [cand], "2026-05-20")
+            conn.commit()
+            assert stats2["updated"] == 1
+            assert stats2["created"] == 0
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_observation_idempotent_same_date(self):
+        conn, db_path = self._make_db()
+        try:
+            _seed_canonical_for_batch(conn, 1004, "movie")
+            cand = self._candidate(1004, "movie")
+            _write_current_discovery_batch(conn, [cand], "2026-05-20")
+            conn.commit()
+            cand["hot_score"] = 95.0
+            _write_current_discovery_batch(conn, [cand], "2026-05-20")
+            conn.commit()
+            count = conn.execute(
+                "SELECT count(*) FROM discovery_observations WHERE discovery_key='discovery:movie:1004'"
+            ).fetchone()[0]
+            assert count == 1
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_tv_media_type_normalised_to_tv(self):
+        conn, db_path = self._make_db()
+        try:
+            _seed_canonical_for_batch(conn, 1005, "tv")
+            cand = self._candidate(1005, "tv")
+            stats = _write_current_discovery_batch(conn, [cand], "2026-05-20")
+            conn.commit()
+            assert stats["created"] == 1
+            key = conn.execute(
+                "SELECT discovery_key FROM current_discovery_items"
+            ).fetchone()[0]
+            assert key == "discovery:tv:1005"
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_mixed_eligible_and_fallback(self):
+        conn, db_path = self._make_db()
+        try:
+            _seed_canonical_for_batch(conn, 2001, "movie")
+            _seed_canonical_for_batch(conn, 2002, "movie")
+            candidates = [
+                self._candidate(2001, "movie", has_fresh_signal=True),
+                self._candidate(2002, "movie", has_fresh_signal=False),
+            ]
+            stats = _write_current_discovery_batch(conn, candidates, "2026-05-21")
+            conn.commit()
+            assert stats["created"] == 1
+            assert stats["skipped_source_date_fallback"] == 1
+            assert stats["observations_written"] == 1
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_no_canonical_id_skips_and_increments_stat(self):
+        """A2: candidate without canonical_item registration is skipped;
+        stat skipped_no_canonical_id must be incremented; no DB row written."""
+        conn, db_path = self._make_db()
+        try:
+            # Do NOT seed canonical for tmdb_id=9999 — no external_ids row
+            cand = self._candidate(9999, "movie")
+            stats = _write_current_discovery_batch(conn, [cand], "2026-05-20")
+            conn.commit()
+            # Must skip and count it
+            assert stats["skipped_no_canonical_id"] == 1
+            # Must not write any DB row
+            count = conn.execute(
+                "SELECT count(*) FROM current_discovery_items"
+            ).fetchone()[0]
+            assert count == 0, "No row must be written when canonical_id is None"
+            obs_count = conn.execute(
+                "SELECT count(*) FROM discovery_observations"
+            ).fetchone()[0]
+            assert obs_count == 0
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_no_canonical_id_stat_key_present_by_default(self):
+        """A2: skipped_no_canonical_id stat key must be present even when zero."""
+        conn, db_path = self._make_db()
+        try:
+            _seed_canonical_for_batch(conn, 3001, "movie")
+            cand = self._candidate(3001, "movie")
+            stats = _write_current_discovery_batch(conn, [cand], "2026-05-20")
+            assert "skipped_no_canonical_id" in stats
+            assert stats["skipped_no_canonical_id"] == 0
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+
+# ── P1.57e: run_discovery commit/dry-run integration tests ─────────────
+
+
+class TestRunDiscoveryCurrentDualWrite:
+    """Integration tests for dual-write path via run_discovery (P1.57e)."""
+
+    def _setup_db_with_fp(self, db_path: str, snapshot_date: str):
+        from movietrace.db.schema import initialize_database
+        initialize_database(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            """INSERT INTO flixpatrol_top10
+               (fp_id, title, content_type, platform, country,
+                snapshot_date, ranking, raw_payload_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("fp1", "Test Movie", "movie", "netflix", "united-states",
+             snapshot_date, 1, "{}"),
+        )
+        conn.commit()
+        conn.close()
+
+    def _make_merged_candidate(self, tmdb_id: int, media_type: str = "movie"):
+        from movietrace.pipeline.multi_source_merge import MergedCandidate
+        return MergedCandidate(
+            tmdb_id=tmdb_id,
+            imdb_id=None,
+            title=f"Title {tmdb_id}",
+            media_type=media_type,
+            fp_items=[{"platform": "netflix", "ranking": 1, "days_total": 5,
+                       "snapshot_date": "2026-05-20"}],
+            tmdb_data={
+                "tmdb_id": tmdb_id,
+                "popularity": 300.0,
+                "vote_average": 8.0,
+                "vote_count": 2000,
+                "genres": [],
+                "original_language": "en",
+            },
+            trakt_data=None,
+            source_flags={"flixpatrol"},
+        )
+
+    def test_commit_mode_writes_current_discovery_and_observation(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            self._setup_db_with_fp(db_path, "2026-05-20")
+            mc = self._make_merged_candidate(9001, "movie")
+
+            def mock_merge(*args, **kwargs):
+                return [mc]
+
+            def mock_resolve_source_dates(*args, **kwargs):
+                return {"flixpatrol": "2026-05-20", "tmdb": "2026-05-20", "trakt": "2026-05-20"}
+
+            with patch("movietrace.pipeline.discovery._load_secrets",
+                       return_value={"omdb": {}, "tmdb": {}}):
+                with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                           return_value={"planned_calls": 0, "actual_calls": 0}):
+                    with patch("movietrace.pipeline.discovery._resolve_source_dates_with_fallback",
+                               side_effect=mock_resolve_source_dates):
+                        with patch("movietrace.pipeline.multi_source_merge.merge_three_sources",
+                                   side_effect=mock_merge):
+                            result = run_discovery(
+                                date_from="2026-05-20", dry_run=False, db_path=db_path
+                            )
+
+            stats = result.get("stats", {})
+            conn = sqlite3.connect(db_path)
+            cd_count = conn.execute("SELECT count(*) FROM current_discovery_items").fetchone()[0]
+            obs_count = conn.execute("SELECT count(*) FROM discovery_observations").fetchone()[0]
+            conn.close()
+
+            assert cd_count >= 1, "commit mode should write current_discovery_items"
+            assert obs_count >= 1, "commit mode should write discovery_observations"
+            assert "current_discovery_created" in stats
+            assert "observations_written" in stats
+        finally:
+            os.unlink(db_path)
+
+    def test_dry_run_does_not_write_current_discovery(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            self._setup_db_with_fp(db_path, "2026-05-20")
+            mc = self._make_merged_candidate(9002, "tv")
+
+            def mock_merge(*args, **kwargs):
+                return [mc]
+
+            def mock_resolve_source_dates(*args, **kwargs):
+                return {"flixpatrol": "2026-05-20", "tmdb": "2026-05-20", "trakt": "2026-05-20"}
+
+            with patch("movietrace.pipeline.discovery._load_secrets",
+                       return_value={"omdb": {}, "tmdb": {}}):
+                with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                           return_value={"planned_calls": 0, "actual_calls": 0}):
+                    with patch("movietrace.pipeline.discovery._resolve_source_dates_with_fallback",
+                               side_effect=mock_resolve_source_dates):
+                        with patch("movietrace.pipeline.multi_source_merge.merge_three_sources",
+                                   side_effect=mock_merge):
+                            result = run_discovery(
+                                date_from="2026-05-20", dry_run=True, db_path=db_path
+                            )
+
+            conn = sqlite3.connect(db_path)
+            cd_count = conn.execute("SELECT count(*) FROM current_discovery_items").fetchone()[0]
+            obs_count = conn.execute("SELECT count(*) FROM discovery_observations").fetchone()[0]
+            conn.close()
+
+            assert cd_count == 0, "dry_run must not write current_discovery_items"
+            assert obs_count == 0, "dry_run must not write discovery_observations"
+            assert "current_discovery_created" not in result.get("stats", {})
+        finally:
+            os.unlink(db_path)
+
+    def test_commit_mode_does_not_write_new_discovery_to_content_updates(self):
+        """P1.57i: run_discovery commit mode must NOT write new_discovery rows to content_updates."""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            self._setup_db_with_fp(db_path, "2026-05-20")
+            mc = self._make_merged_candidate(9010, "movie")
+
+            def mock_merge(*args, **kwargs):
+                return [mc]
+
+            def mock_resolve_source_dates(*args, **kwargs):
+                return {"flixpatrol": "2026-05-20", "tmdb": "2026-05-20", "trakt": "2026-05-20"}
+
+            with patch("movietrace.pipeline.discovery._load_secrets",
+                       return_value={"omdb": {}, "tmdb": {}}):
+                with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                           return_value={"planned_calls": 0, "actual_calls": 0}):
+                    with patch("movietrace.pipeline.discovery._resolve_source_dates_with_fallback",
+                               side_effect=mock_resolve_source_dates):
+                        with patch("movietrace.pipeline.multi_source_merge.merge_three_sources",
+                                   side_effect=mock_merge):
+                            run_discovery(date_from="2026-05-20", dry_run=False, db_path=db_path)
+
+            conn = sqlite3.connect(db_path)
+            nd_count = conn.execute(
+                "SELECT count(*) FROM content_updates WHERE update_type='new_discovery'"
+            ).fetchone()[0]
+            cd_count = conn.execute("SELECT count(*) FROM current_discovery_items").fetchone()[0]
+            obs_count = conn.execute("SELECT count(*) FROM discovery_observations").fetchone()[0]
+            conn.close()
+
+            assert nd_count == 0, (
+                f"P1.57i: new_discovery rows must not be written to content_updates, found {nd_count}"
+            )
+            assert cd_count >= 1, "current_discovery_items should still be written"
+            assert obs_count >= 1, "discovery_observations should still be written"
+        finally:
+            os.unlink(db_path)
+
+    def test_commit_mode_stats_include_current_discovery_fields(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            self._setup_db_with_fp(db_path, "2026-05-20")
+            mc = self._make_merged_candidate(9003, "movie")
+
+            def mock_merge(*args, **kwargs):
+                return [mc]
+
+            def mock_resolve_source_dates(*args, **kwargs):
+                return {"flixpatrol": "2026-05-20", "tmdb": "2026-05-20", "trakt": "2026-05-20"}
+
+            with patch("movietrace.pipeline.discovery._load_secrets",
+                       return_value={"omdb": {}, "tmdb": {}}):
+                with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                           return_value={"planned_calls": 0, "actual_calls": 0}):
+                    with patch("movietrace.pipeline.discovery._resolve_source_dates_with_fallback",
+                               side_effect=mock_resolve_source_dates):
+                        with patch("movietrace.pipeline.multi_source_merge.merge_three_sources",
+                                   side_effect=mock_merge):
+                            result = run_discovery(
+                                date_from="2026-05-20", dry_run=False, db_path=db_path
+                            )
+
+            stats = result.get("stats", {})
+            for key in ("current_discovery_created", "current_discovery_updated",
+                        "observations_written", "observations_skipped_internal_fallback_guard"):
+                assert key in stats, f"stats missing key: {key}"
+        finally:
+            os.unlink(db_path)
+
+
+# ── P1.57j: _should_skip_enrichment unit tests ────────────────────────────────
+
+
+def _make_current_discovery_db() -> tuple[sqlite3.Connection, str]:
+    """Create a file DB with the current_discovery_items schema."""
+    from movietrace.db.schema import initialize_database
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    initialize_database(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute("pragma foreign_keys = on")
+    return conn, db_path
+
+
+def _insert_current_discovery_item(conn: sqlite3.Connection, discovery_key: str, content_type: str, tmdb_id: int) -> None:
+    """Insert a minimal current_discovery_items row."""
+    conn.execute(
+        """INSERT INTO current_discovery_items
+           (discovery_key, content_type, tmdb_id, first_discovered_date, last_discovered_date)
+           VALUES (?, ?, ?, '2026-05-01', '2026-05-01')""",
+        (discovery_key, content_type, tmdb_id),
+    )
+    conn.commit()
+
+
+def _make_movie_candidate(tmdb_id: int, tmdb_data: dict | None = None) -> MergedCandidate:
+    return MergedCandidate(
+        tmdb_id=tmdb_id,
+        imdb_id=None,
+        title=f"Movie {tmdb_id}",
+        media_type="movie",
+        tmdb_data=tmdb_data or {},
+    )
+
+
+def _make_tv_candidate(tmdb_id: int, tmdb_data: dict | None = None) -> MergedCandidate:
+    return MergedCandidate(
+        tmdb_id=tmdb_id,
+        imdb_id=None,
+        title=f"TV {tmdb_id}",
+        media_type="tv",
+        tmdb_data=tmdb_data or {},
+    )
+
+
+class TestShouldSkipEnrichment:
+    """P1.57j: _should_skip_enrichment unit tests covering all acceptance criteria."""
+
+    # AC1: First-time discovery → False (no existing current_discovery_items row)
+    def test_first_discovery_movie_returns_false(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            c = _make_movie_candidate(
+                1001,
+                {"original_language": "en", "release_date": "2024-01-01"},
+            )
+            assert _should_skip_enrichment(c, conn) is False
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_first_discovery_tv_returns_false(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            c = _make_tv_candidate(
+                2001,
+                {"original_language": "en", "last_air_date": "2024-01-01"},
+            )
+            assert _should_skip_enrichment(c, conn) is False
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    # AC2: Repeat hit + metadata sufficient → True
+    def test_repeat_hit_movie_sufficient_metadata_returns_true(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            _insert_current_discovery_item(conn, "discovery:movie:1002", "movie", 1002)
+            c = _make_movie_candidate(
+                1002,
+                {"original_language": "en", "release_date": "2024-06-01"},
+            )
+            assert _should_skip_enrichment(c, conn) is True
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_repeat_hit_movie_movie_release_date_also_sufficient(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            _insert_current_discovery_item(conn, "discovery:movie:1003", "movie", 1003)
+            c = _make_movie_candidate(
+                1003,
+                {"original_language": "ko", "movie_release_date": "2024-03-15"},
+            )
+            assert _should_skip_enrichment(c, conn) is True
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_repeat_hit_tv_last_air_date_sufficient(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            _insert_current_discovery_item(conn, "discovery:tv:2002", "tv", 2002)
+            c = _make_tv_candidate(
+                2002,
+                {"original_language": "ja", "last_air_date": "2024-05-01"},
+            )
+            assert _should_skip_enrichment(c, conn) is True
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_repeat_hit_tv_last_episode_air_date_sufficient(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            _insert_current_discovery_item(conn, "discovery:tv:2003", "tv", 2003)
+            c = _make_tv_candidate(
+                2003,
+                {"original_language": "zh", "last_episode_air_date": "2024-05-10"},
+            )
+            assert _should_skip_enrichment(c, conn) is True
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_repeat_hit_tv_last_episode_to_air_air_date_sufficient(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            _insert_current_discovery_item(conn, "discovery:tv:2004", "tv", 2004)
+            c = _make_tv_candidate(
+                2004,
+                {
+                    "original_language": "en",
+                    "last_episode_to_air": {"air_date": "2024-04-20", "episode_number": 5},
+                },
+            )
+            assert _should_skip_enrichment(c, conn) is True
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    # AC3: Repeat hit + metadata insufficient → False
+    def test_repeat_hit_missing_original_language_returns_false(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            _insert_current_discovery_item(conn, "discovery:movie:1004", "movie", 1004)
+            c = _make_movie_candidate(
+                1004,
+                {"release_date": "2024-01-01"},  # no original_language
+            )
+            assert _should_skip_enrichment(c, conn) is False
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_repeat_hit_movie_missing_date_returns_false(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            _insert_current_discovery_item(conn, "discovery:movie:1005", "movie", 1005)
+            c = _make_movie_candidate(
+                1005,
+                {"original_language": "en"},  # no date
+            )
+            assert _should_skip_enrichment(c, conn) is False
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_repeat_hit_tv_missing_all_dates_returns_false(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            _insert_current_discovery_item(conn, "discovery:tv:2005", "tv", 2005)
+            c = _make_tv_candidate(
+                2005,
+                {"original_language": "en"},  # no date fields
+            )
+            assert _should_skip_enrichment(c, conn) is False
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_repeat_hit_empty_tmdb_data_returns_false(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            _insert_current_discovery_item(conn, "discovery:movie:1006", "movie", 1006)
+            c = _make_movie_candidate(1006, {})
+            assert _should_skip_enrichment(c, conn) is False
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_repeat_hit_none_tmdb_data_returns_false(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            _insert_current_discovery_item(conn, "discovery:movie:1007", "movie", 1007)
+            c = _make_movie_candidate(1007, None)
+            assert _should_skip_enrichment(c, conn) is False
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    # Edge: no tmdb_id → False
+    def test_no_tmdb_id_returns_false(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            c = MergedCandidate(
+                tmdb_id=None,
+                imdb_id=None,
+                title="No ID",
+                media_type="movie",
+                tmdb_data={"original_language": "en", "release_date": "2024-01-01"},
+            )
+            assert _should_skip_enrichment(c, conn) is False
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    # show media_type normalised to tv namespace
+    def test_show_media_type_normalised_to_tv_namespace(self):
+        conn, db_path = _make_current_discovery_db()
+        try:
+            _insert_current_discovery_item(conn, "discovery:tv:3001", "tv", 3001)
+            c = MergedCandidate(
+                tmdb_id=3001,
+                imdb_id=None,
+                title="Show 3001",
+                media_type="show",
+                tmdb_data={"original_language": "en", "last_air_date": "2024-05-01"},
+            )
+            assert _should_skip_enrichment(c, conn) is True
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+
+# ── P1.57j: stats include repeat_hit_enrichment_skipped ──────────────────────
+
+
+class TestRepeatHitEnrichmentSkippedStat:
+    """AC5: stats includes repeat_hit_enrichment_skipped field."""
+
+    def _make_merged_candidate(self, tmdb_id: int, media_type: str = "movie"):
+        return MergedCandidate(
+            tmdb_id=tmdb_id,
+            imdb_id=None,
+            title=f"Title {tmdb_id}",
+            media_type=media_type,
+            fp_items=[{"platform": "netflix", "ranking": 1, "days_total": 5}],
+            tmdb_data={
+                "tmdb_id": tmdb_id,
+                "popularity": 300.0,
+                "vote_average": 8.0,
+                "vote_count": 2000,
+                "genres": [],
+                "original_language": "en",
+                "release_date": "2024-01-01",
+            },
+            trakt_data=None,
+            source_flags={"flixpatrol"},
+        )
+
+    def _setup_db_with_fp(self, db_path: str, snapshot_date: str):
+        from movietrace.db.schema import initialize_database
+        initialize_database(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            """INSERT INTO flixpatrol_top10
+               (fp_id, title, content_type, platform, country,
+                snapshot_date, ranking, raw_payload_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("fp1", "Test Movie", "movie", "netflix", "united-states",
+             snapshot_date, 1, "{}"),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_stats_always_contain_repeat_hit_enrichment_skipped(self):
+        """dry_run: stats must include repeat_hit_enrichment_skipped >= 0."""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            self._setup_db_with_fp(db_path, "2026-05-22")
+            mc = self._make_merged_candidate(8001, "movie")
+
+            def mock_merge(*args, **kwargs):
+                return [mc]
+
+            def mock_resolve_source_dates(*args, **kwargs):
+                return {"flixpatrol": "2026-05-22", "tmdb": "2026-05-22", "trakt": "2026-05-22"}
+
+            with patch("movietrace.pipeline.discovery._load_secrets",
+                       return_value={"omdb": {}, "tmdb": {}}):
+                with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                           return_value={"planned_calls": 0, "actual_calls": 0}):
+                    with patch("movietrace.pipeline.discovery._resolve_source_dates_with_fallback",
+                               side_effect=mock_resolve_source_dates):
+                        with patch("movietrace.pipeline.multi_source_merge.merge_three_sources",
+                                   side_effect=mock_merge):
+                            result = run_discovery(
+                                date_from="2026-05-22", dry_run=True, db_path=db_path
+                            )
+
+            stats = result.get("stats", {})
+            assert "repeat_hit_enrichment_skipped" in stats, (
+                "stats must contain repeat_hit_enrichment_skipped"
+            )
+            # First-time discovery: no existing current_discovery_items → 0 skipped
+            assert stats["repeat_hit_enrichment_skipped"] == 0
+        finally:
+            os.unlink(db_path)
+
+    def test_repeat_hit_candidate_counted_in_skipped_stat(self):
+        """commit mode: pre-seeded current_discovery_items entry → skipped == 1."""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            self._setup_db_with_fp(db_path, "2026-05-22")
+            # Pre-seed: this candidate is already a known discovery
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """INSERT INTO current_discovery_items
+                   (discovery_key, content_type, tmdb_id, first_discovered_date, last_discovered_date)
+                   VALUES ('discovery:movie:8002', 'movie', 8002, '2026-05-21', '2026-05-21')"""
+            )
+            conn.commit()
+            conn.close()
+
+            mc = self._make_merged_candidate(8002, "movie")
+
+            def mock_merge(*args, **kwargs):
+                return [mc]
+
+            def mock_resolve_source_dates(*args, **kwargs):
+                return {"flixpatrol": "2026-05-22", "tmdb": "2026-05-22", "trakt": "2026-05-22"}
+
+            with patch("movietrace.pipeline.discovery._load_secrets",
+                       return_value={"omdb": {}, "tmdb": {}}):
+                with patch("movietrace.pipeline.discovery._ensure_fp_data",
+                           return_value={"planned_calls": 0, "actual_calls": 0}):
+                    with patch("movietrace.pipeline.discovery._resolve_source_dates_with_fallback",
+                               side_effect=mock_resolve_source_dates):
+                        with patch("movietrace.pipeline.multi_source_merge.merge_three_sources",
+                                   side_effect=mock_merge):
+                            result = run_discovery(
+                                date_from="2026-05-22", dry_run=False, db_path=db_path
+                            )
+
+            stats = result.get("stats", {})
+            assert stats.get("repeat_hit_enrichment_skipped") == 1, (
+                f"Expected 1 skipped, got {stats.get('repeat_hit_enrichment_skipped')}"
+            )
+        finally:
+            os.unlink(db_path)
+
+
+# ── B2: _should_skip_enrichment stable_metadata fallback tests ─────────────────
+
+
+class TestShouldSkipEnrichmentStableMetadataFallback:
+    """B2: TV repeat hit + TMDb trending missing last_air_date → fallback to stable_metadata."""
+
+    def test_tv_repeat_hit_tmdb_data_missing_date_stable_meta_has_date_returns_true(self):
+        """TV repeat hit + tmdb_data lacks last_air_date + stable_metadata has it → True."""
+        conn, db_path = _make_current_discovery_db()
+        try:
+            import json as _json
+            stable_meta = _json.dumps(
+                {"original_language": "en", "last_air_date": "2024-06-01"}, ensure_ascii=False
+            )
+            conn.execute(
+                """INSERT INTO current_discovery_items
+                   (discovery_key, content_type, tmdb_id,
+                    first_discovered_date, last_discovered_date, stable_metadata_json)
+                   VALUES ('discovery:tv:9001', 'tv', 9001,
+                           '2026-05-01', '2026-05-01', ?)""",
+                (stable_meta,),
+            )
+            conn.commit()
+            # candidate has no last_air_date in tmdb_data (TMDb trending typical case)
+            c = _make_tv_candidate(9001, {"original_language": "en"})
+            assert _should_skip_enrichment(c, conn) is True
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_tv_repeat_hit_both_missing_date_returns_false(self):
+        """TV repeat hit + tmdb_data no date + stable_metadata also no date → False."""
+        conn, db_path = _make_current_discovery_db()
+        try:
+            import json as _json
+            stable_meta = _json.dumps(
+                {"original_language": "en"}, ensure_ascii=False
+            )
+            conn.execute(
+                """INSERT INTO current_discovery_items
+                   (discovery_key, content_type, tmdb_id,
+                    first_discovered_date, last_discovered_date, stable_metadata_json)
+                   VALUES ('discovery:tv:9002', 'tv', 9002,
+                           '2026-05-01', '2026-05-01', ?)""",
+                (stable_meta,),
+            )
+            conn.commit()
+            c = _make_tv_candidate(9002, {"original_language": "en"})
+            assert _should_skip_enrichment(c, conn) is False
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_tv_repeat_hit_no_stable_meta_row_returns_false(self):
+        """TV repeat hit + tmdb_data no date + no stable_metadata (NULL) → False."""
+        conn, db_path = _make_current_discovery_db()
+        try:
+            # stable_metadata_json is NULL (default)
+            _insert_current_discovery_item(conn, "discovery:tv:9003", "tv", 9003)
+            c = _make_tv_candidate(9003, {"original_language": "en"})
+            assert _should_skip_enrichment(c, conn) is False
+        finally:
+            conn.close()
+            os.unlink(db_path)
+
+    def test_tv_repeat_hit_stable_meta_also_provides_language_returns_true(self):
+        """TV repeat hit + tmdb_data empty + stable_metadata has language+date → True."""
+        conn, db_path = _make_current_discovery_db()
+        try:
+            import json as _json
+            stable_meta = _json.dumps(
+                {"original_language": "ko", "last_air_date": "2024-03-15"}, ensure_ascii=False
+            )
+            conn.execute(
+                """INSERT INTO current_discovery_items
+                   (discovery_key, content_type, tmdb_id,
+                    first_discovered_date, last_discovered_date, stable_metadata_json)
+                   VALUES ('discovery:tv:9004', 'tv', 9004,
+                           '2026-05-01', '2026-05-01', ?)""",
+                (stable_meta,),
+            )
+            conn.commit()
+            # tmdb_data completely empty
+            c = _make_tv_candidate(9004, {})
+            assert _should_skip_enrichment(c, conn) is True
+        finally:
+            conn.close()
+            os.unlink(db_path)

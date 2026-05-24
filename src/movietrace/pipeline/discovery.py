@@ -263,6 +263,94 @@ def _find_fallback_snapshot(
 # ── Multi-source discovery ──────────────────────────────────────────────
 
 
+def _should_skip_enrichment(candidate, conn: sqlite3.Connection) -> bool:
+    """Return True if this is a known repeat hit with sufficient existing metadata.
+
+    Conditions:
+    1. current_discovery_items already has this discovery_key (repeat hit)
+    2. candidate's tmdb_data already has original_language AND date field
+       - Movie: release_date or movie_release_date
+       - TV: last_air_date, last_episode_air_date, or last_episode_to_air.air_date
+
+    If either condition fails, return False (run full enrichment).
+    Never skips for first-time discoveries.
+    """
+    tmdb_id = getattr(candidate, 'tmdb_id', None)
+    if not tmdb_id:
+        return False
+    media_type = getattr(candidate, 'media_type', 'movie')
+    content_type = "tv" if media_type in ("tv", "show") else "movie"
+
+    # C3: use build_discovery_key instead of f-string interpolation
+    from movietrace.pipeline.current_discovery import build_discovery_key
+    try:
+        dkey = build_discovery_key(content_type, tmdb_id)
+    except ValueError:
+        return False
+
+    # Check repeat hit
+    row = conn.execute(
+        "SELECT id, stable_metadata_json FROM current_discovery_items WHERE discovery_key=?",
+        (dkey,)
+    ).fetchone()
+    if not row:
+        return False  # First discovery — need full enrichment
+
+    # Check metadata sufficiency — first try candidate.tmdb_data, then stable_metadata fallback
+    tmdb_data = getattr(candidate, 'tmdb_data', None) or {}
+    has_language = bool(tmdb_data.get('original_language'))
+
+    if content_type == "movie":
+        has_date = bool(tmdb_data.get('release_date') or tmdb_data.get('movie_release_date'))
+    else:
+        has_date = bool(
+            tmdb_data.get('last_air_date')
+            or tmdb_data.get('last_episode_air_date')
+            or (tmdb_data.get('last_episode_to_air') or {}).get('air_date')
+        )
+
+    if has_language and has_date:
+        return True
+
+    # B2: TMDb trending API may omit last_air_date for TV.
+    # Fall back to stable_metadata_json stored from a previous successful enrichment.
+    # stable_metadata is only present after at least one completed enrichment cycle.
+    # If the row has no stable_metadata (NULL), skip silently — no enrichment skip.
+    stable_meta_raw = row[1] if row else None
+    if stable_meta_raw:
+        import json as _json
+        try:
+            stable = _json.loads(stable_meta_raw)
+        except (ValueError, TypeError):
+            stable = {}
+        if not has_language:
+            has_language = bool(stable.get('original_language'))
+        if not has_date:
+            if content_type == "movie":
+                has_date = bool(
+                    stable.get('release_date') or stable.get('movie_release_date')
+                )
+            else:
+                has_date = bool(
+                    stable.get('last_air_date')
+                    or stable.get('last_episode_air_date')
+                )
+        if has_language and has_date:
+            return True
+
+    return False
+
+
+def should_write_observation(candidate: dict) -> bool:
+    """Return True if a candidate is eligible to be written as a discovery observation.
+
+    P1.57d: Soap threshold exemption applies to hot_score gate only.
+    Pure source-date fallback candidates (has_fresh_signal=False) are not eligible,
+    even if is_soap=True.  Only candidates with a genuine fresh signal are eligible.
+    """
+    return bool(candidate.get("has_fresh_signal"))
+
+
 def run_discovery(
     date_from: str | None = None,
     dry_run: bool = False,
@@ -283,7 +371,7 @@ def run_discovery(
     3. Merge three sources
     4. Enrich with IMDb backfill + OMDb + TMDb detail
     5. Score + threshold filter
-    6. Write content_updates
+    6. Write current_discovery_items + discovery_observations (P1.57i: new_discovery no longer written to content_updates)
     """
     cfg = load_weights_config(weights_path)
     conn = connect_database(db_path)
@@ -383,6 +471,7 @@ def run_discovery(
         enrich_stats = {}
 
         # P1.8-F/G: Pre-score IMDb ID backfill via TMDb external_ids
+        # backfill runs on full candidates list (lightweight: only fetches external_ids)
         if tmdb_token:
             logger.info("Discovery enrichment: backfilling IMDb IDs for %d candidates", len(candidates))
             from movietrace.pipeline.omdb_enrichment import backfill_imdb_ids
@@ -390,15 +479,30 @@ def run_discovery(
                 candidates, tmdb_token, db_path=db_path, request_date=snapshot_date,
             )
 
+        # P1.57j: Skip enrichment for repeat hits with sufficient metadata
+        repeat_hit_enrichment_skipped = 0
+        candidates_to_enrich = []
+        for c in candidates:
+            if _should_skip_enrichment(c, conn):
+                repeat_hit_enrichment_skipped += 1
+            else:
+                candidates_to_enrich.append(c)
+
         if omdb_keys:
-            logger.info("Discovery enrichment: fetching OMDb ratings for %d candidates", len(candidates))
+            logger.info(
+                "Discovery enrichment: fetching OMDb ratings for %d candidates (%d repeat-hits skipped)",
+                len(candidates_to_enrich), repeat_hit_enrichment_skipped,
+            )
             from movietrace.pipeline.omdb_enrichment import enrich_with_omdb
-            enrich_stats["omdb"] = enrich_with_omdb(conn, candidates, omdb_keys, db_path=db_path, request_date=snapshot_date)
+            enrich_stats["omdb"] = enrich_with_omdb(conn, candidates_to_enrich, omdb_keys, db_path=db_path, request_date=snapshot_date)
 
         if tmdb_token:
-            logger.info("Discovery enrichment: fetching TMDb details for %d candidates", len(candidates))
+            logger.info(
+                "Discovery enrichment: fetching TMDb details for %d candidates (%d repeat-hits skipped)",
+                len(candidates_to_enrich), repeat_hit_enrichment_skipped,
+            )
             from movietrace.pipeline.omdb_enrichment import enrich_with_tmdb_details
-            enrich_stats["tmdb_detail"] = enrich_with_tmdb_details(conn, candidates, tmdb_token, db_path=db_path, request_date=snapshot_date)
+            enrich_stats["tmdb_detail"] = enrich_with_tmdb_details(conn, candidates_to_enrich, tmdb_token, db_path=db_path, request_date=snapshot_date)
 
         # Step 4: Score
         scored = []
@@ -434,12 +538,20 @@ def run_discovery(
         threshold = (cfg.get("priority_thresholds") or {}).get("P2", 50)
         passed = [s for s in scored if s.get("hot_score", 0) >= threshold or s.get("is_soap")]
 
-        # P1.42-B: Filter out pure fallback candidates (unless Soap bypass)
-        # Keep only candidates with fresh signal or Soap exemption
-        suppressed_fallback_only = len(passed) - len([c for c in passed if c.get("has_fresh_signal") or c.get("is_soap")])
-        passed = [c for c in passed if c.get("has_fresh_signal") or c.get("is_soap")]
+        # P1.57d: Filter by observation eligibility (replaces P1.42-B Soap bypass)
+        # Soap threshold exemption applies only to hot_score gate above; write gate uses fresh signal only.
+        soap_pure_fallback_suppressed = sum(
+            1 for c in passed if c.get("is_soap") and not c.get("has_fresh_signal")
+        )
+        before_write_gate = len(passed)
+        passed = [c for c in passed if should_write_observation(c)]
+        suppressed_fallback_only = before_write_gate - len(passed)
         if suppressed_fallback_only > 0:
-            logger.info("P1.42: Suppressed %d pure-fallback-only candidates", suppressed_fallback_only)
+            logger.info(
+                "P1.57d: Suppressed %d pure-fallback-only candidates (%d Soap)",
+                suppressed_fallback_only,
+                soap_pure_fallback_suppressed,
+            )
 
         # P1.24-B: 仅对 passed 集合计算 row_duration_hours
         # (避免对被阈值过滤的候选浪费 TMDb season detail 调用)
@@ -474,6 +586,8 @@ def run_discovery(
         stats["source_effective_dates"] = source_dates
         stats["source_fallback_used"] = fallback_used
         stats["suppressed_fallback_only"] = suppressed_fallback_only
+        stats["soap_pure_fallback_suppressed"] = soap_pure_fallback_suppressed
+        stats["repeat_hit_enrichment_skipped"] = repeat_hit_enrichment_skipped
 
         # P1.9: Auto-register candidates without canonical_item
         auto_registered = 0
@@ -492,10 +606,25 @@ def run_discovery(
             logger.info("Auto-registered %d new canonical_items", auto_registered)
             conn.commit()
 
-        # Step 6: Write to content_updates
+        # Step 6: Write current discovery + observations (new_discovery no longer written to content_updates)
         if not dry_run:
-            written = _write_content_updates(conn, passed, snapshot_date, source_status)
-            stats["written"] = written
+            try:
+                cd_stats = _write_current_discovery_batch(conn, passed, snapshot_date, source_status)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            stats["current_discovery_created"] = cd_stats["created"]
+            stats["current_discovery_updated"] = cd_stats["updated"]
+            stats["observations_written"] = cd_stats["observations_written"]
+            # B1: renamed from observations_skipped_source_date_fallback.
+            # This counter is non-zero only when _write_current_discovery_batch is called
+            # directly bypassing the outer should_write_observation gate (e.g. in tests or
+            # future callers).  In the normal run_discovery path the gate runs first, so this
+            # value is always 0.  The rename makes the intent explicit.
+            stats["observations_skipped_internal_fallback_guard"] = cd_stats["skipped_source_date_fallback"]
+            # A2: propagate skipped_no_canonical_id count to top-level stats
+            stats["current_discovery_skipped_no_canonical_id"] = cd_stats["skipped_no_canonical_id"]
         else:
             stats["would_be_registered"] = would_be_registered
         stats["auto_registered"] = auto_registered
@@ -797,9 +926,104 @@ def _write_content_updates(
         except Exception as exc:
             logger.warning("Failed to write content_update for %s: %s", content_update_id, exc)
 
-    conn.commit()
     logger.info("Wrote %d content_updates for %s", count, snapshot_date)
     return count
+
+
+# ── Current discovery batch write ──────────────────────────────────────
+
+
+def _write_current_discovery_batch(
+    conn: sqlite3.Connection,
+    candidates: list[dict],
+    snapshot_date: str,
+    source_status: dict | None = None,
+) -> dict:
+    """Write eligible candidates to current_discovery_items + discovery_observations.
+
+    Returns stats dict with keys:
+      created, updated, observations_written, skipped_source_date_fallback.
+    Caller is responsible for commit/rollback.
+    """
+    from movietrace.pipeline.current_discovery import (
+        build_discovery_key,
+        upsert_current_discovery_item,
+        upsert_discovery_observation,
+    )
+    stats = {
+        "created": 0,
+        "updated": 0,
+        "observations_written": 0,
+        "skipped_source_date_fallback": 0,
+        "skipped_no_canonical_id": 0,
+    }
+    for c in candidates:
+        if not should_write_observation(c):
+            stats["skipped_source_date_fallback"] += 1
+            continue
+        tmdb_id = c.get("tmdb_id")
+        if not tmdb_id:
+            continue
+        media_type = "tv" if c.get("media_type") in ("tv", "show") else "movie"
+        try:
+            dkey = build_discovery_key(media_type, tmdb_id)
+        except ValueError:
+            continue
+        existing = conn.execute(
+            "SELECT id FROM current_discovery_items WHERE discovery_key=?", (dkey,)
+        ).fetchone()
+        canonical_id = _lookup_canonical_id(conn, tmdb_id, media_type)
+        # A2: Do not write current_discovery_items rows with canonical_item_id=NULL.
+        # If auto-register ran before this, canonical_id should be populated.
+        # Candidates that slipped through without canonical registration are skipped.
+        if canonical_id is None:
+            stats["skipped_no_canonical_id"] += 1
+            logger.debug(
+                "Skipping current_discovery write for tmdb_id=%s media_type=%s: no canonical_item_id",
+                tmdb_id, media_type,
+            )
+            continue
+        tmdb_data = c.get("tmdb_data") or {}
+        stable_meta = {
+            "tmdb_id": tmdb_id,
+            "media_type": media_type,
+            "genres": tmdb_data.get("genres"),
+            "original_language": tmdb_data.get("original_language"),
+            "networks": tmdb_data.get("networks"),
+        }
+        source_summary = _build_source_summary(c, source_status)
+        upsert_current_discovery_item(
+            conn,
+            discovery_key=dkey,
+            content_type=media_type,
+            tmdb_id=tmdb_id,
+            observed_date=snapshot_date,
+            canonical_item_id=canonical_id,
+            hot_score=c.get("hot_score"),
+            priority=c.get("priority"),
+            source_summary=source_summary,
+            stable_metadata=stable_meta,
+            title=c.get("title"),
+            original_title=(tmdb_data.get("original_name") or tmdb_data.get("original_title")),
+            title_zh=(tmdb_data.get("title_zh") or c.get("title_zh")),
+        )
+        if existing is None:
+            stats["created"] += 1
+        else:
+            stats["updated"] += 1
+        score_breakdown = c.get("score_breakdown")
+        upsert_discovery_observation(
+            conn,
+            discovery_key=dkey,
+            observed_date=snapshot_date,
+            hot_score=c.get("hot_score"),
+            priority=c.get("priority"),
+            source_summary=source_summary,
+            score_breakdown=score_breakdown,
+            source_status=source_status,
+        )
+        stats["observations_written"] += 1
+    return stats
 
 
 def _lookup_canonical_id(

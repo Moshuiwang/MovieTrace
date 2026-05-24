@@ -17,6 +17,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
 export TZ='Asia/Shanghai'
+export MOVIETRACE_ENV='dev-e2e'
 
 DRY_RUN=0
 for arg in "$@"; do

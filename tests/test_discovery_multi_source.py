@@ -107,13 +107,20 @@ class DiscoveryMultiSourceTest(unittest.TestCase):
         stats = result.get("stats", {})
         self.assertGreaterEqual(stats.get("total_merged", 0), 2)
         self.assertGreaterEqual(stats.get("total_passed", 0), 1)
-        self.assertGreaterEqual(stats.get("written", 0), 1)
+        # P1.57i: new_discovery rows are no longer written to content_updates
+        self.assertNotIn("written", stats)
 
-        # Verify content_updates written
-        written = self.conn.execute(
-            "select count(*) from content_updates"
+        # Verify content_updates has no new_discovery rows (P1.57i)
+        nd_written = self.conn.execute(
+            "select count(*) from content_updates where update_type='new_discovery'"
         ).fetchone()[0]
-        self.assertGreaterEqual(written, 1)
+        self.assertEqual(nd_written, 0, "P1.57i: new_discovery must not be written to content_updates")
+
+        # Verify current_discovery_items was written instead
+        cd_count = self.conn.execute(
+            "select count(*) from current_discovery_items"
+        ).fetchone()[0]
+        self.assertGreaterEqual(cd_count, 1, "current_discovery_items should be written")
 
     def test_source_summary_json_structure(self):
         from movietrace.pipeline.discovery import _build_source_summary
@@ -320,9 +327,15 @@ class DiscoveryMultiSourceTest(unittest.TestCase):
         suppressed = stats.get("suppressed_fallback_only", 0)
         self.assertEqual(suppressed, 0, "No pure-fallback candidates should be suppressed when mixed sources present")
 
-        # Verify content_updates was written
-        written = stats.get("written", 0)
-        self.assertGreaterEqual(written, 1, "At least 1 content_update should be written")
+        # P1.57i: new_discovery no longer written to content_updates; verify current_discovery_items written instead
+        nd_count = self.conn.execute(
+            "select count(*) from content_updates where update_type='new_discovery'"
+        ).fetchone()[0]
+        self.assertEqual(nd_count, 0, "P1.57i: new_discovery must not be written to content_updates")
+        cd_count = self.conn.execute(
+            "select count(*) from current_discovery_items"
+        ).fetchone()[0]
+        self.assertGreaterEqual(cd_count, 1, "At least 1 current_discovery_item should be written")
 
 
 if __name__ == "__main__":

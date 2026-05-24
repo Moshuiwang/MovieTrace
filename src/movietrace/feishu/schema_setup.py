@@ -34,6 +34,9 @@ REQUIRED_FIELDS_FOR_DISCOVERY_TABLE: list[tuple[str, int]] = [
     ("运营备注", 1),  # 文本
     ("A库总集数", 2),  # 数字
     ("TMDB总集数", 2),  # 数字
+    ("首次发现日期", 5),  # 日期
+    ("最近发现日期", 5),  # 日期
+    ("发现次数", 2),  # 数字
 ]
 
 # 旧字段重命名映射 (old_name -> new_name)

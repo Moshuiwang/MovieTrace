@@ -142,24 +142,28 @@ class ExportWriterTest(unittest.TestCase):
         from movietrace.reports.export_writer import export_recommendations
         import json
 
-        # Ensure canonical_item exists
+        # export_recommendations now reads current_discovery_items for discovery rows.
+        # Seed a current_discovery_items row with source_data_status in source_summary_json.
+        source_summary = json.dumps({
+            "fp": {"platform": "netflix", "ranking": 3},
+            "source_data_status": {
+                "flixpatrol": {"status": "fresh", "snapshot_date": "2026-05-14"},
+                "tmdb": {"status": "fallback", "snapshot_date": "2026-05-13"},
+                "trakt": {"status": "failed_no_fallback", "snapshot_date": None},
+            },
+        })
         self.conn.execute(
-            "insert into canonical_items(id, canonical_item_key, title, content_type, content_granularity) values (1, 'k1', 'T1', 'movie', 'movie')"
-        )
-        # Seed content update with source_data_status
-        self.conn.execute(
-            """insert into content_updates(
-                content_update_id, canonical_item_id, update_type,
-                priority, hot_score, match_confidence_low, source_summary_json
-            ) values ('discovery:100:2026-05-14', 1, 'new_discovery', 'P2', 75, 0, ?)""",
-            (json.dumps({
-                "fp": {"platform": "netflix", "ranking": 3},
-                "source_data_status": {
-                    "flixpatrol": {"status": "fresh", "snapshot_date": "2026-05-14"},
-                    "tmdb": {"status": "fallback", "snapshot_date": "2026-05-13"},
-                    "trakt": {"status": "failed_no_fallback", "snapshot_date": None},
-                },
-            }),),
+            """INSERT INTO current_discovery_items(
+                discovery_key, content_type, tmdb_id, title,
+                first_discovered_date, last_discovered_date, discovery_count,
+                latest_hot_score, latest_priority, latest_match_confidence_low,
+                latest_source_summary_json, updated_at
+            ) VALUES (
+                'discovery:movie:100', 'movie', 100, 'T1',
+                '2026-05-14', '2026-05-24', 1,
+                75.0, 'P2', 0, ?, '2026-05-24 10:00:00'
+            )""",
+            (source_summary,),
         )
         self.conn.commit()
 
@@ -182,22 +186,27 @@ class ExportWriterTest(unittest.TestCase):
         from movietrace.reports.export_writer import export_recommendations
         import json
 
+        # export_recommendations now reads current_discovery_items for discovery rows.
+        source_summary = json.dumps({
+            "tmdb": {"popularity": 500},
+            "source_data_status": {
+                "flixpatrol": {"status": "fallback", "snapshot_date": "2026-05-12"},
+                "tmdb": {"status": "fresh", "snapshot_date": "2026-05-14"},
+                "trakt": {"status": "fresh", "snapshot_date": "2026-05-14"},
+            },
+        })
         self.conn.execute(
-            "insert into canonical_items(id, canonical_item_key, title, content_type, content_granularity) values (2, 'k2', 'T2', 'movie', 'movie')"
-        )
-        self.conn.execute(
-            """insert into content_updates(
-                content_update_id, canonical_item_id, update_type,
-                priority, hot_score, match_confidence_low, source_summary_json
-            ) values ('discovery:200:2026-05-14', 2, 'new_discovery', 'P2', 80, 0, ?)""",
-            (json.dumps({
-                "tmdb": {"popularity": 500},
-                "source_data_status": {
-                    "flixpatrol": {"status": "fallback", "snapshot_date": "2026-05-12"},
-                    "tmdb": {"status": "fresh", "snapshot_date": "2026-05-14"},
-                    "trakt": {"status": "fresh", "snapshot_date": "2026-05-14"},
-                },
-            }),),
+            """INSERT INTO current_discovery_items(
+                discovery_key, content_type, tmdb_id, title,
+                first_discovered_date, last_discovered_date, discovery_count,
+                latest_hot_score, latest_priority, latest_match_confidence_low,
+                latest_source_summary_json, updated_at
+            ) VALUES (
+                'discovery:movie:200', 'movie', 200, 'T2',
+                '2026-05-14', '2026-05-24', 1,
+                80.0, 'P2', 0, ?, '2026-05-24 10:00:00'
+            )""",
+            (source_summary,),
         )
         self.conn.commit()
 

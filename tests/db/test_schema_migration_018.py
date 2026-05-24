@@ -38,10 +38,10 @@ class SchemaMigration018Test(unittest.TestCase):
         ).fetchone()
         self.assertIsNotNone(idx, "ix_feishu_sync_failures_unresolved index should exist")
 
-    def test_schema_version_is_18(self):
-        """SCHEMA_VERSION constant should be 18."""
+    def test_schema_version_includes_018(self):
+        """SCHEMA_VERSION should include migration 018 or newer."""
         from movietrace.db.schema import SCHEMA_VERSION
-        self.assertEqual(SCHEMA_VERSION, 18)
+        self.assertGreaterEqual(SCHEMA_VERSION, 18)
 
     def test_migration_version_18_recorded(self):
         """schema_migrations should record version 18."""

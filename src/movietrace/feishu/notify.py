@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from zoneinfo import ZoneInfo
 
@@ -10,6 +11,16 @@ from movietrace.feishu.baseline import fetch_tenant_access_token
 from movietrace.feishu._http import OPEN_API_BASE, request_json
 
 TZ = ZoneInfo("Asia/Shanghai")
+
+_ENV_PREFIXES = {
+    "dev-shadow": "【DEV Shadow】",
+    "dev-e2e":    "【DEV E2E】",
+}
+
+
+def _card_title(run_date: str) -> str:
+    prefix = _ENV_PREFIXES.get(os.environ.get("MOVIETRACE_ENV", ""), "")
+    return f"{prefix}MovieTrace · {run_date}"
 
 
 def _send_text_message(
@@ -228,7 +239,7 @@ def _build_card(
     return {
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"tag": "plain_text", "content": f"MovieTrace · {run_date}"},
+            "title": {"tag": "plain_text", "content": _card_title(run_date)},
             "template": header_color,
         },
         "elements": elements,

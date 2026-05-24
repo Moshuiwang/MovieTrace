@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 
 SCHEMA_SQL = """
@@ -92,6 +92,61 @@ create table if not exists feishu_sync_failures (
 
 create index if not exists ix_feishu_sync_failures_unresolved
 on feishu_sync_failures(table_id, resolved_at);
+
+create table if not exists current_discovery_items (
+    id integer primary key autoincrement,
+    discovery_key text not null,
+    canonical_item_id integer references canonical_items(id),
+    content_type text not null check (content_type in ('movie', 'tv')),
+    tmdb_id integer not null,
+    title text,
+    original_title text,
+    title_zh text,
+    first_discovered_date text not null,
+    last_discovered_date text not null,
+    discovery_count integer not null default 1 check (discovery_count >= 0),
+    latest_hot_score real,
+    latest_priority text,
+    latest_baseline_match_status text,
+    latest_match_confidence_low integer not null default 0,
+    latest_source_summary_json text,
+    stable_metadata_json text,
+    created_at text not null default current_timestamp,
+    updated_at text not null default current_timestamp,
+    check (discovery_key = 'discovery:' || content_type || ':' || tmdb_id)
+);
+
+create unique index if not exists ux_current_discovery_items_key
+on current_discovery_items(discovery_key);
+
+create unique index if not exists ux_current_discovery_items_type_tmdb
+on current_discovery_items(content_type, tmdb_id);
+
+create index if not exists ix_current_discovery_items_last_discovered_date
+on current_discovery_items(last_discovered_date);
+
+create index if not exists ix_current_discovery_items_priority_score
+on current_discovery_items(latest_priority, latest_hot_score);
+
+create table if not exists discovery_observations (
+    id integer primary key autoincrement,
+    discovery_key text not null references current_discovery_items(discovery_key) on delete cascade,
+    observed_date text not null,
+    hot_score real,
+    priority text,
+    source_summary_json text,
+    raw_inputs_json text,
+    score_breakdown_json text,
+    source_status_json text,
+    created_at text not null default current_timestamp,
+    updated_at text not null default current_timestamp
+);
+
+create unique index if not exists ux_discovery_observations_key_date
+on discovery_observations(discovery_key, observed_date);
+
+create index if not exists ix_discovery_observations_observed_date
+on discovery_observations(observed_date);
 """
 
 
@@ -140,4 +195,5 @@ def initialize_database(path: str | Path) -> None:
         _apply_migration(conn, 16, _load_migration_sql("016_drop_legacy_tables.sql"))
         _apply_migration(conn, 17, _load_migration_sql("017_canonical_zh_fields.sql"))
         _apply_migration(conn, 18, _load_migration_sql("018_feishu_sync_failures.sql"))
+        _apply_migration(conn, 19, _load_migration_sql("019_current_discovery_observations.sql"))
         conn.commit()

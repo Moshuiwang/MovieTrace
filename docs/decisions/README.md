@@ -2,8 +2,8 @@
 
 > **目的：** 记录项目重要决策的"上下文 / 决策 / 后果 / 备选"，避免下一个 Agent 把已否决的方案重新拉回讨论（决策回撤）。
 
-**格式：** Michael Nygard 风格（精简）  
-**命名：** `NNNN-kebab-case-title.md`  
+**格式：** Michael Nygard 风格（精简）
+**命名：** `NNNN-kebab-case-title.md`
 **编号：** 单调递增，不重用，不删除（即使被推翻也保留并标记 superseded）
 
 ---
@@ -27,6 +27,7 @@
 | [0013](0013-baseline-gap-snapshot-table.md) | A 库缺口快照子表（实时从 virtual_series 算缺口）| ✅ Accepted | 2026-05-16 |
 | [0014](0014-legacy-schema-cleanup.md) | ADR-0007 翻转前 6 张遗留表清理（migration 016）| ✅ Accepted | 2026-05-16 |
 | [0015](0015-feishu-doc-import-via-import-tasks.md) | sync_doc 切换 drive/v1/import_task（删 docx-blocks API）| ✅ Accepted | 2026-05-16 |
+| [0016](0016-current-discovery-with-observations.md) | daily-discover 改为当前发现项 + observation 留痕 | ✅ Accepted | 2026-05-24 |
 
 ---
 

@@ -386,3 +386,91 @@ class TestEnsureTableFields:
         assert len(result["existed"]) == 3
         # 不应该调用 create
         assert mock_create.call_count == 0
+
+
+class TestCurrentDiscoveryFields:
+    """Test current discovery fields in REQUIRED_FIELDS_FOR_DISCOVERY_TABLE (P1.57g)."""
+
+    def test_required_fields_include_current_discovery_fields(self):
+        """验证 REQUIRED_FIELDS_FOR_DISCOVERY_TABLE 包含三个 current discovery 字段。"""
+        field_map = {name: ftype for name, ftype in REQUIRED_FIELDS_FOR_DISCOVERY_TABLE}
+
+        assert "首次发现日期" in field_map, "REQUIRED_FIELDS_FOR_DISCOVERY_TABLE 缺少 '首次发现日期'"
+        assert field_map["首次发现日期"] == 5, "首次发现日期 type 应为 5 (日期)"
+
+        assert "最近发现日期" in field_map, "REQUIRED_FIELDS_FOR_DISCOVERY_TABLE 缺少 '最近发现日期'"
+        assert field_map["最近发现日期"] == 5, "最近发现日期 type 应为 5 (日期)"
+
+        assert "发现次数" in field_map, "REQUIRED_FIELDS_FOR_DISCOVERY_TABLE 缺少 '发现次数'"
+        assert field_map["发现次数"] == 2, "发现次数 type 应为 2 (数字)"
+
+    @patch("movietrace.feishu.schema_setup.fetch_tenant_access_token")
+    @patch("movietrace.feishu.schema_setup.list_table_fields")
+    def test_ensure_creates_missing_current_discovery_fields(self, mock_list_fields, mock_fetch_token):
+        """mock 场景：字段列表不含三个新字段时，dry_run 应在 created 中包含它们。"""
+        mock_fetch_token.return_value = "mock_token"
+        # 现有字段不含 current discovery 三字段
+        mock_list_fields.return_value = [
+            {"field_id": "f1", "field_name": "在播最新季", "type": 2},
+            {"field_id": "f2", "field_name": "标题", "type": 1},
+        ]
+
+        result = ensure_table_fields(
+            app_id="app_id",
+            app_secret="app_secret",
+            app_token="app1",
+            table_id="tbl1",
+            required=[
+                ("在播最新季", 2),
+                ("首次发现日期", 5),
+                ("最近发现日期", 5),
+                ("发现次数", 2),
+            ],
+            renames=[],
+            dry_run=True,
+        )
+
+        created_names = [f["field_name"] for f in result["created"]]
+        assert "首次发现日期" in created_names
+        assert "最近发现日期" in created_names
+        assert "发现次数" in created_names
+
+        # 已存在字段不应在 created 中
+        existed_names = [f["field_name"] for f in result["existed"]]
+        assert "在播最新季" in existed_names
+
+    @patch("movietrace.feishu.schema_setup.fetch_tenant_access_token")
+    @patch("movietrace.feishu.schema_setup.list_table_fields")
+    def test_ensure_skips_existing_current_discovery_fields(self, mock_list_fields, mock_fetch_token):
+        """mock 场景：字段列表已含三个新字段时，dry_run 应在 existed 中包含它们。"""
+        mock_fetch_token.return_value = "mock_token"
+        # 现有字段已含 current discovery 三字段
+        mock_list_fields.return_value = [
+            {"field_id": "f1", "field_name": "在播最新季", "type": 2},
+            {"field_id": "f2", "field_name": "首次发现日期", "type": 5},
+            {"field_id": "f3", "field_name": "最近发现日期", "type": 5},
+            {"field_id": "f4", "field_name": "发现次数", "type": 2},
+        ]
+
+        result = ensure_table_fields(
+            app_id="app_id",
+            app_secret="app_secret",
+            app_token="app1",
+            table_id="tbl1",
+            required=[
+                ("在播最新季", 2),
+                ("首次发现日期", 5),
+                ("最近发现日期", 5),
+                ("发现次数", 2),
+            ],
+            renames=[],
+            dry_run=True,
+        )
+
+        existed_names = [f["field_name"] for f in result["existed"]]
+        assert "首次发现日期" in existed_names
+        assert "最近发现日期" in existed_names
+        assert "发现次数" in existed_names
+
+        # 没有需要创建的字段
+        assert len(result["created"]) == 0

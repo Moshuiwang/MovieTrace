@@ -10,6 +10,7 @@ from movietrace.feishu.sync import (
     _build_imdb_url,
     _build_tmdb_url,
     _compute_type_labels,
+    _list_discovery_records_by_keys,
     sync_table,
 )
 
@@ -138,7 +139,7 @@ class TestSyncTableFieldsExtension:
         source_summary = overrides.pop("source_summary", base_source_summary)
 
         base = {
-            "content_update_id": "discovery:tv:1396:2026-05-17",
+            "content_update_id": "discovery:tv:1396",
             "update_type": "new_discovery",
             "priority": "P2",
             "hot_score": 75.0,
@@ -159,12 +160,14 @@ class TestSyncTableFieldsExtension:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_sync_table_extends_fields_with_p1_24(
         self,
         mock_batch_update,
         mock_batch_create,
+        mock_list_discovery,
         mock_list_records,
         mock_ensure_fields,
         mock_fetch_token,
@@ -179,6 +182,7 @@ class TestSyncTableFieldsExtension:
             "dry_run": False,
         }
         mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {}
 
         # Create test JSON
         record = self._make_test_record()
@@ -228,12 +232,14 @@ class TestSyncTableFieldsExtension:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_sync_table_create_includes_ops_note_for_soap(
         self,
         mock_batch_update,
         mock_batch_create,
+        mock_list_discovery,
         mock_list_records,
         mock_ensure_fields,
         mock_fetch_token,
@@ -248,6 +254,7 @@ class TestSyncTableFieldsExtension:
             "dry_run": False,
         }
         mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {}
 
         source_summary = {
             "imdb_id": "tt1234567",
@@ -283,12 +290,14 @@ class TestSyncTableFieldsExtension:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_sync_table_update_excludes_ops_note(
         self,
         mock_batch_update,
         mock_batch_create,
+        mock_list_discovery,
         mock_list_records,
         mock_ensure_fields,
         mock_fetch_token,
@@ -302,9 +311,11 @@ class TestSyncTableFieldsExtension:
             "errors": [],
             "dry_run": False,
         }
-        # Record already exists
-        mock_list_records.return_value = {
-            "2026-05-17|discovery:tv:1396:2026-05-17": "record_id_123"
+        # new_season lookup (not used for this record, but must not raise)
+        mock_list_records.return_value = {}
+        # discovery stable key lookup: record already exists (D2: use stable key without date)
+        mock_list_discovery.return_value = {
+            "discovery:tv:1396": "record_id_123"
         }
 
         source_summary = {
@@ -336,16 +347,21 @@ class TestSyncTableFieldsExtension:
         updates = mock_batch_update.call_args[0][3]
         fields = updates[0]["fields"]
         assert "运营备注" not in fields
+        # Also verify other ops fields are excluded
+        assert "运营状态" not in fields
+        assert "供应商状态" not in fields
 
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_sync_table_no_legacy_season_field(
         self,
         mock_batch_update,
         mock_batch_create,
+        mock_list_discovery,
         mock_list_records,
         mock_ensure_fields,
         mock_fetch_token,
@@ -360,6 +376,7 @@ class TestSyncTableFieldsExtension:
             "dry_run": False,
         }
         mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {}
 
         record = self._make_test_record()
         json_content = json.dumps([record], ensure_ascii=False)
@@ -388,12 +405,14 @@ class TestSyncTableFieldsExtension:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_sync_table_calls_ensure_fields(
         self,
         mock_batch_update,
         mock_batch_create,
+        mock_list_discovery,
         mock_list_records,
         mock_ensure_fields,
         mock_fetch_token,
@@ -408,6 +427,7 @@ class TestSyncTableFieldsExtension:
             "dry_run": False,
         }
         mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {}
 
         record = self._make_test_record()
         json_content = json.dumps([record], ensure_ascii=False)
@@ -437,12 +457,14 @@ class TestSyncTableFieldsExtension:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_sync_table_handles_missing_source_summary(
         self,
         mock_batch_update,
         mock_batch_create,
+        mock_list_discovery,
         mock_list_records,
         mock_ensure_fields,
         mock_fetch_token,
@@ -457,6 +479,7 @@ class TestSyncTableFieldsExtension:
             "dry_run": False,
         }
         mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {}
 
         # Record without source_summary_json (legacy compatibility)
         record = self._make_test_record(source_summary_json="")
@@ -482,12 +505,14 @@ class TestSyncTableFieldsExtension:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_sync_table_movie_has_no_last_aired_season(
         self,
         mock_batch_update,
         mock_batch_create,
+        mock_list_discovery,
         mock_list_records,
         mock_ensure_fields,
         mock_fetch_token,
@@ -502,6 +527,7 @@ class TestSyncTableFieldsExtension:
             "dry_run": False,
         }
         mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {}
 
         source_summary = {
             "imdb_id": "tt0111161",
@@ -540,12 +566,14 @@ class TestSyncTableFieldsExtension:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_a_ku_max_season_written_as_integer(
         self,
         mock_batch_update,
         mock_batch_create,
+        mock_list_discovery,
         mock_list_records,
         mock_ensure_fields,
         mock_fetch_token,
@@ -554,6 +582,7 @@ class TestSyncTableFieldsExtension:
         mock_fetch_token.return_value = "token"
         mock_ensure_fields.return_value = {"created": [], "existed": [], "renamed": [], "errors": [], "dry_run": False}
         mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {}
 
         record = self._make_test_record(upstream_max_season=3)
         json_content = json.dumps([record], ensure_ascii=False)
@@ -571,12 +600,14 @@ class TestSyncTableFieldsExtension:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_a_ku_max_season_none_when_no_upstream(
         self,
         mock_batch_update,
         mock_batch_create,
+        mock_list_discovery,
         mock_list_records,
         mock_ensure_fields,
         mock_fetch_token,
@@ -585,6 +616,7 @@ class TestSyncTableFieldsExtension:
         mock_fetch_token.return_value = "token"
         mock_ensure_fields.return_value = {"created": [], "existed": [], "renamed": [], "errors": [], "dry_run": False}
         mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {}
 
         record = self._make_test_record(upstream_max_season=None)
         json_content = json.dumps([record], ensure_ascii=False)
@@ -601,12 +633,14 @@ class TestSyncTableFieldsExtension:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_episode_count_fields_written_when_present(
         self,
         mock_batch_update,
         mock_batch_create,
+        mock_list_discovery,
         mock_list_records,
         mock_ensure_fields,
         mock_fetch_token,
@@ -615,6 +649,7 @@ class TestSyncTableFieldsExtension:
         mock_fetch_token.return_value = "token"
         mock_ensure_fields.return_value = {"created": [], "existed": [], "renamed": [], "errors": [], "dry_run": False}
         mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {}
 
         record = self._make_test_record(upstream_total_eps=50, tmdb_total_episodes=48)
         json_content = json.dumps([record], ensure_ascii=False)
@@ -632,12 +667,14 @@ class TestSyncTableFieldsExtension:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_episode_count_fields_absent_when_none(
         self,
         mock_batch_update,
         mock_batch_create,
+        mock_list_discovery,
         mock_list_records,
         mock_ensure_fields,
         mock_fetch_token,
@@ -646,6 +683,7 @@ class TestSyncTableFieldsExtension:
         mock_fetch_token.return_value = "token"
         mock_ensure_fields.return_value = {"created": [], "existed": [], "renamed": [], "errors": [], "dry_run": False}
         mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {}
 
         record = self._make_test_record()  # no upstream_total_eps / tmdb_total_episodes
         json_content = json.dumps([record], ensure_ascii=False)
@@ -713,10 +751,11 @@ class TestSyncTableEnsureNotification:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_notifies_when_fields_created(
-        self, mock_update, mock_create, mock_list, mock_ensure,
+        self, mock_update, mock_create, mock_list_discovery, mock_list, mock_ensure,
         mock_token, mock_alert, mock_text,
     ):
         mock_token.return_value = "tok"
@@ -725,6 +764,7 @@ class TestSyncTableEnsureNotification:
             "existed": [], "renamed": [], "errors": [], "dry_run": False,
         }
         mock_list.return_value = {}
+        mock_list_discovery.return_value = {}
 
         with tempfile.TemporaryDirectory() as tmpdir:
             p = Path(tmpdir) / "latest.json"
@@ -747,10 +787,11 @@ class TestSyncTableEnsureNotification:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_no_notify_when_no_field_changes(
-        self, mock_update, mock_create, mock_list, mock_ensure,
+        self, mock_update, mock_create, mock_list_discovery, mock_list, mock_ensure,
         mock_token, mock_alert, mock_text,
     ):
         mock_token.return_value = "tok"
@@ -759,6 +800,7 @@ class TestSyncTableEnsureNotification:
             "errors": [], "dry_run": False,
         }
         mock_list.return_value = {}
+        mock_list_discovery.return_value = {}
 
         with tempfile.TemporaryDirectory() as tmpdir:
             p = Path(tmpdir) / "latest.json"
@@ -804,10 +846,11 @@ class TestSyncTableEnsureNotification:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     def test_no_notify_when_chat_id_empty(
-        self, mock_update, mock_create, mock_list, mock_ensure,
+        self, mock_update, mock_create, mock_list_discovery, mock_list, mock_ensure,
         mock_token, mock_alert, mock_text,
     ):
         mock_token.return_value = "tok"
@@ -816,6 +859,7 @@ class TestSyncTableEnsureNotification:
             "existed": [], "renamed": [], "errors": [], "dry_run": False,
         }
         mock_list.return_value = {}
+        mock_list_discovery.return_value = {}
 
         with tempfile.TemporaryDirectory() as tmpdir:
             p = Path(tmpdir) / "latest.json"
@@ -939,17 +983,19 @@ class TestBatchCreateGivesUpAndPersists:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     @patch("movietrace.feishu.sync.time.sleep")
     def test_batch_create_gives_up_after_3_retries_and_persists_failure(
-        self, mock_sleep, mock_upd, mock_create, mock_list, mock_ensure,
+        self, mock_sleep, mock_upd, mock_create, mock_list_discovery, mock_list, mock_ensure,
         mock_token, mock_text, mock_alert,
     ):
         """全失败时 feishu_sync_failures 有对应记录，operation='create'，retry_count=3，send_alert 被调用。"""
         mock_token.return_value = "token"
         mock_ensure.return_value = {"created": [], "existed": [], "renamed": [], "errors": [], "dry_run": False}
         mock_list.return_value = {}
+        mock_list_discovery.return_value = {}
         mock_create.side_effect = RuntimeError("api error")
 
         conn, tmpdir = _make_test_db()
@@ -988,11 +1034,12 @@ class TestBatchUpdatePartialFailureSplitsAndPersists:
     @patch("movietrace.feishu.sync.fetch_tenant_access_token")
     @patch("movietrace.feishu.sync.ensure_table_fields")
     @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
     @patch("movietrace.feishu.sync.batch_create_records")
     @patch("movietrace.feishu.sync.batch_update_records")
     @patch("movietrace.feishu.sync.time.sleep")
     def test_batch_update_partial_failure_splits_and_persists(
-        self, mock_sleep, mock_upd, mock_create, mock_list, mock_ensure,
+        self, mock_sleep, mock_upd, mock_create, mock_list_discovery, mock_list, mock_ensure,
         mock_token, mock_text, mock_alert,
     ):
         """100 条 update 整批失败 → 拆单条 → 5 条仍失败 → 5 条进 feishu_sync_failures。"""
@@ -1001,9 +1048,11 @@ class TestBatchUpdatePartialFailureSplitsAndPersists:
         mock_create.return_value = None
 
         # 构造 100 条记录（全部已存在 → update 路径）
+        # new_discovery with discovery: prefix → goes through existing_discovery lookup
         n = 100
-        existing = {f"2026-05-17|discovery:tv:{i}:2026-05-17": f"rec_{i}" for i in range(n)}
-        mock_list.return_value = existing
+        existing = {f"discovery:tv:{i}:2026-05-17": f"rec_{i}" for i in range(n)}
+        mock_list.return_value = {}  # new_season lookup returns nothing
+        mock_list_discovery.return_value = existing  # discovery stable key lookup
 
         # batch_update_records: 整批失败，但单条 rec_0..rec_4 也失败，其余成功
         call_tracker = {"batch_calls": 0}
@@ -1172,3 +1221,389 @@ class TestReplayUnresolvedFailures:
         finally:
             conn.close()
             import shutil; shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ── P1.57h: Discovery stable key upsert tests ─────────────────────────────────
+
+
+class TestDiscoveryStableKeyUpsert:
+    """P1.57h: discovery records use stable key (no date) for upsert."""
+
+    ENSURE_OK = {"created": [], "existed": [], "renamed": [], "errors": [], "dry_run": False}
+
+    def _make_discovery_record(self, tmdb_id: str = "1396", run_date: str = "2026-05-17", **kwargs) -> dict:
+        base = {
+            "content_update_id": f"discovery:tv:{tmdb_id}",
+            "update_type": "new_discovery",
+            "priority": "P2",
+            "hot_score": 75.0,
+            "title": "Grey's Anatomy",
+            "tmdb_id": tmdb_id,
+            "source_data_status": {},
+            "event_written_at_utc": f"{run_date} 10:30:00",
+            "created_at": f"{run_date} 10:30:00",
+            "source_summary_json": json.dumps({"score_breakdown": {}}, ensure_ascii=False),
+        }
+        base.update(kwargs)
+        return base
+
+    def _make_new_season_record(self, tmdb_tv_id: str = "2190", run_date: str = "2026-05-17", **kwargs) -> dict:
+        base = {
+            "content_update_id": f"new_season:{tmdb_tv_id}:S5",
+            "update_type": "new_season",
+            "priority": "P1",
+            "hot_score": 90.0,
+            "title": "Survivor",
+            "tmdb_tv_id": tmdb_tv_id,
+            "source_data_status": {},
+            "event_written_at_utc": f"{run_date} 10:30:00",
+            "created_at": f"{run_date} 10:30:00",
+            "source_summary_json": json.dumps({"score_breakdown": {}}, ensure_ascii=False),
+        }
+        base.update(kwargs)
+        return base
+
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_same_discovery_key_across_two_days_updates_not_creates(
+        self,
+        mock_batch_update,
+        mock_batch_create,
+        mock_list_discovery,
+        mock_list_records,
+        mock_ensure_fields,
+        mock_fetch_token,
+    ):
+        """验收1: 同一 discovery key 跨两天 sync，第二天 mock 命中稳定键 → update 而非 create。"""
+        mock_fetch_token.return_value = "token"
+        mock_ensure_fields.return_value = self.ENSURE_OK
+        mock_list_records.return_value = {}
+        # Day 2: discovery record already exists by stable key
+        mock_list_discovery.return_value = {"discovery:tv:1396": "existing_record_id"}
+
+        record = self._make_discovery_record(run_date="2026-05-18")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "latest.json"
+            p.write_text(json.dumps([record], ensure_ascii=False))
+            result = sync_table(
+                json_path=str(p), run_date="2026-05-18",
+                app_id="a", app_secret="s", app_token="t", table_id="tbl",
+            )
+
+        assert result["updated"] == 1
+        assert result["created"] == 0
+        mock_batch_update.assert_called_once()
+        mock_batch_create.assert_not_called()
+        # Verify record_id passed to update is the existing one
+        updates = mock_batch_update.call_args[0][3]
+        assert updates[0]["record_id"] == "existing_record_id"
+
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_discovery_update_excludes_ops_fields(
+        self,
+        mock_batch_update,
+        mock_batch_create,
+        mock_list_discovery,
+        mock_list_records,
+        mock_ensure_fields,
+        mock_fetch_token,
+    ):
+        """验收2: 更新已有 discovery 行时不覆盖运营状态、供应商状态、运营备注。"""
+        mock_fetch_token.return_value = "token"
+        mock_ensure_fields.return_value = self.ENSURE_OK
+        mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {"discovery:tv:1396": "rec_abc"}
+
+        record = self._make_discovery_record(
+            source_summary_json=json.dumps({
+                "score_breakdown": {},
+                "ops_note": "auto degraded",
+            }, ensure_ascii=False),
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "latest.json"
+            p.write_text(json.dumps([record], ensure_ascii=False))
+            sync_table(
+                json_path=str(p), run_date="2026-05-17",
+                app_id="a", app_secret="s", app_token="t", table_id="tbl",
+            )
+
+        mock_batch_update.assert_called_once()
+        updates = mock_batch_update.call_args[0][3]
+        fields = updates[0]["fields"]
+        assert "运营状态" not in fields
+        assert "供应商状态" not in fields
+        assert "运营备注" not in fields
+        assert "负责人" not in fields
+
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_discovery_update_writes_date_and_count_fields(
+        self,
+        mock_batch_update,
+        mock_batch_create,
+        mock_list_discovery,
+        mock_list_records,
+        mock_ensure_fields,
+        mock_fetch_token,
+    ):
+        """验收3: 更新 discovery 时写入最近发现日期和发现次数。"""
+        mock_fetch_token.return_value = "token"
+        mock_ensure_fields.return_value = self.ENSURE_OK
+        mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {"discovery:tv:1396": "rec_xyz"}
+
+        record = self._make_discovery_record(
+            last_discovered_date="2026-05-18",
+            discovery_count=3,
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "latest.json"
+            p.write_text(json.dumps([record], ensure_ascii=False))
+            sync_table(
+                json_path=str(p), run_date="2026-05-18",
+                app_id="a", app_secret="s", app_token="t", table_id="tbl",
+            )
+
+        mock_batch_update.assert_called_once()
+        updates = mock_batch_update.call_args[0][3]
+        fields = updates[0]["fields"]
+        assert "最近发现日期" in fields
+        assert isinstance(fields["最近发现日期"], int)
+        assert "发现次数" in fields
+        assert fields["发现次数"] == 3
+
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_new_season_uses_event_key_path_unaffected(
+        self,
+        mock_batch_update,
+        mock_batch_create,
+        mock_list_discovery,
+        mock_list_records,
+        mock_ensure_fields,
+        mock_fetch_token,
+    ):
+        """验收4: new_season 行走旧事件键路径，不受 discovery 稳定 key 逻辑干扰。"""
+        mock_fetch_token.return_value = "token"
+        mock_ensure_fields.return_value = self.ENSURE_OK
+        # new_season record already exists under event key
+        mock_list_records.return_value = {
+            "2026-05-17|new_season:2190:S5": "season_rec_id"
+        }
+        mock_list_discovery.return_value = {}
+
+        record = self._make_new_season_record(run_date="2026-05-17")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "latest.json"
+            p.write_text(json.dumps([record], ensure_ascii=False))
+            result = sync_table(
+                json_path=str(p), run_date="2026-05-17",
+                app_id="a", app_secret="s", app_token="t", table_id="tbl",
+            )
+
+        assert result["updated"] == 1
+        assert result["created"] == 0
+        mock_batch_update.assert_called_once()
+        updates = mock_batch_update.call_args[0][3]
+        assert updates[0]["record_id"] == "season_rec_id"
+        # new_season update DOES include all fields (no ops field exclusion)
+        fields = updates[0]["fields"]
+        assert "同步批次" in fields
+        assert fields["同步批次"] == "2026-05-17"
+
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_sync_batch_field_written_as_run_date_on_create_and_update(
+        self,
+        mock_batch_update,
+        mock_batch_create,
+        mock_list_discovery,
+        mock_list_records,
+        mock_ensure_fields,
+        mock_fetch_token,
+    ):
+        """验收5: 同步批次写为最新 run_date（create 和 update 都写）。"""
+        mock_fetch_token.return_value = "token"
+        mock_ensure_fields.return_value = self.ENSURE_OK
+        # One new (create), one existing (update)
+        mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {"discovery:tv:9999": "existing_id"}
+
+        records = [
+            self._make_discovery_record(tmdb_id="1396", run_date="2026-05-20"),  # new → create
+            self._make_discovery_record(tmdb_id="9999", run_date="2026-05-20"),  # existing → update
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "latest.json"
+            p.write_text(json.dumps(records, ensure_ascii=False))
+            result = sync_table(
+                json_path=str(p), run_date="2026-05-20",
+                app_id="a", app_secret="s", app_token="t", table_id="tbl",
+            )
+
+        assert result["created"] == 1
+        assert result["updated"] == 1
+
+        # Check create record has 同步批次 = run_date
+        create_fields = mock_batch_create.call_args[0][3][0]["fields"]
+        assert create_fields["同步批次"] == "2026-05-20"
+
+        # Check update record has 同步批次 = run_date (system field, included in update)
+        updates = mock_batch_update.call_args[0][3]
+        update_fields = updates[0]["fields"]
+        assert update_fields["同步批次"] == "2026-05-20"
+
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_discovery_create_writes_all_date_fields(
+        self,
+        mock_batch_update,
+        mock_batch_create,
+        mock_list_discovery,
+        mock_list_records,
+        mock_ensure_fields,
+        mock_fetch_token,
+    ):
+        """验收: 新创建 discovery 行时写入首次发现日期、最近发现日期、发现次数。"""
+        mock_fetch_token.return_value = "token"
+        mock_ensure_fields.return_value = self.ENSURE_OK
+        mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {}  # no existing record → create
+
+        record = self._make_discovery_record(
+            first_discovered_date="2026-05-15",
+            last_discovered_date="2026-05-18",
+            discovery_count=4,
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "latest.json"
+            p.write_text(json.dumps([record], ensure_ascii=False))
+            result = sync_table(
+                json_path=str(p), run_date="2026-05-18",
+                app_id="a", app_secret="s", app_token="t", table_id="tbl",
+            )
+
+        assert result["created"] == 1
+        mock_batch_create.assert_called_once()
+        fields = mock_batch_create.call_args[0][3][0]["fields"]
+        assert "首次发现日期" in fields
+        assert isinstance(fields["首次发现日期"], int)
+        assert "最近发现日期" in fields
+        assert isinstance(fields["最近发现日期"], int)
+        assert "发现次数" in fields
+        assert fields["发现次数"] == 4
+
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_discovery_content_update_id_written_as_stable_key(
+        self,
+        mock_batch_update,
+        mock_batch_create,
+        mock_list_discovery,
+        mock_list_records,
+        mock_ensure_fields,
+        mock_fetch_token,
+    ):
+        """验收: create 时 content_update_id 写入稳定 key（不含日期前缀）。"""
+        mock_fetch_token.return_value = "token"
+        mock_ensure_fields.return_value = self.ENSURE_OK
+        mock_list_records.return_value = {}
+        mock_list_discovery.return_value = {}
+
+        record = self._make_discovery_record()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "latest.json"
+            p.write_text(json.dumps([record], ensure_ascii=False))
+            sync_table(
+                json_path=str(p), run_date="2026-05-17",
+                app_id="a", app_secret="s", app_token="t", table_id="tbl",
+            )
+
+        fields = mock_batch_create.call_args[0][3][0]["fields"]
+        assert fields["content_update_id"] == "discovery:tv:1396"
+        # Must NOT contain the run_date prefix
+        assert "2026-05-17" not in fields["content_update_id"]
+
+    @patch("movietrace.feishu.sync.fetch_tenant_access_token")
+    @patch("movietrace.feishu.sync.ensure_table_fields")
+    @patch("movietrace.feishu.sync._list_records_for_date")
+    @patch("movietrace.feishu.sync._list_discovery_records_by_keys")
+    @patch("movietrace.feishu.sync.batch_create_records")
+    @patch("movietrace.feishu.sync.batch_update_records")
+    def test_discovery_update_does_not_overwrite_first_seen_fields(
+        self,
+        mock_batch_update,
+        mock_batch_create,
+        mock_list_discovery,
+        mock_list_records,
+        mock_ensure_fields,
+        mock_fetch_token,
+    ):
+        """A4: discovery update branch must NOT include '发现日期' or '首次发现日期'.
+        Overwriting these each day would make every sync look like first discovery.
+        Update branch MUST include '最近发现日期' and '发现次数'.
+        """
+        mock_fetch_token.return_value = "token"
+        mock_ensure_fields.return_value = self.ENSURE_OK
+        mock_list_records.return_value = {}
+        # Existing record → update path
+        mock_list_discovery.return_value = {"discovery:tv:1396": "rec_a4_test"}
+
+        record = self._make_discovery_record(
+            last_discovered_date="2026-05-20",
+            first_discovered_date="2026-05-10",
+            discovery_count=5,
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "latest.json"
+            p.write_text(json.dumps([record], ensure_ascii=False))
+            sync_table(
+                json_path=str(p), run_date="2026-05-20",
+                app_id="a", app_secret="s", app_token="t", table_id="tbl",
+            )
+
+        mock_batch_update.assert_called_once()
+        updates = mock_batch_update.call_args[0][3]
+        fields = updates[0]["fields"]
+        # A4: must NOT overwrite first-seen fields
+        assert "发现日期" not in fields, (
+            "'发现日期' must not appear in discovery update fields — "
+            "it would overwrite the first-seen date with today's run_date"
+        )
+        assert "首次发现日期" not in fields, (
+            "'首次发现日期' must not appear in discovery update fields"
+        )
+        # Must still update the rolling stats
+        assert "最近发现日期" in fields
+        assert "发现次数" in fields
+        assert fields["发现次数"] == 5

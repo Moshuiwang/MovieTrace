@@ -83,14 +83,14 @@ class TestPullHotTable(unittest.TestCase):
 
     def test_pull_hot_table_filters_by_date(self):
         from movietrace.feedback.pull import pull_hot_table
-        from datetime import datetime
+        from datetime import datetime, timedelta
         from zoneinfo import ZoneInfo
 
         TZ = ZoneInfo("Asia/Shanghai")
         # Old record: 30 days ago
-        old_ms = int((datetime(2026, 4, 15, tzinfo=TZ)).timestamp() * 1000)
+        old_ms = int((datetime.now(TZ) - timedelta(days=30)).timestamp() * 1000)
         # Recent record: today
-        recent_ms = int((datetime(2026, 5, 16, tzinfo=TZ)).timestamp() * 1000)
+        recent_ms = int(datetime.now(TZ).timestamp() * 1000)
 
         records = [
             _make_hot_record(record_id="old", discovery_date_ms=old_ms),
@@ -114,7 +114,7 @@ class TestPullHotTable(unittest.TestCase):
         from zoneinfo import ZoneInfo
 
         TZ = ZoneInfo("Asia/Shanghai")
-        today_ms = int(datetime(2026, 5, 16, tzinfo=TZ).timestamp() * 1000)
+        today_ms = int(datetime.now(TZ).timestamp() * 1000)
 
         records = [_make_hot_record(
             record_id="r1",
@@ -157,7 +157,7 @@ class TestPullHotTable(unittest.TestCase):
         from zoneinfo import ZoneInfo
 
         TZ = ZoneInfo("Asia/Shanghai")
-        today_ms = int(datetime(2026, 5, 16, tzinfo=TZ).timestamp() * 1000)
+        today_ms = int(datetime.now(TZ).timestamp() * 1000)
 
         page1 = {"code": 0, "data": {"items": [_make_hot_record(record_id="r1", discovery_date_ms=today_ms)], "has_more": True, "page_token": "tok1"}}
         page2 = {"code": 0, "data": {"items": [_make_hot_record(record_id="r2", discovery_date_ms=today_ms)], "has_more": False}}

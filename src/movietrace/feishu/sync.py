@@ -151,6 +151,52 @@ def _list_records_for_date(
     return lookup
 
 
+def _list_discovery_records_by_keys(
+    token: str, app_token: str, table_id: str, discovery_keys: list[str]
+) -> dict[str, str]:
+    """Fetch records matching any of the given stable discovery keys.
+    Returns {discovery_key: record_id}.
+    Uses OR filter in batches of 20 (Feishu filter limit).
+    """
+    if not discovery_keys:
+        return {}
+    url = f"{OPEN_API_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/records/search"
+    lookup: dict[str, str] = {}
+    batch_size = 20
+    for i in range(0, len(discovery_keys), batch_size):
+        batch = discovery_keys[i:i + batch_size]
+        page_token = ""
+        while True:
+            payload: dict = {
+                "filter": {
+                    "conjunction": "or",
+                    "conditions": [
+                        {"field_name": "content_update_id", "operator": "is", "value": [k]}
+                        for k in batch
+                    ],
+                },
+                "page_size": 500,
+            }
+            if page_token:
+                payload["page_token"] = page_token
+            resp = request_json("POST", url, token=token, payload=payload)
+            if resp.get("code") != 0:
+                raise RuntimeError(f"list discovery records failed: {resp}")
+            data = resp.get("data", {})
+            for item in data.get("items", []):
+                fields = item.get("fields", {})
+                cid_val = unwrap_text_field(fields.get("content_update_id", ""))
+                record_id = item.get("record_id", "")
+                if cid_val and record_id:
+                    lookup[cid_val] = record_id
+            if not data.get("has_more"):
+                break
+            page_token = data.get("page_token", "")
+            if not page_token:
+                break
+    return lookup
+
+
 # ── Retry / failure persistence helpers ──────────────────────────────────────
 
 
@@ -421,10 +467,24 @@ def sync_table(
             receive_id_type=notify_chat_id_type,
         )
 
-    # 2. Fetch existing records for this date
-    print(f"加载 {run_date} 已有记录...")
-    existing_lookup = _list_records_for_date(token, app_token, table_id, run_date)
-    print(f"  已有记录: {len(existing_lookup)} 条")
+    # 2. Fetch existing records — split by update_type
+    # new_season uses event key (run_date|cid); new_discovery uses stable key (cid)
+    discovery_keys_raw = [
+        rec.get("content_update_id", "")
+        for rec in records
+        if rec.get("update_type") == "new_discovery"
+        and rec.get("content_update_id", "").startswith("discovery:")
+    ]
+    # C2: deduplicate query keys (order-preserving); records list itself is not modified
+    # so routing logic downstream still operates on the full records list.
+    discovery_keys = list(dict.fromkeys(discovery_keys_raw))
+    print(f"加载 {run_date} 已有 new_season 记录...")
+    existing_new_season = _list_records_for_date(token, app_token, table_id, run_date)
+    print(f"  已有 new_season 记录: {len(existing_new_season)} 条")
+
+    print(f"加载 {len(discovery_keys)} 个 discovery 稳定键记录（去重后）...")
+    existing_discovery = _list_discovery_records_by_keys(token, app_token, table_id, discovery_keys)
+    print(f"  命中 discovery 记录: {len(existing_discovery)} 条")
 
     # 3. Build records, separate creates from updates
     print("同步记录...")
@@ -444,7 +504,13 @@ def sync_table(
     for i, rec in enumerate(records):
         try:
             cid = rec.get("content_update_id", "")
-            snapshot_key = f"{run_date}|{cid}"
+            ut = rec.get("update_type", "")
+            if ut == "new_discovery" and cid.startswith("discovery:"):
+                snapshot_key = cid   # stable key for discovery (no date)
+                feishu_cid = cid     # write stable key to content_update_id field
+            else:
+                snapshot_key = f"{run_date}|{cid}"  # event key for new_season
+                feishu_cid = snapshot_key
 
             source_status = rec.get("source_data_status")
             source_status_str = ""
@@ -475,7 +541,7 @@ def sync_table(
 
             fields: dict = {
                 "发现日期":          _to_epoch_ms(run_date),
-                "content_update_id": snapshot_key,
+                "content_update_id": feishu_cid,
                 "标题":             str(rec.get("title", "")),
                 "类型":             _derive_content_type(rec),
                 "更新类型":          str(rec.get("update_type", "")),
@@ -539,7 +605,6 @@ def sync_table(
                     else:  # 数字和其他类型
                         fields[k] = v
 
-            ut = rec.get("update_type", "")
             if ut == "new_discovery":
                 new_discovery_count += 1
             elif ut == "new_season":
@@ -553,8 +618,33 @@ def sync_table(
             elif pri == "P2":
                 p2_count += 1
 
-            if snapshot_key in existing_lookup:
-                to_update.append((existing_lookup[snapshot_key], fields))
+            # Route to correct lookup table based on update_type
+            if ut == "new_discovery" and cid.startswith("discovery:"):
+                existing_rec = existing_discovery.get(snapshot_key)
+            else:
+                existing_rec = existing_new_season.get(snapshot_key)
+
+            if existing_rec:
+                if ut == "new_discovery" and cid.startswith("discovery:"):
+                    # discovery update: only write system fields, preserve ops fields
+                    system_fields = {k: v for k, v in fields.items()
+                                     if k not in ("运营状态", "供应商状态", "运营备注", "负责人")}
+                    # A4: remove "发现日期" from discovery update — it is a "首次" semantic
+                    # field set on create only. Overwriting it daily would make every sync
+                    # look like the item was first discovered today, losing the real first-seen date.
+                    system_fields.pop("发现日期", None)
+                    # Also ensure "首次发现日期" is never written in the update branch.
+                    system_fields.pop("首次发现日期", None)
+                    # P1.57h: update current discovery date/count fields
+                    if rec.get("last_discovered_date"):
+                        last_disc_ms = _to_epoch_ms(rec["last_discovered_date"])
+                        if last_disc_ms is not None:
+                            system_fields["最近发现日期"] = last_disc_ms
+                    if rec.get("discovery_count") is not None:
+                        system_fields["发现次数"] = int(rec["discovery_count"])
+                    to_update.append((existing_rec, system_fields))
+                else:
+                    to_update.append((existing_rec, fields))
                 stats["updated"] += 1
             else:
                 fields["运营状态"] = "待看"
@@ -562,6 +652,18 @@ def sync_table(
                 # P1.24: Soap 降权时自动填入运营备注(create-only，不覆盖人工编辑)
                 if ss.get("ops_note"):
                     fields["运营备注"] = ss["ops_note"]
+                # P1.57h: write current discovery fields on create
+                if ut == "new_discovery":
+                    if rec.get("first_discovered_date"):
+                        first_disc_ms = _to_epoch_ms(rec["first_discovered_date"])
+                        if first_disc_ms is not None:
+                            fields["首次发现日期"] = first_disc_ms
+                    if rec.get("last_discovered_date"):
+                        last_disc_ms = _to_epoch_ms(rec["last_discovered_date"])
+                        if last_disc_ms is not None:
+                            fields["最近发现日期"] = last_disc_ms
+                    if rec.get("discovery_count") is not None:
+                        fields["发现次数"] = int(rec["discovery_count"])
                 # 负责人 omitted: user field cannot accept empty string
                 to_create.append({"fields": fields})
                 stats["created"] += 1
