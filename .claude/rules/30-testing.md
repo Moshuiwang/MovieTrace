@@ -24,7 +24,7 @@ PYTHONPATH=src python -m pytest -k "<pattern>"     # 关键词
 - 不按"实现"命名（如 `test_database_helper.py`）
 - 单测函数 `test_<行为>_<期望结果>`（如 `test_compute_gaps_excludes_a_lib_zero`）
 
-## 失败处置（与 [`10-validation.md`](10-validation.md) 联动）
+## 失败处置（与 [`00-core-behaviors.md`](00-core-behaviors.md) "验证与完成判定" 联动）
 
 - ❌ 不允许：删测试以"修复"问题
 - ❌ 不允许：测试失败状态下继续开发新功能

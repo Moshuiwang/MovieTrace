@@ -36,7 +36,7 @@
 | 运营反馈回流 + 周报 | `pull-feishu-feedback` / `export-feedback-report` | 每周日手动 |
 | 失败告警 | `notify-feishu` | 异常时自动 |
 
-所有命令在 [`docs/context_map.md`](docs/context_map.md) § 3 有完整索引。
+所有命令运行 `PYTHONPATH=src python -m movietrace.cli --help` 查看完整索引。
 
 **V1 不做**（详见 [`SCOPE.md`](SCOPE.md)）：用户画像、目标用户契合度评估（V2 LLM 范围）；新集级别（episode）更新追踪（V2 backlog）；自动给供应商发起采购单。
 
@@ -57,11 +57,11 @@ pip install -r requirements.txt
 
 # 3. 初始化或检查数据库
 sqlite3 data/movietrace.db "select max(version) from schema_migrations;"
-# 预期：17
+# 预期：19
 
 # 4. 跑测试（不消耗 API）
 PYTHONPATH=src python -m pytest tests/ -v
-# 预期：623 passed
+# 最近记录：693 passed（以 STATE.md 为准）
 
 # 5. 跑一次 dry-run 看输出
 PYTHONPATH=src python -m movietrace.cli daily-discover --dry-run
@@ -73,6 +73,8 @@ PYTHONPATH=src python -m movietrace.cli inspect-baseline
 ---
 
 ## 数据流速览
+
+> 当前代码仍使用 ADR-0012 的 `content_updates` discovery 事件历史模型；[ADR-0016](docs/decisions/0016-current-discovery-with-observations.md) 已接受，P1.57a schema 已具备“当前发现项 + observation 留痕”，pipeline/export/Feishu 切换待后续 P1.57 任务完成。
 
 ```
 TMDb / Trakt / OMDb / FlixPatrol
@@ -102,7 +104,7 @@ A 库（upstream_programs/episodes，每次手动 import 刷新）
   content_updates（new_season）+ 飞书"A库缺口"子表
 ```
 
-完整表结构、字段含义、索引、migrations：[`docs/context_map.md`](docs/context_map.md) § 5。
+完整表结构、字段含义、索引、migrations：[`.claude/rules/24-db-schema-map.md`](.claude/rules/24-db-schema-map.md)。
 
 ---
 
@@ -110,12 +112,12 @@ A 库（upstream_programs/episodes，每次手动 import 刷新）
 
 | 你是 | 先读 | 然后看 |
 |------|------|--------|
-| 第一次接手 | 本文件 → [`SCOPE.md`](SCOPE.md) → [`docs/context_map.md`](docs/context_map.md) | [`docs/operations/runbook.md`](docs/operations/runbook.md) |
+| 第一次接手 | 本文件 → [`SCOPE.md`](SCOPE.md) | [`docs/operations/runbook.md`](docs/operations/runbook.md) |
 | 运营 / 使用者 | 本文件 | [`docs/operations/feishu_feedback_spec.md`](docs/operations/feishu_feedback_spec.md)（飞书字段怎么填）|
-| 开发者改代码 | [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) → [`STATE.md`](STATE.md) → [`docs/context_map.md`](docs/context_map.md) | [`docs/tasks/TEMPLATE.md`](docs/tasks/TEMPLATE.md) + [`docs/decisions/`](docs/decisions/) |
+| 开发者改代码 | [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) → [`STATE.md`](STATE.md) | [`docs/tasks/TEMPLATE.md`](docs/tasks/TEMPLATE.md) + [`docs/decisions/`](docs/decisions/) |
 | AI 协作 | [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md)（**强制 12 条规则**）| [`STATE.md`](STATE.md) → 任务包 |
 | 项目状态 | [`STATE.md`](STATE.md) | [`docs/history/phase1_state_archive.md`](docs/history/phase1_state_archive.md)（先 `rg`）|
-| 决策背景 | [`docs/decisions/README.md`](docs/decisions/README.md) | ADR-0007（系统翻转）/ 0012（事件历史化）/ 0014（schema 清理）/ 0015（飞书文档导入）|
+| 决策背景 | [`docs/decisions/README.md`](docs/decisions/README.md) | ADR-0007（系统翻转）/ 0012（事件历史化）/ 0014（schema 清理）/ 0015（飞书文档导入）/ 0016（current discovery）|
 
 ---
 
@@ -129,4 +131,4 @@ Python 3.12 · SQLite · 仅 stdlib + `requests` 类小依赖（具体见 `requi
 
 ## 项目状态
 
-V1 全部任务包已完成；当前处于 **V1 观察期**，等运营连续用 1–2 个月后用周报数据评估 V2 启动条件。详见 [`STATE.md`](STATE.md) 头部和 [`docs/product_roadmap.md`](docs/product_roadmap.md)。
+V1 已上线，当前处于 **V1 观察期**。ADR-0016 已决定将 discovery 输出收敛为 current discovery + observation；P1.57a schema 已完成，后续 P1.57b-l 会继续接入 repository、pipeline、export、Feishu 和 shadow cron。详见 [`STATE.md`](STATE.md)。

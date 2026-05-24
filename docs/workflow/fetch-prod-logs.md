@@ -151,5 +151,4 @@ ls -lh "$DEV_LOG_DIR"
 
 ## 相关资源
 
-- 生产部署链路：[`docs/context_map.md § 生产部署`](../context_map.md)
 - 日志生成位置：[`scripts/daily_run.sh`](../../scripts/daily_run.sh)（生产 cron 脚本）

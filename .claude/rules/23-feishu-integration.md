@@ -53,4 +53,4 @@ P1.21.9 起改用 `drive/v1/import_task`（不是 docx blocks），需要 `drive
 
 ## 三张子表
 
-详见 [`docs/context_map.md § 3`](../../docs/context_map.md)。修改子表结构前必须先在飞书 UI 同步字段定义，再改代码。
+修改子表结构前必须先在飞书 UI 同步字段定义，再改代码。表结构和飞书字段映射见 [`24-db-schema-map.md`](24-db-schema-map.md) + `src/movietrace/feishu/schema_setup.py`。

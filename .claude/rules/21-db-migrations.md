@@ -41,4 +41,4 @@ include: ["src/movietrace/db/**"]
 
 ## 数据流参考
 
-完整数据流见 [`docs/context_map.md § 5`](../../docs/context_map.md)。
+完整 schema、表关系、数据流：[`24-db-schema-map.md`](24-db-schema-map.md)。

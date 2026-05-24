@@ -1,10 +1,9 @@
 # CLAUDE.md — MovieTrace 协作宪法
 
 > Solo 开发者 + AI 中文协作。本文件是**总纲**（≤ 60 行）；细则按场景 Read 加载。
-> 状态：[`STATE.md`](STATE.md) · 边界：[`SCOPE.md`](SCOPE.md) · 地图：[`docs/context_map.md`](docs/context_map.md)
-> Codex / 其他工具入口：[`AGENTS.md`](AGENTS.md)（一行指针 → 本文件）
+> 状态：[`STATE.md`](STATE.md) · 边界：[`SCOPE.md`](SCOPE.md) · Codex / 其他工具入口：[`AGENTS.md`](AGENTS.md)（一行指针 → 本文件）
 
-**Boot Order**：STATE → SCOPE → context_map → 当前任务包。历史层先 `rg` 再读片段，不整篇读。
+**Boot Order**：STATE → SCOPE → 当前任务包。代码结构 `ls src/movietrace/` 探索；DB schema、表关系、数据流按 Rule Index lazy load（[`.claude/rules/24-db-schema-map.md`](.claude/rules/24-db-schema-map.md)）。历史层先 `rg` 再读片段，不整篇读。
 
 ---
 
@@ -27,24 +26,13 @@ PYTHONPATH=src python -m movietrace.cli daily-discover --dry-run   # 日发现 d
 git status --short --branch                                        # 工作树状态
 ```
 
-完整 CLI 与排障：[`docs/context_map.md § 3`](docs/context_map.md) · [`docs/workflow/troubleshooting.md`](docs/workflow/troubleshooting.md)
+CLI 列表：`PYTHONPATH=src python -m movietrace.cli --help` · 排障：[`docs/workflow/troubleshooting.md`](docs/workflow/troubleshooting.md)
 
 ---
 
 ## Git 工作流
 
-`main` 已启用分支保护，**禁止直接 push**；需要进入 `main` 的变更必须走 PR，但 Agent 只有在人类事前或当下明确确认后才能创建 PR。详细规则见 [`.claude/rules/50-git-workflow.md`](.claude/rules/50-git-workflow.md)。
-
-```bash
-git checkout -b feat/<task-id>-<slug>   # 每个任务包开一个分支
-# ... 开发、测试、验证 ...
-gh pr create --base main --title "..."  # 仅在人类明确确认开 PR 后执行
-git checkout main && git pull           # 合并后同步本地 main
-```
-
-- 分支命名：`feat/`、`fix/`、`chore/` 前缀 + 任务包 ID + 简短描述
-- PR 标题遵循 Conventional Commit 格式
-- auto-merge workflow 已配置：PR 创建后可能自动 squash merge，因此创建 PR 前必须有人类确认
+`main` 分支保护，禁止直接 push；PR 必须经人类事前/当下明确确认才能创建（auto-merge 已配置）。分支命名、commit 前缀、PR 前后检查、合并后同步 → [`.claude/rules/50-git-workflow.md`](.claude/rules/50-git-workflow.md)。
 
 ---
 
@@ -54,9 +42,12 @@ git checkout main && git pull           # 合并后同步本地 main
 |---|---|
 | 任何编辑前 | [`.claude/rules/00-core-behaviors.md`](.claude/rules/00-core-behaviors.md) · [`.claude/rules/40-gotchas.md`](.claude/rules/40-gotchas.md) |
 | 改 `src/**` · `scripts/**` | [`.claude/rules/20-python-and-sql.md`](.claude/rules/20-python-and-sql.md) |
-| 改 `src/movietrace/db/**` | [`.claude/rules/21-db-migrations.md`](.claude/rules/21-db-migrations.md) |
+| 改 `src/movietrace/db/**`（schema / migration）| [`.claude/rules/21-db-migrations.md`](.claude/rules/21-db-migrations.md) |
+| 写 / 改 SQL 查询；查表结构 / 字段 / 唯一索引 / 数据流 | [`.claude/rules/24-db-schema-map.md`](.claude/rules/24-db-schema-map.md) |
 | 改 `src/movietrace/sources/**` | [`.claude/rules/22-sources-compliance.md`](.claude/rules/22-sources-compliance.md) |
 | 改 `src/movietrace/feishu/**` · `feedback/**` | [`.claude/rules/23-feishu-integration.md`](.claude/rules/23-feishu-integration.md) |
 | 改 `tests/**` | [`.claude/rules/30-testing.md`](.claude/rules/30-testing.md) |
 | commit / push / PR / CI-CD | [`.claude/rules/50-git-workflow.md`](.claude/rules/50-git-workflow.md) |
 | 任务包 / ADR / 收尾 | [`docs/tasks/TEMPLATE.md`](docs/tasks/TEMPLATE.md) · [`docs/decisions/README.md`](docs/decisions/README.md) · [`docs/workflow/session-checklist.md`](docs/workflow/session-checklist.md) |
+
+**可选 subagent：** `explorer`（haiku，只读搜索 / 代码定位）· `implementer`（sonnet，任务包范围内实施）。详见 [`.claude/agents/`](.claude/agents/)。
