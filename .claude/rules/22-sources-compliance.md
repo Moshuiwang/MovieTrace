@@ -3,7 +3,6 @@ name: sources-compliance
 description: 外部数据源合规约束（FlixPatrol / TMDb / Trakt / OMDb）、API 配额日志、UA 与抓取节流、合规绝对线。
 paths:
   - "src/movietrace/sources/**"
-include: ["src/movietrace/sources/**"]
 ---
 
 # 外部数据源合规

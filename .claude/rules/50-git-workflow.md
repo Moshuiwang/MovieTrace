@@ -1,7 +1,8 @@
 ---
 name: git-workflow
 description: 分支、commit、push、PR、CI/CD、合并后同步的硬规则。任何需要提交或开 PR 的任务必读。
-include: ["**/*"]
+paths:
+  - ".github/**"
 ---
 
 # Git / PR 工作流规则
@@ -153,13 +154,3 @@ git log --oneline --decorate --max-count=3
 - `HEAD` 必须是合并后的 `origin/main`。
 - 如果合并后发现 `STATE.md` 仍有过期状态，立刻修正；优先避免创建只为补状态漂移的后续 PR。
 
-## 本次复盘固化
-
-2026-05-23 连续 PR 暴露出以下问题，后续按本规则避免：
-
-- **错误分支基底**：P1.47 最初从本地非 main 分支开出，差点混入无关提交。后续开分支前必须先 `checkout main && pull --ff-only`。
-- **状态审计不足**：P1.42/P1.43/P1.44/P1.45/P1.46/P1.38 已随 PR #40 合并，但 `STATE.md` 仍写 `本地完成（待 PR）`，导致补开 PR #45。后续 PR 前必须审计相关任务状态。
-- **workflow 时序误判**：P1.53 修改 auto-merge dispatch 参数，但 PR #44 自己的 auto-merge run 仍用旧 main workflow；后续 workflow 改动必须明确“本 PR 能验证什么”和“合并后如何验证新路径”。
-- **PR 粒度偏碎**：本可在 #44 中同步的状态漂移被拖到 #45。后续发现直接相关的状态文档漂移，应在同一 PR 内修正。
-- **收尾不够清单化**：虽然最终都完成了 commit/push/PR/CI/main pull，但过程依赖临时判断。后续必须按本文档的开工、PR 前、PR 后、合并后四段检查执行。
-- **PR 创建过于自动化**：后续即使本地已完成并验证，Agent 也必须先取得人类事前或当下明确确认，才能执行 `gh pr create`。

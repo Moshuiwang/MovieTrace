@@ -1,7 +1,10 @@
 ---
 name: gotchas
 description: MovieTrace 项目最易踩的坑速查（PYTHONPATH）。
-include: ["**/*"]
+paths:
+  - "src/**"
+  - "scripts/**"
+  - "tests/**"
 ---
 
 # 易踩坑速查

@@ -3,7 +3,7 @@
 > Solo 开发者 + AI 中文协作。本文件是**总纲**（≤ 60 行）；细则按场景 Read 加载。
 > 状态：[`STATE.md`](STATE.md) · 边界：[`SCOPE.md`](SCOPE.md) · Codex / 其他工具入口：[`AGENTS.md`](AGENTS.md)（一行指针 → 本文件）
 
-**Boot Order**：STATE → SCOPE → 当前任务包。代码结构 `ls src/movietrace/` 探索；DB schema、表关系、数据流按 Rule Index lazy load（[`.claude/rules/24-db-schema-map.md`](.claude/rules/24-db-schema-map.md)）。历史层先 `rg` 再读片段，不整篇读。
+**Boot Order**：STATE → SCOPE → 当前任务包。代码结构 `ls src/movietrace/` 探索；Rule Index 所有规则均为 lazy load，按场景按需 Read，不自动载入。历史层先 `rg` 再读片段，不整篇读。
 
 ---
 

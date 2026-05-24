@@ -3,7 +3,6 @@ name: db-migrations
 description: SQLite schema 变更规则、migration 编号、SCHEMA_VERSION 同步、唯一索引清单、备份策略。
 paths:
   - "src/movietrace/db/**"
-include: ["src/movietrace/db/**"]
 ---
 
 # 数据库与 Migration 规则

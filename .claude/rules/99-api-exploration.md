@@ -1,3 +1,11 @@
+---
+name: api-exploration
+description: 飞书/外部 API 探索铁律：文档→curl→代码三段式，404不猜路径，禁止静默重试。
+paths:
+  - "src/movietrace/feishu/**"
+  - "src/movietrace/sources/**"
+---
+
 # FEISHU/LARK API 探索铁律（防盲目猜测）
 
 ## 开工前必答（任一不清楚 → 停下澄清）

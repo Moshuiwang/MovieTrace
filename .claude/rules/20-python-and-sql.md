@@ -1,7 +1,9 @@
 ---
 name: python-and-sql
 description: Python 编码风格、类型标注、SQL prepared statement、外部 API 日志要求、提交信息约定。
-include: ["src/**", "scripts/**"]
+paths:
+  - "src/**"
+  - "scripts/**"
 ---
 
 # Python 与 SQL 编码细则

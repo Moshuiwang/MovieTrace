@@ -4,7 +4,6 @@ description: 飞书集成不静默重试、字段 ID 与中文 field name 分流
 paths:
   - "src/movietrace/feishu/**"
   - "feedback/**"
-include: ["src/movietrace/feishu/**", "src/movietrace/feedback/**"]
 ---
 
 # 飞书集成铁律

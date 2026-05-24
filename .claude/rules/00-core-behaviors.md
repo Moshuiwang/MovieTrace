@@ -1,7 +1,10 @@
 ---
 name: core-behaviors
 description: AI 协作的核心行为模式与失败信号展开。总纲 5 条硬铁律的细则与应用清单。任何编辑前必读。
-include: ["**/*"]
+paths:
+  - "src/**"
+  - "scripts/**"
+  - "tests/**"
 ---
 
 # 核心行为模式（总纲铁律展开）
